@@ -12,17 +12,17 @@ A REST API to search for CUITs across multiple data sources, with graph-based re
 
 ### 1. Install dependencies
 
-\`\`\`bash
+```bash
 pnpm install
-\`\`\`
+```
 
 ### 2. Configure environment variables
 
 Copy `.env.example` to `.env` and fill in your values:
 
-\`\`\`bash
+```bash
 cp .env.example .env
-\`\`\`
+```
 
 | Variable | Description |
 |---|---|
@@ -34,22 +34,22 @@ cp .env.example .env
 
 In your Neo4j Aura query editor, create the index:
 
-\`\`\`cypher
+```cypher
 CREATE INDEX cuit_id IF NOT EXISTS
 FOR (c:CUIT) ON (c.id)
-\`\`\`
+```
 
 ### 4. Load initial data
 
-\`\`\`bash
+```bash
 pnpm load:cuits
-\`\`\`
+```
 
 ### 5. Run the server
 
-\`\`\`bash
+```bash
 pnpm dev
-\`\`\`
+```
 
 ## API
 
@@ -76,7 +76,7 @@ Documentation available at `http://localhost:3000/docs` when the server is runni
 
 ## Project Structure
 
-\`\`\`
+```
 src/
 ├── config.ts          # Environment variables
 ├── index.ts           # Fastify server
@@ -92,4 +92,4 @@ src/
 │   └── CsvSource.ts   # CSV adapter
 └── tests/
     └── cuit.test.ts   # Tests
-\`\`\`
+```
