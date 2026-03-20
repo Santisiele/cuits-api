@@ -8,6 +8,8 @@ export default defineConfig({
       "@sources": path.resolve(__dirname, "./src/sources"),
       "@routes": path.resolve(__dirname, "./src/routes"),
       "@schemas": path.resolve(__dirname, "./src/schemas.ts"),
+      "@config": path.resolve(__dirname, "./src/config.ts"),
+      "@scrapers": path.resolve(__dirname, "./src/scrapers"),
     },
   },
   test: {
