@@ -48,7 +48,21 @@
       "@routes/*": [
         "routes/*"
       ],
-      "@schemas": ["schemas.ts"]
+      "@config*": [
+        "config.ts"
+      ],
+      "@schemas": [
+        "schemas.ts"
+      ],
+      "@scrapers/*": [
+        "scrapers/*"
+      ],
+      "@scripts": [
+        "scripts/*"
+      ],
+      "@logger":[
+        "logger.ts"
+      ]
     }
   }
 }

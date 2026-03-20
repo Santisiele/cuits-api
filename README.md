@@ -93,3 +93,41 @@ src/
 └── tests/
     └── cuit.test.ts   # Tests
 ```
+
+## Nosis Scraper
+
+Scrapes relationship trees from Nosis Manager and stores them in Neo4j.
+
+### Setup
+
+Add Nosis credentials to `.env`:
+```env
+NOSIS_USER=your_nosis_user
+NOSIS_PASSWORD=your_nosis_password
+```
+
+### Usage
+```bash
+pnpm nosis:test <taxId>
+```
+
+Example:
+```bash
+pnpm nosis:test 20461235787
+```
+
+### How it works
+
+1. Logs in to Nosis Manager using Playwright (headless browser)
+2. Searches for the given Tax ID
+3. Fetches the relationship tree (up to 2 levels deep, max 49 nodes)
+4. Maps the tree to Neo4j graph format
+5. Inserts nodes and relationships into Neo4j
+
+### Limitations
+
+- Session expires after some time — scraper re-logs in automatically on retry
+- Maximum 2 levels of relationships per query (Nosis limitation)
+- Maximum 49 nodes per query (Nosis limitation)
+- 1 second delay between requests to avoid rate limiting
+- Relationship type codes are mapped manually in `nosisRelationshipTypes.ts` — unknown codes fall back to `Unknown (code)`
