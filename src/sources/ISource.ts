@@ -21,7 +21,17 @@ export interface ISource {
   /**
    * Searches for a CUIT across this source
    * @param cuit - The CUIT number to search for
+   * @param maxDepth - Maximum path depth for graph traversal (only used by graph-based sources)
    * @returns Array of results found in this source
    */
-  search(cuit: string): Promise<SearchResult[]>
+  search(cuit: string, maxDepth?: number): Promise<SearchResult[]>
+}
+
+/**
+ * Represents a single node in a graph path
+ */
+export interface PathNode {
+  taxId: string
+  businessName: string
+  relationshipType: string
 }

@@ -7,6 +7,7 @@ import { CsvSource } from "@sources/CsvSource.js"
 import type { ISource } from "@sources/ISource.js"
 import cuitRoutes from "@routes/cuit.js"
 import { schemas } from "@schemas"
+import graphRoutes from "@routes/graph.js"
 
 // Standard workaround for ESM because it doesn't have __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -44,6 +45,7 @@ await server.register(swaggerUi, {
 })
 
 await server.register(cuitRoutes, {sources})
+await server.register(graphRoutes)
 
 try {
   await server.listen({ port: 3000 })
