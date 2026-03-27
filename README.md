@@ -131,3 +131,83 @@ pnpm nosis:test 20461235787
 - Maximum 49 nodes per query (Nosis limitation)
 - 1 second delay between requests to avoid rate limiting
 - Relationship type codes are mapped manually in `nosisRelationshipTypes.ts` — unknown codes fall back to `Unknown (code)`
+
+## Graph API
+
+Endpoints to query the Neo4j graph database.
+
+### GET /graph/cuit/:taxId
+
+Searches for a Tax ID in the graph.
+
+- If `inMyBase` is `true` → returns node info directly
+- If `inMyBase` is `false` → returns paths to connected nodes with `inMyBase: true`
+- If not found → 404
+
+**Query parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `maxDepth` | number | 3 | Maximum path depth (1–10) |
+
+**Example**
+```bash
+GET /graph/cuit/30710687389?maxDepth=3
+```
+```json
+{
+  "cuit": "30710687389",
+  "found": true,
+  "results": [
+    {
+      "source": "neo4j",
+      "file": "neo4j",
+      "data": {
+        "businessName": "WIRSOLUT SA",
+        "inMyBase": false,
+        "pathToBase": [
+          { "taxId": "30710687389", "businessName": "WIRSOLUT SA", "relationshipType": "Employer" },
+          { "taxId": "20461235787", "businessName": "Sielecki Santiago Agustin", "relationshipType": "" }
+        ]
+      }
+    }
+  ]
+}
+```
+
+---
+
+### GET /graph/path
+
+Finds the shortest path between two Tax IDs in the graph.
+
+**Query parameters**
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `from` | string | ✅ | — | Starting Tax ID |
+| `to` | string | ✅ | — | Target Tax ID |
+| `maxDepth` | number | ❌ | 3 | Maximum path depth (1–10) |
+
+**Example**
+```bash
+GET /graph/path?from=20222935785&to=27044838317&maxDepth=3
+```
+```json
+{
+  "found": true,
+  "path": [
+    { "taxId": "20222935785", "businessName": "Sielecki Luciano Andres", "relationshipType": "Employer" },
+    { "taxId": "30590745797", "businessName": "Cooperativa Credivico", "relationshipType": "Employee" },
+    { "taxId": "27044838317", "businessName": "Lubel Mirta Luisa", "relationshipType": "" }
+  ]
+}
+```
+
+**Error responses**
+
+| Code | Reason |
+|---|---|
+| 400 | `from` and `to` are the same, or `maxDepth` is invalid |
+| 404 | No path found between the two Tax IDs |
+| 500 | Graph database unavailable |
