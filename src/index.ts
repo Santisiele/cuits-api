@@ -8,6 +8,7 @@ import type { ISource } from "@sources/ISource.js"
 import cuitRoutes from "@routes/cuit.js"
 import { schemas } from "@schemas"
 import graphRoutes from "@routes/graph.js"
+import cors from "@fastify/cors";
 
 // Standard workaround for ESM because it doesn't have __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -43,6 +44,10 @@ await server.register(swagger, {
 await server.register(swaggerUi, {
   routePrefix: "/docs",
 })
+
+await server.register(cors, {
+  origin: "http://localhost:5173"
+});
 
 await server.register(cuitRoutes, {sources})
 await server.register(graphRoutes)

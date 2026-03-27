@@ -20,6 +20,7 @@
     "@fastify/swagger-ui": "^5.2.5",
     "axios": "^1.13.6",
     "axios-cookiejar-support": "^6.0.5",
+    "cors": "^2.8.6",
     "csv-parse": "^6.1.0",
     "dotenv": "^17.3.1",
     "fastify": "^5.8.2",
