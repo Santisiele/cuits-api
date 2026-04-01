@@ -8,10 +8,20 @@ export const RELATIONSHIP_TYPES: Record<number, string> = {
   8: "Employer",
   20: "President",
   21: "Director",
+  27: "Administrator",
+  33: "Former President",
   51: "Vice President",
   95: "Deputy Director",
+  135: "Former Vice President",
+  161: "Deputy Administrator",
   164: "Brand Owner",
-  176: "Employee"
+  176: "Employee",
+  1001: "Child",
+  1002: "Parent",
+  1003: "Brother",
+  1004: "Sister",
+  1005: "Cousin",
+  1006: "Friend"
 }
 
 /**

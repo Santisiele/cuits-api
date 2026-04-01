@@ -3,8 +3,8 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { parse } from "csv-parse/sync"
 import neo4j from "neo4j-driver"
-import { config } from "../config.js"
-import { filterValidCuits, loadCuitsIntoNeo4j } from "../helpers/cuitLoader.js"
+import { config } from "@config.js"
+import { filterValidCuits, loadCuitsIntoNeo4j } from "@helpers/cuitLoader.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)

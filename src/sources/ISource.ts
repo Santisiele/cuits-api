@@ -34,4 +34,5 @@ export interface PathNode {
   taxId: string
   businessName: string
   relationshipType: string
+  inMyBase: boolean
 }
