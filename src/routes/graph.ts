@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify"
-import { Neo4jSource } from "../sources/Neo4jSource.js"
+import { Neo4jSource } from "@sources/Neo4jSource.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -119,6 +119,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     taxId: { type: "string" },
                     businessName: { type: "string" },
                     relationshipType: { type: "string" },
+                    inMyBase: { type: "boolean" },
                   },
                 },
               },
@@ -164,6 +165,158 @@ export default async function graphRoutes(server: FastifyInstance) {
         return reply.code(500).send({
           message: "Graph database unavailable",
         })
+      }
+    }
+  )
+
+  /**
+ * Manually add a relationship between two existing Tax IDs
+ */
+  server.post<{
+    Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
+  }>(
+    "/graph/relationship",
+    {
+      schema: {
+        summary: "Add a relationship between two Tax IDs",
+        description: "Both Tax IDs must exist in the graph. Relationship type must be a valid code.",
+        body: {
+          type: "object",
+          required: ["fromTaxId", "toTaxId", "relationshipType"],
+          properties: {
+            fromTaxId: { type: "string", description: "Source Tax ID" },
+            toTaxId: { type: "string", description: "Target Tax ID" },
+            relationshipType: { type: "number", description: "Relationship type code" },
+          },
+        },
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+              fromTaxId: { type: "string" },
+              toTaxId: { type: "string" },
+              relationshipType: { type: "string" },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          404: { $ref: "NotFoundResponse" },
+          409: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+            },
+          },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { fromTaxId, toTaxId, relationshipType } = request.body
+
+      if (fromTaxId === toTaxId) {
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
+      }
+
+      const relationshipName = neo4jSource.getRelationshipTypeName(relationshipType)
+      if (!relationshipName) {
+        return reply.code(400).send({
+          message: `Invalid relationship type code: ${relationshipType}. Valid codes: ${neo4jSource.validRelationshipCodes().join(", ")}`,
+        })
+      }
+
+      try {
+        const result = await neo4jSource.addRelationship(fromTaxId, toTaxId, relationshipName)
+
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: fromTaxId,
+            found: false,
+            message: "One or both Tax IDs not found in graph",
+          })
+        }
+
+        if (result === "duplicate") {
+          return reply.code(409).send({
+            message: "Relationship already exists between these two Tax IDs",
+          })
+        }
+
+        return reply.code(201).send({
+          message: "Relationship created successfully",
+          fromTaxId,
+          toTaxId,
+          relationshipType: relationshipName,
+        })
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  /**
+ * Delete a relationship between two Tax IDs
+ */
+  server.delete<{
+    Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
+  }>(
+    "/graph/relationship",
+    {
+      schema: {
+        summary: "Delete a relationship between two Tax IDs",
+        description: "Deletes a specific relationship between two existing Tax IDs",
+        body: {
+          type: "object",
+          required: ["fromTaxId", "toTaxId", "relationshipType"],
+          properties: {
+            fromTaxId: { type: "string", description: "Source Tax ID" },
+            toTaxId: { type: "string", description: "Target Tax ID" },
+            relationshipType: { type: "number", description: "Relationship type code" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { fromTaxId, toTaxId, relationshipType } = request.body
+
+      if (fromTaxId === toTaxId) {
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
+      }
+
+      const relationshipName = neo4jSource.getRelationshipTypeName(relationshipType)
+      if (!relationshipName) {
+        return reply.code(400).send({
+          message: `Invalid relationship type code: ${relationshipType}`,
+        })
+      }
+
+      try {
+        const result = await neo4jSource.deleteRelationship(fromTaxId, toTaxId, relationshipName)
+
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: fromTaxId,
+            found: false,
+            message: "Relationship not found",
+          })
+        }
+
+        return { message: "Relationship deleted successfully" }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }
   )

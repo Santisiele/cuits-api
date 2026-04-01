@@ -1,6 +1,7 @@
 import neo4j from "neo4j-driver"
 import { config } from "@config"
 import type { ISource, SearchResult, PathNode } from "@sources/ISource.js"
+import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
 
 /**
  * Data source adapter for Neo4j graph database.
@@ -119,11 +120,122 @@ export class Neo4jSource implements ISource {
             if (result.records.length === 0) return null
 
             const path = result.records[0]?.get("path")
-            return path.segments.map((s: { start: { properties: Record<string, unknown> }, relationship: { properties: Record<string, unknown> } }) => ({
+            const nodes: PathNode[] = path.segments.map((s: {
+                start: { properties: Record<string, unknown> }
+                relationship: { properties: Record<string, unknown> }
+            }) => ({
                 taxId: String(s.start.properties["id"] ?? ""),
                 businessName: String(s.start.properties["businessName"] ?? ""),
                 relationshipType: String(s.relationship.properties["type"] ?? ""),
+                inMyBase: Boolean(s.start.properties["inMyBase"] ?? false),
             }))
+
+            const lastSegment = path.segments[path.segments.length - 1]
+            if (lastSegment) {
+                nodes.push({
+                    taxId: String(lastSegment.end.properties["id"] ?? ""),
+                    businessName: String(lastSegment.end.properties["businessName"] ?? ""),
+                    relationshipType: "",
+                    inMyBase: Boolean(lastSegment.end.properties["inMyBase"] ?? false),
+                })
+            }
+
+            console.log("Path nodes:", JSON.stringify(nodes, null, 2))
+            return nodes
+        } finally {
+            await session.close()
+        }
+    }
+
+    /**
+ * Returns the human-readable name for a valid relationship type code.
+ * Returns null if the code is not valid.
+ */
+    getRelationshipTypeName(code: number): string | null {
+        return RELATIONSHIP_TYPES[code] ?? null
+    }
+
+    /**
+     * Returns all valid relationship type codes
+     */
+    validRelationshipCodes(): number[] {
+        return Object.keys(RELATIONSHIP_TYPES).map(Number)
+    }
+
+    /**
+     * Adds a relationship between two existing Tax IDs
+     * @returns "created" | "not_found" | "duplicate"
+     */
+    async addRelationship(
+        fromTaxId: string,
+        toTaxId: string,
+        relationshipType: string
+    ): Promise<"created" | "not_found" | "duplicate"> {
+        const session = this.driver.session()
+
+        try {
+            // Check both nodes exist
+            const nodesResult = await session.run(
+                `
+      MATCH (a:CUIT {id: $fromTaxId})
+      MATCH (b:CUIT {id: $toTaxId})
+      RETURN a, b
+      `,
+                { fromTaxId, toTaxId }
+            )
+
+            if (nodesResult.records.length === 0) return "not_found"
+
+            // Check if relationship already exists
+            const existingResult = await session.run(
+                `
+      MATCH (a:CUIT {id: $fromTaxId})-[r:RELATED_TO {type: $relationshipType}]->(b:CUIT {id: $toTaxId})
+      RETURN r
+      `,
+                { fromTaxId, toTaxId, relationshipType }
+            )
+
+            if (existingResult.records.length > 0) return "duplicate"
+
+            // Create relationship
+            await session.run(
+                `
+      MATCH (a:CUIT {id: $fromTaxId})
+      MATCH (b:CUIT {id: $toTaxId})
+      CREATE (a)-[:RELATED_TO {type: $relationshipType, source: "manual", createdAt: datetime()}]->(b)
+      `,
+                { fromTaxId, toTaxId, relationshipType }
+            )
+
+            return "created"
+        } finally {
+            await session.close()
+        }
+    }
+
+    /**
+ * Deletes a relationship between two Tax IDs
+ * @returns "deleted" | "not_found"
+ */
+    async deleteRelationship(
+        fromTaxId: string,
+        toTaxId: string,
+        relationshipType: string
+    ): Promise<"deleted" | "not_found"> {
+        const session = this.driver.session()
+
+        try {
+            const result = await session.run(
+                `
+      MATCH (a:CUIT {id: $fromTaxId})-[r:RELATED_TO {type: $relationshipType}]->(b:CUIT {id: $toTaxId})
+      DELETE r
+      RETURN count(r) as deleted
+      `,
+                { fromTaxId, toTaxId, relationshipType }
+            )
+
+            const deleted = result.records[0]?.get("deleted").toNumber() ?? 0
+            return deleted > 0 ? "deleted" : "not_found"
         } finally {
             await session.close()
         }

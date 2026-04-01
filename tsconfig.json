@@ -36,6 +36,7 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
     // Absolute routes
     "baseUrl": "./src",
     "paths": {
