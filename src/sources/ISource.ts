@@ -28,11 +28,19 @@ export interface ISource {
 }
 
 /**
- * Represents a single node in a graph path
+ * Represents a node in a path
  */
-export interface PathNode {
+export interface PathNodeInfo {
   taxId: string
   businessName: string
-  relationshipType: string
   inMyBase: boolean
+}
+
+/**
+ * Represents a segment between two nodes with all their relationships
+ */
+export interface PathSegment {
+  from: PathNodeInfo
+  to: PathNodeInfo
+  relationships: string[]
 }

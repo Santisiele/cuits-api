@@ -116,10 +116,26 @@ export default async function graphRoutes(server: FastifyInstance) {
                 items: {
                   type: "object",
                   properties: {
-                    taxId: { type: "string" },
-                    businessName: { type: "string" },
-                    relationshipType: { type: "string" },
-                    inMyBase: { type: "boolean" },
+                    from: {
+                      type: "object",
+                      properties: {
+                        taxId: { type: "string" },
+                        businessName: { type: "string" },
+                        inMyBase: { type: "boolean" },
+                      },
+                    },
+                    to: {
+                      type: "object",
+                      properties: {
+                        taxId: { type: "string" },
+                        businessName: { type: "string" },
+                        inMyBase: { type: "boolean" },
+                      },
+                    },
+                    relationships: {
+                      type: "array",
+                      items: { type: "string" },
+                    },
                   },
                 },
               },
@@ -314,6 +330,242 @@ export default async function graphRoutes(server: FastifyInstance) {
         }
 
         return { message: "Relationship deleted successfully" }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  /**
+ * Get node info by Tax ID
+ */
+  server.get<{
+    Params: { taxId: string }
+  }>(
+    "/graph/node/:taxId",
+    {
+      schema: {
+        summary: "Get node info by Tax ID",
+        params: {
+          type: "object",
+          properties: {
+            taxId: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              taxId: { type: "string" },
+              businessName: { type: "string" },
+              phone: { type: "string" },
+              email: { type: "string" },
+              birthday: { type: "string" },
+              inMyBase: { type: "boolean" },
+              source: { type: "string" },
+            },
+          },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+
+      try {
+        const node = await neo4jSource.getNode(taxId)
+
+        if (!node) {
+          return reply.code(404).send({
+            cuit: taxId,
+            found: false,
+            message: "Tax ID not found in graph",
+          })
+        }
+
+        return node
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  /**
+   * Update node fields
+   */
+  server.patch<{
+    Params: { taxId: string }
+    Body: { phone?: string; email?: string; birthday?: string }
+  }>(
+    "/graph/node/:taxId",
+    {
+      schema: {
+        summary: "Update node fields",
+        params: {
+          type: "object",
+          properties: {
+            taxId: { type: "string" },
+          },
+        },
+        body: {
+          type: "object",
+          properties: {
+            phone: { type: "string" },
+            email: { type: "string" },
+            birthday: { type: "string" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+            },
+          },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+      const { phone, email, birthday } = request.body
+
+      try {
+        const result = await neo4jSource.updateNode(taxId, { phone, email, birthday })
+
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: taxId,
+            found: false,
+            message: "Tax ID not found in graph",
+          })
+        }
+
+        return { message: "Node updated successfully" }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  /**
+ * Get all relationships of a node up to a given depth
+ */
+  server.get<{
+    Params: { taxId: string }
+    Querystring: { maxDepth?: string }
+  }>(
+    "/graph/node/:taxId/relationships",
+    {
+      schema: {
+        summary: "Get all relationships of a node",
+        description: "Returns all nodes and relationships connected to the given Tax ID",
+        params: {
+          type: "object",
+          properties: {
+            taxId: { type: "string" },
+          },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            maxDepth: { type: "string", description: `Maximum depth (default: ${DEFAULT_MAX_DEPTH}, max: ${MAX_ALLOWED_DEPTH})` },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              taxId: { type: "string" },
+              found: { type: "boolean" },
+              results: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    cuit: { type: "string" },
+                    source: { type: "string" },
+                    file: { type: "string" },
+                    data: { type: "object", additionalProperties: true },
+                  },
+                },
+              },
+            },
+          },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+      const maxDepth = parseMaxDepth(request.query.maxDepth)
+
+      if (maxDepth === null) {
+        return reply.code(400).send({
+          message: `Invalid maxDepth. Must be a number between 1 and ${MAX_ALLOWED_DEPTH}`,
+        })
+      }
+
+      try {
+        const results = await neo4jSource.getAllRelationships(taxId, maxDepth)
+
+        if (!results) {
+          return reply.code(404).send({
+            cuit: taxId,
+            found: false,
+            message: "Tax ID not found in graph",
+          })
+        }
+
+        return { taxId, found: true, results }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  /**
+ * Get all nodes with inMyBase = true
+ */
+  server.get(
+    "/graph/nodes",
+    {
+      schema: {
+        summary: "Get all nodes in my base",
+        description: "Returns all nodes with inMyBase = true with their relationship count",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    source: { type: "string" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const nodes = await neo4jSource.getMyBaseNodes()
+        return { nodes }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })
