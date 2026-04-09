@@ -84,6 +84,7 @@ async function loadFromXlsx(filePath: string, startRow: number, count: number) {
       }
 
       const relations = await scraper.scrape(cuitClean)
+      logger.info(`Scraped ${relations.length} relations for ${cuitClean}`)
       const graphData = mapToGraph(relations)
       await insertGraphData(graphData)
 

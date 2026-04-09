@@ -47,7 +47,7 @@ await server.register(swaggerUi, {
 
 await server.register(cors, {
   origin: "http://localhost:5173",
-  methods: ["GET", "POST", "DELETE"],
+  methods: ["GET", "POST", "DELETE", "PATCH"],
 })
 
 await server.register(cuitRoutes, {sources})
