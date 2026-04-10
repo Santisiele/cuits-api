@@ -27,7 +27,9 @@
       "@scripts/*":         ["scripts/*"],
       "@config*":           ["config.ts"],
       "@schemas*":          ["schemas.ts"],
-      "@logger*":           ["logger.ts"]
+      "@logger*":           ["logger.ts"],
+      "@auth/*":            ["auth/*"],
+      "@middleware/*":      ["middleware/*"]
     }
   },
   "include": ["src/**/*.ts"],
