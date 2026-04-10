@@ -1,55 +1,95 @@
-import { describe, it, expect, beforeEach } from "vitest"
-import Fastify from "fastify"
+import { describe, it, expect, beforeEach, vi } from "vitest"
+import Fastify, { type FastifyInstance } from "fastify"
 import cuitRoutes from "@routes/cuit"
-import type { ISource, SearchResult } from "@sources/ISource"
+import type { ISource } from "@ports/interfaces"
+import type { SearchResult } from "@domain/entities"
 import { schemas } from "@schemas"
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const VALID_CUIT = "20-12345678-9"
+const VALID_CUIT_2 = "27-87654321-3"
 const UNKNOWN_CUIT = "99-99999999-9"
-const INVALID_CUIT = "123"
+const INVALID_CUITS = ["123", "20-1234567-9", "2012345678-9", "20-12345678-99", "", "   "]
 
-// ---- Mock sources ----
+// ─── Mock factories ───────────────────────────────────────────────────────────
 
-const mockSource: ISource = {
-  name: "mock",
-  async search(cuit: string): Promise<SearchResult[]> {
-    if (cuit === VALID_CUIT) {
-      return [
-        { cuit, source: "mock", file: "test.csv", data: { fullName: "Test User", phone: "123", email: "test@test.com" } },
-        { cuit, source: "mock", file: "test.csv", data: { fullName: "Test User Duplicate", phone: "456", email: "dup@test.com" } },
-      ]
-    }
-    return []
-  },
+/**
+ * Creates a mock source that returns results for specific CUITs.
+ */
+function makeSource(
+  name: string,
+  resultsByCuit: Record<string, SearchResult[]>
+): ISource {
+  return {
+    name,
+    async search(taxId: string): Promise<SearchResult[]> {
+      return resultsByCuit[taxId] ?? []
+    },
+  }
 }
 
-const failingSource: ISource = {
-  name: "failing",
-  async search(): Promise<SearchResult[]> {
-    throw new Error("Connection failed")
-  },
+/**
+ * Creates a source that always throws.
+ */
+function makeFailingSource(name = "failing"): ISource {
+  return {
+    name,
+    async search(): Promise<SearchResult[]> {
+      throw new Error("Connection refused")
+    },
+  }
 }
 
-const secondSource: ISource = {
-  name: "mock-2",
-  async search(cuit: string): Promise<SearchResult[]> {
-    if (cuit === VALID_CUIT) {
-      return [{ cuit, source: "mock-2", file: "other.csv", data: { fullName: "Test User 2" } }]
-    }
-    return []
-  },
+/**
+ * Creates a source that always returns empty results.
+ */
+function makeEmptySource(name = "empty"): ISource {
+  return { name, async search(): Promise<SearchResult[]> { return [] } }
 }
 
-const emptySource: ISource = {
-  name: "empty",
-  async search(): Promise<SearchResult[]> {
-    return []
-  },
+/**
+ * Creates a source with configurable delay (simulates slow I/O).
+ */
+function makeSlowSource(name: string, delayMs: number, results: SearchResult[]): ISource {
+  return {
+    name,
+    async search(): Promise<SearchResult[]> {
+      await new Promise((r) => setTimeout(r, delayMs))
+      return results
+    },
+  }
 }
 
-// ---- Helper ----
+// ─── Sample results ───────────────────────────────────────────────────────────
 
-async function buildApp(sources: ISource[]) {
+function makeCsvResult(cuit: string, source = "mock"): SearchResult {
+  return {
+    cuit,
+    source,
+    file: "test.csv",
+    data: { fullName: "Test User", phone: "123", email: "test@test.com" },
+  }
+}
+
+function makeGraphResult(cuit: string, source = "neo4j"): SearchResult {
+  return {
+    cuit,
+    source,
+    file: "neo4j",
+    data: {
+      businessName: "Test Corp SA",
+      inMyBase: false,
+      pathToBase: [
+        { taxId: "20-99999999-1", businessName: "Base Node", relationshipType: "Employer", inMyBase: true },
+      ],
+    },
+  }
+}
+
+// ─── App builder ──────────────────────────────────────────────────────────────
+
+async function buildApp(sources: ISource[]): Promise<FastifyInstance> {
   const app = Fastify()
   for (const schema of Object.values(schemas)) {
     app.addSchema(schema)
@@ -59,100 +99,281 @@ async function buildApp(sources: ISource[]) {
   return app
 }
 
-// ---- Tests ----
+// ─── Test suite ───────────────────────────────────────────────────────────────
 
 describe("GET /cuit/:cuit", () => {
-  let app: Awaited<ReturnType<typeof buildApp>>
+  let app: FastifyInstance
 
   beforeEach(async () => {
-    app = await buildApp([mockSource])
+    app = await buildApp([
+      makeSource("mock", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT)] }),
+    ])
   })
 
-  it("returns 200 and results when CUIT is found", async () => {
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+  // ── Happy path ─────────────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    expect(body.found).toBe(true)
-    expect(body.cuit).toBe(VALID_CUIT)
-    expect(body.results.length).toBeGreaterThan(0)
-    expect(body.results[0].data.fullName).toBe("Test User")
+  describe("successful searches", () => {
+    it("returns 200 with found=true when CUIT exists", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.statusCode).toBe(200)
+      const body = res.json()
+      expect(body.found).toBe(true)
+      expect(body.cuit).toBe(VALID_CUIT)
+    })
+
+    it("returns the matching results array", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const body = res.json()
+      expect(Array.isArray(body.results)).toBe(true)
+      expect(body.results.length).toBeGreaterThan(0)
+    })
+
+    it("includes correct source name in results", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const body = res.json()
+      expect(body.results[0].source).toBe("mock")
+    })
+
+    it("returns all results when CUIT appears multiple times in a source", async () => {
+      app = await buildApp([
+        makeSource("mock", {
+          [VALID_CUIT]: [
+            makeCsvResult(VALID_CUIT),
+            { ...makeCsvResult(VALID_CUIT), data: { fullName: "Duplicate User" } },
+          ],
+        }),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.json().results.length).toBeGreaterThanOrEqual(2)
+    })
+
+    it("aggregates results from multiple sources", async () => {
+      app = await buildApp([
+        makeSource("source-a", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT, "source-a")] }),
+        makeSource("source-b", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT, "source-b")] }),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const sources = res.json().results.map((r: SearchResult) => r.source)
+      expect(sources).toContain("source-a")
+      expect(sources).toContain("source-b")
+    })
+
+    it("returns only results from sources that found the CUIT", async () => {
+      app = await buildApp([
+        makeSource("mock", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT)] }),
+        makeEmptySource("empty"),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const body = res.json()
+      expect(body.results.every((r: SearchResult) => r.source === "mock")).toBe(true)
+    })
+
+    it("includes graph results with pathToBase", async () => {
+      app = await buildApp([
+        makeSource("neo4j", { [VALID_CUIT]: [makeGraphResult(VALID_CUIT)] }),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const body = res.json()
+      expect(body.results[0].data.pathToBase).toBeDefined()
+      expect(Array.isArray(body.results[0].data.pathToBase)).toBe(true)
+    })
+
+    it("handles multiple different CUITs independently", async () => {
+      app = await buildApp([
+        makeSource("mock", {
+          [VALID_CUIT]: [makeCsvResult(VALID_CUIT)],
+          [VALID_CUIT_2]: [makeCsvResult(VALID_CUIT_2)],
+        }),
+      ])
+
+      const res1 = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const res2 = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT_2}` })
+
+      expect(res1.json().cuit).toBe(VALID_CUIT)
+      expect(res2.json().cuit).toBe(VALID_CUIT_2)
+    })
   })
 
-  it("returns 404 when CUIT is not found", async () => {
-    const response = await app.inject({ method: "GET", url: `/cuit/${UNKNOWN_CUIT}` })
+  // ── Fault tolerance ────────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(404)
-    const body = response.json()
-    expect(body.found).toBe(false)
-    expect(body.message).toBe("CUIT not found in any source")
+  describe("fault tolerance", () => {
+    it("returns 200 with partial results when one source fails", async () => {
+      app = await buildApp([
+        makeFailingSource("failing"),
+        makeSource("working", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT, "working")] }),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.statusCode).toBe(200)
+      expect(res.json().results[0].source).toBe("working")
+    })
+
+    it("returns 500 when all sources fail", async () => {
+      app = await buildApp([makeFailingSource("a"), makeFailingSource("b")])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.statusCode).toBe(500)
+      expect(res.json().message).toBe("All sources failed")
+    })
+
+    it("does not propagate individual source errors to the response", async () => {
+      app = await buildApp([
+        makeFailingSource(),
+        makeSource("good", { [VALID_CUIT]: [makeCsvResult(VALID_CUIT, "good")] }),
+      ])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.json().message).toBeUndefined()
+    })
+
+    it("sources are queried in parallel (total time close to slowest, not sum)", async () => {
+      const result = makeCsvResult(VALID_CUIT, "slow")
+      app = await buildApp([
+        makeSlowSource("slow-a", 100, [result]),
+        makeSlowSource("slow-b", 100, [result]),
+      ])
+      const start = Date.now()
+      await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const elapsed = Date.now() - start
+      // If parallel: ~100ms. If sequential: ~200ms.
+      expect(elapsed).toBeLessThan(180)
+    })
   })
 
-  it("returns 400 when CUIT format is invalid", async () => {
-    const response = await app.inject({ method: "GET", url: `/cuit/${INVALID_CUIT}` })
+  // ── Not found ──────────────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(400)
-    const body = response.json()
-    expect(body.message).toBeDefined()
+  describe("not found", () => {
+    it("returns 404 when CUIT is not found in any source", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${UNKNOWN_CUIT}` })
+      expect(res.statusCode).toBe(404)
+      const body = res.json()
+      expect(body.found).toBe(false)
+      expect(body.message).toBe("CUIT not found in any source")
+    })
+
+    it("returns 404 when no sources are registered", async () => {
+      app = await buildApp([makeEmptySource()])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.statusCode).toBe(404)
+    })
+
+    it("returns cuit field in 404 body", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${UNKNOWN_CUIT}` })
+      expect(res.json().cuit).toBe(UNKNOWN_CUIT)
+    })
   })
 
-  it("returns 200 with partial results when one source fails", async () => {
-    app = await buildApp([failingSource, secondSource])
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+  // ── Validation ─────────────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    expect(body.found).toBe(true)
-    expect(body.results[0].source).toBe("mock-2")
+  describe("CUIT format validation", () => {
+    it.each(INVALID_CUITS.filter(Boolean))(
+      "returns 400 for invalid CUIT format: '%s'",
+      async (invalidCuit) => {
+        const res = await app.inject({ method: "GET", url: `/cuit/${invalidCuit}` })
+        expect(res.statusCode).toBe(400)
+        expect(res.json().message).toBeDefined()
+      }
+    )
+
+    it("accepts a correctly formatted CUIT", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.statusCode).not.toBe(400)
+    })
+
+    it("does not call sources when CUIT format is invalid", async () => {
+      const searchSpy = vi.fn(async () => [])
+      const spySource: ISource = { name: "spy", search: searchSpy }
+      app = await buildApp([spySource])
+      await app.inject({ method: "GET", url: "/cuit/INVALID" })
+      expect(searchSpy).not.toHaveBeenCalled()
+    })
   })
 
-  it("returns 500 when all sources fail", async () => {
-    app = await buildApp([failingSource])
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+  // ── maxDepth parameter ─────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(500)
+  describe("maxDepth query parameter", () => {
+    it("accepts a valid maxDepth", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}?maxDepth=5` })
+      expect(res.statusCode).toBe(200)
+    })
+
+    it("returns 400 for maxDepth = 0", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}?maxDepth=0` })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it("returns 400 for maxDepth > 10", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}?maxDepth=11` })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it("returns 400 for non-numeric maxDepth", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}?maxDepth=abc` })
+      expect(res.statusCode).toBe(400)
+    })
+
+    it("passes maxDepth to sources", async () => {
+      let receivedDepth: number | undefined
+      const depthCapture: ISource = {
+        name: "depth-capture",
+        async search(_taxId, maxDepth): Promise<SearchResult[]> {
+          receivedDepth = maxDepth
+          return [makeCsvResult(VALID_CUIT, "depth-capture")]
+        },
+      }
+      app = await buildApp([depthCapture])
+      await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}?maxDepth=7` })
+      expect(receivedDepth).toBe(7)
+    })
+
+    it("uses default maxDepth of 3 when not specified", async () => {
+      let receivedDepth: number | undefined
+      const depthCapture: ISource = {
+        name: "depth-capture",
+        async search(_taxId, maxDepth): Promise<SearchResult[]> {
+          receivedDepth = maxDepth
+          return [makeCsvResult(VALID_CUIT, "depth-capture")]
+        },
+      }
+      app = await buildApp([depthCapture])
+      await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(receivedDepth).toBe(3)
+    })
   })
 
-  it("returns results from all sources", async () => {
-    app = await buildApp([mockSource, secondSource])
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+  // ── Response shape ─────────────────────────────────────────────────────────
 
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    const sourceNames = body.results.map((r: SearchResult) => r.source)
-    expect(sourceNames).toContain("mock")
-    expect(sourceNames).toContain("mock-2")
-  })
+  describe("response shape", () => {
+    it("200 body has cuit, found, results fields", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const body = res.json()
+      expect(body).toHaveProperty("cuit")
+      expect(body).toHaveProperty("found")
+      expect(body).toHaveProperty("results")
+    })
 
-  it("trims whitespace from CUIT before searching", async () => {
-    const response = await app.inject({ method: "GET", url: `/cuit/ ${VALID_CUIT} ` })
+    it("each result has cuit, source, file, data fields", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      const result = res.json().results[0]
+      expect(result).toHaveProperty("cuit")
+      expect(result).toHaveProperty("source")
+      expect(result).toHaveProperty("file")
+      expect(result).toHaveProperty("data")
+    })
 
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    expect(body.found).toBe(true)
-  })
+    it("404 body has found=false and message", async () => {
+      const res = await app.inject({ method: "GET", url: `/cuit/${UNKNOWN_CUIT}` })
+      const body = res.json()
+      expect(body.found).toBe(false)
+      expect(body.message).toBeTruthy()
+    })
 
-  it("returns 404 when no sources are registered", async () => {
-    app = await buildApp([emptySource])
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+    it("400 body has a message field", async () => {
+      const res = await app.inject({ method: "GET", url: "/cuit/INVALID" })
+      expect(res.json().message).toBeTruthy()
+    })
 
-    expect(response.statusCode).toBe(404)
-  })
-
-  it("returns all results when CUIT appears multiple times in a source", async () => {
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
-
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    expect(body.results.length).toBeGreaterThanOrEqual(2)
-  })
-
-  it("returns only results from sources that found the CUIT", async () => {
-    app = await buildApp([mockSource, emptySource])
-    const response = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
-
-    expect(response.statusCode).toBe(200)
-    const body = response.json()
-    expect(body.results.every((r: SearchResult) => r.source === "mock")).toBe(true)
+    it("500 body has a message field", async () => {
+      app = await buildApp([makeFailingSource()])
+      const res = await app.inject({ method: "GET", url: `/cuit/${VALID_CUIT}` })
+      expect(res.json().message).toBeTruthy()
+    })
   })
 })

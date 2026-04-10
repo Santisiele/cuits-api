@@ -1,31 +1,15 @@
 import Fastify from "fastify"
 import swagger from "@fastify/swagger"
 import swaggerUi from "@fastify/swagger-ui"
-import path from "path"
-import { fileURLToPath } from "url"
-import { CsvSource } from "@sources/CsvSource.js"
-import type { ISource } from "@sources/ISource.js"
-import cuitRoutes from "@routes/cuit.js"
-import { schemas } from "@schemas"
+import cors from "@fastify/cors"
 import graphRoutes from "@routes/graph.js"
-import cors from "@fastify/cors";
+import cuitRoutes from "@routes/cuit.js"
+import { schemas } from "@schemas.js"
+import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 
-// Standard workaround for ESM because it doesn't have __dirname
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+// ─── Server setup ─────────────────────────────────────────────────────────────
 
-/**
- * All registered data sources.
- */
-export const sources: ISource[] = [
-  new CsvSource("csv-poseidon", path.join(__dirname, "../sources/Poseidon.csv")),
-]
-
-const server = Fastify({
-  logger: {
-    level: "error"
-  }
-})
+const server = Fastify({ logger: { level: "error" } })
 
 for (const schema of Object.values(schemas)) {
   server.addSchema(schema)
@@ -41,17 +25,28 @@ await server.register(swagger, {
   },
 })
 
-await server.register(swaggerUi, {
-  routePrefix: "/docs",
-})
+await server.register(swaggerUi, { routePrefix: "/docs" })
 
 await server.register(cors, {
   origin: "http://localhost:5173",
   methods: ["GET", "POST", "DELETE", "PATCH"],
 })
 
-await server.register(cuitRoutes, {sources})
+await server.register(cuitRoutes)
 await server.register(graphRoutes)
+
+// ─── Graceful shutdown ────────────────────────────────────────────────────────
+
+async function shutdown(): Promise<void> {
+  await server.close()
+  await Neo4jDriver.close()
+  process.exit(0)
+}
+
+process.on("SIGINT", shutdown)
+process.on("SIGTERM", shutdown)
+
+// ─── Start ────────────────────────────────────────────────────────────────────
 
 try {
   await server.listen({ port: 3000 })
@@ -59,5 +54,6 @@ try {
   console.log("Docs available at http://localhost:3000/docs")
 } catch (err) {
   server.log.error(err)
+  await Neo4jDriver.close()
   process.exit(1)
 }
