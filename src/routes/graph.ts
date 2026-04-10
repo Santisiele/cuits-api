@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -56,6 +57,7 @@ export default async function graphRoutes(server: FastifyInstance) {
         const results = await neo4jSource.search(taxId, maxDepth)
 
         if (results.length === 0) {
+          logCuitSearch(request.username, taxId, false)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
@@ -63,6 +65,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logCuitSearch(request.username, taxId, true)
         return { cuit: taxId, found: true, results }
       } catch (error) {
         request.log.error(error)
@@ -146,6 +149,7 @@ export default async function graphRoutes(server: FastifyInstance) {
         const path = await neo4jSource.findShortestPath(from, to, maxDepth)
 
         if (!path) {
+          logPathSearch(request.username, from, to, false)
           return reply.code(404).send({
             cuit: from,
             found: false,
@@ -153,6 +157,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logPathSearch(request.username, from, to, true)
         return { found: true, path }
       } catch (error) {
         request.log.error(error)
@@ -227,6 +232,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logRelationshipAdded(request.username, fromTaxId, toTaxId, relationshipName)
         return reply.code(201).send({
           message: "Relationship created successfully",
           fromTaxId,
@@ -291,6 +297,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logRelationshipDeleted(request.username, fromTaxId, toTaxId, relationshipName)
         return { message: "Relationship deleted successfully" }
       } catch (error) {
         request.log.error(error)
@@ -330,12 +337,14 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const node = await neo4jSource.findNode(taxId)
         if (!node) {
+          logNodeViewed(request.username, taxId, null)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
             message: "Tax ID not found in graph",
           })
         }
+        logNodeViewed(request.username, taxId, node.businessName)
         return node
       } catch (error) {
         request.log.error(error)
@@ -386,6 +395,7 @@ export default async function graphRoutes(server: FastifyInstance) {
             message: "Tax ID not found in graph",
           })
         }
+        logNodeUpdated(request.username, taxId)
         return { message: "Node updated successfully" }
       } catch (error) {
         request.log.error(error)
@@ -450,6 +460,7 @@ export default async function graphRoutes(server: FastifyInstance) {
         const results = await neo4jSource.findAllRelationships(taxId, maxDepth)
 
         if (!results) {
+          logNodeRelationshipsViewed(request.username, taxId, maxDepth, 0)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
@@ -457,6 +468,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logNodeRelationshipsViewed(request.username, taxId, maxDepth, results.length)
         return { taxId, found: true, results }
       } catch (error) {
         request.log.error(error)
@@ -497,6 +509,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     async (request, reply) => {
       try {
         const nodes = await neo4jSource.findMyBaseNodes()
+        logMyBaseViewed(request.username, nodes.length)
         return { nodes }
       } catch (error) {
         request.log.error(error)
