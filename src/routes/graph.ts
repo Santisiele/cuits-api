@@ -1,31 +1,18 @@
 import type { FastifyInstance } from "fastify"
-import { Neo4jSource } from "@sources/Neo4jSource.js"
+import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
+import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
 
 const neo4jSource = new Neo4jSource()
 
-const DEFAULT_MAX_DEPTH = 3
-const MAX_ALLOWED_DEPTH = 10
-
 /**
- * Validates and parses maxDepth query parameter
- * @param value - Raw string value from query
- * @returns Parsed depth or null if invalid
- */
-function parseMaxDepth(value?: string): number | null {
-  if (!value) return DEFAULT_MAX_DEPTH
-  const parsed = Number(value)
-  if (isNaN(parsed) || parsed < 1 || parsed > MAX_ALLOWED_DEPTH) return null
-  return parsed
-}
-
-/**
- * Graph-based routes for Neo4j queries
+ * Graph-based routes for Neo4j queries.
+ * All routes delegate data access to {@link Neo4jSource} which in turn
+ * uses the {@link Neo4jRepository} — keeping routes thin and testable.
  */
 export default async function graphRoutes(server: FastifyInstance) {
 
-  /**
-   * Search for a Tax ID in the graph database
-   */
+  // ─── GET /graph/cuit/:taxId ───────────────────────────────────────────────
+
   server.get<{
     Params: { taxId: string }
     Querystring: { maxDepth?: string }
@@ -79,16 +66,13 @@ export default async function graphRoutes(server: FastifyInstance) {
         return { cuit: taxId, found: true, results }
       } catch (error) {
         request.log.error(error)
-        return reply.code(500).send({
-          message: "Graph database unavailable",
-        })
+        return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }
   )
 
-  /**
-   * Find path between two Tax IDs in the graph
-   */
+  // ─── GET /graph/path ─────────────────────────────────────────────────────
+
   server.get<{
     Querystring: { from: string; to: string; maxDepth?: string }
   }>(
@@ -132,10 +116,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                         inMyBase: { type: "boolean" },
                       },
                     },
-                    relationships: {
-                      type: "array",
-                      items: { type: "string" },
-                    },
+                    relationships: { type: "array", items: { type: "string" } },
                   },
                 },
               },
@@ -151,13 +132,10 @@ export default async function graphRoutes(server: FastifyInstance) {
       const { from, to, maxDepth: rawDepth } = request.query
 
       if (from === to) {
-        return reply.code(400).send({
-          message: "From and To Tax IDs must be different",
-        })
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
       }
 
       const maxDepth = parseMaxDepth(rawDepth)
-
       if (maxDepth === null) {
         return reply.code(400).send({
           message: `Invalid maxDepth. Must be a number between 1 and ${MAX_ALLOWED_DEPTH}`,
@@ -165,7 +143,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
 
       try {
-        const path = await neo4jSource.findPath(from, to, maxDepth)
+        const path = await neo4jSource.findShortestPath(from, to, maxDepth)
 
         if (!path) {
           return reply.code(404).send({
@@ -178,16 +156,13 @@ export default async function graphRoutes(server: FastifyInstance) {
         return { found: true, path }
       } catch (error) {
         request.log.error(error)
-        return reply.code(500).send({
-          message: "Graph database unavailable",
-        })
+        return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }
   )
 
-  /**
- * Manually add a relationship between two existing Tax IDs
- */
+  // ─── POST /graph/relationship ────────────────────────────────────────────
+
   server.post<{
     Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
   }>(
@@ -195,14 +170,13 @@ export default async function graphRoutes(server: FastifyInstance) {
     {
       schema: {
         summary: "Add a relationship between two Tax IDs",
-        description: "Both Tax IDs must exist in the graph. Relationship type must be a valid code.",
         body: {
           type: "object",
           required: ["fromTaxId", "toTaxId", "relationshipType"],
           properties: {
-            fromTaxId: { type: "string", description: "Source Tax ID" },
-            toTaxId: { type: "string", description: "Target Tax ID" },
-            relationshipType: { type: "number", description: "Relationship type code" },
+            fromTaxId: { type: "string" },
+            toTaxId: { type: "string" },
+            relationshipType: { type: "number" },
           },
         },
         response: {
@@ -217,12 +191,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           },
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
-          409: {
-            type: "object",
-            properties: {
-              message: { type: "string" },
-            },
-          },
+          409: { type: "object", properties: { message: { type: "string" } } },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -271,9 +240,8 @@ export default async function graphRoutes(server: FastifyInstance) {
     }
   )
 
-  /**
- * Delete a relationship between two Tax IDs
- */
+  // ─── DELETE /graph/relationship ──────────────────────────────────────────
+
   server.delete<{
     Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
   }>(
@@ -281,23 +249,17 @@ export default async function graphRoutes(server: FastifyInstance) {
     {
       schema: {
         summary: "Delete a relationship between two Tax IDs",
-        description: "Deletes a specific relationship between two existing Tax IDs",
         body: {
           type: "object",
           required: ["fromTaxId", "toTaxId", "relationshipType"],
           properties: {
-            fromTaxId: { type: "string", description: "Source Tax ID" },
-            toTaxId: { type: "string", description: "Target Tax ID" },
-            relationshipType: { type: "number", description: "Relationship type code" },
+            fromTaxId: { type: "string" },
+            toTaxId: { type: "string" },
+            relationshipType: { type: "number" },
           },
         },
         response: {
-          200: {
-            type: "object",
-            properties: {
-              message: { type: "string" },
-            },
-          },
+          200: { type: "object", properties: { message: { type: "string" } } },
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
           500: { $ref: "ServerErrorResponse" },
@@ -337,22 +299,14 @@ export default async function graphRoutes(server: FastifyInstance) {
     }
   )
 
-  /**
- * Get node info by Tax ID
- */
-  server.get<{
-    Params: { taxId: string }
-  }>(
+  // ─── GET /graph/node/:taxId ──────────────────────────────────────────────
+
+  server.get<{ Params: { taxId: string } }>(
     "/graph/node/:taxId",
     {
       schema: {
         summary: "Get node info by Tax ID",
-        params: {
-          type: "object",
-          properties: {
-            taxId: { type: "string" },
-          },
-        },
+        params: { type: "object", properties: { taxId: { type: "string" } } },
         response: {
           200: {
             type: "object",
@@ -373,10 +327,8 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { taxId } = request.params
-
       try {
-        const node = await neo4jSource.getNode(taxId)
-
+        const node = await neo4jSource.findNode(taxId)
         if (!node) {
           return reply.code(404).send({
             cuit: taxId,
@@ -384,7 +336,6 @@ export default async function graphRoutes(server: FastifyInstance) {
             message: "Tax ID not found in graph",
           })
         }
-
         return node
       } catch (error) {
         request.log.error(error)
@@ -393,9 +344,8 @@ export default async function graphRoutes(server: FastifyInstance) {
     }
   )
 
-  /**
-   * Update node fields
-   */
+  // ─── PATCH /graph/node/:taxId ────────────────────────────────────────────
+
   server.patch<{
     Params: { taxId: string }
     Body: { phone?: string; email?: string; birthday?: string }
@@ -404,12 +354,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     {
       schema: {
         summary: "Update node fields",
-        params: {
-          type: "object",
-          properties: {
-            taxId: { type: "string" },
-          },
-        },
+        params: { type: "object", properties: { taxId: { type: "string" } } },
         body: {
           type: "object",
           properties: {
@@ -419,12 +364,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           },
         },
         response: {
-          200: {
-            type: "object",
-            properties: {
-              message: { type: "string" },
-            },
-          },
+          200: { type: "object", properties: { message: { type: "string" } } },
           404: { $ref: "NotFoundResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
@@ -433,10 +373,12 @@ export default async function graphRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const { taxId } = request.params
       const { phone, email, birthday } = request.body
-
       try {
-        const result = await neo4jSource.updateNode(taxId, { phone, email, birthday })
-
+        // Filter out undefined values — required by exactOptionalPropertyTypes
+        const fields = Object.fromEntries(
+          Object.entries({ phone, email, birthday }).filter(([, v]) => v !== undefined)
+        ) as { phone?: string; email?: string; birthday?: string }
+        const result = await neo4jSource.updateNode(taxId, fields)
         if (result === "not_found") {
           return reply.code(404).send({
             cuit: taxId,
@@ -444,7 +386,6 @@ export default async function graphRoutes(server: FastifyInstance) {
             message: "Tax ID not found in graph",
           })
         }
-
         return { message: "Node updated successfully" }
       } catch (error) {
         request.log.error(error)
@@ -453,9 +394,8 @@ export default async function graphRoutes(server: FastifyInstance) {
     }
   )
 
-  /**
- * Get all relationships of a node up to a given depth
- */
+  // ─── GET /graph/node/:taxId/relationships ────────────────────────────────
+
   server.get<{
     Params: { taxId: string }
     Querystring: { maxDepth?: string }
@@ -464,13 +404,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     {
       schema: {
         summary: "Get all relationships of a node",
-        description: "Returns all nodes and relationships connected to the given Tax ID",
-        params: {
-          type: "object",
-          properties: {
-            taxId: { type: "string" },
-          },
-        },
+        params: { type: "object", properties: { taxId: { type: "string" } } },
         querystring: {
           type: "object",
           properties: {
@@ -513,7 +447,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
 
       try {
-        const results = await neo4jSource.getAllRelationships(taxId, maxDepth)
+        const results = await neo4jSource.findAllRelationships(taxId, maxDepth)
 
         if (!results) {
           return reply.code(404).send({
@@ -531,15 +465,13 @@ export default async function graphRoutes(server: FastifyInstance) {
     }
   )
 
-  /**
- * Get all nodes with inMyBase = true
- */
+  // ─── GET /graph/nodes ────────────────────────────────────────────────────
+
   server.get(
     "/graph/nodes",
     {
       schema: {
         summary: "Get all nodes in my base",
-        description: "Returns all nodes with inMyBase = true with their relationship count",
         response: {
           200: {
             type: "object",
@@ -564,7 +496,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const nodes = await neo4jSource.getMyBaseNodes()
+        const nodes = await neo4jSource.findMyBaseNodes()
         return { nodes }
       } catch (error) {
         request.log.error(error)

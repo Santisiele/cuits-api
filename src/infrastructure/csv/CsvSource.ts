@@ -1,19 +1,22 @@
 import fs from "fs"
 import path from "path"
 import { parse } from "csv-parse/sync"
-import type { ISource, SearchResult } from "@sources/ISource.js"
+import type { ISource } from "@ports/interfaces.js"
+import type { SearchResult } from "@domain/entities.js"
 
 /**
  * Data source adapter for local CSV files.
+ *
  * Supports semicolon-separated files encoded in Latin-1.
+ * Each row must have at minimum a `CUIT` column.
  */
 export class CsvSource implements ISource {
-  name: string
-  private filePath: string
+  readonly name: string
+  private readonly filePath: string
 
   /**
-   * @param name - Unique identifier for this source
-   * @param filePath - Absolute or relative path to the CSV file
+   * @param name - Unique identifier for this source (e.g. "csv-poseidon")
+   * @param filePath - Absolute path to the CSV file
    */
   constructor(name: string, filePath: string) {
     this.name = name
@@ -21,11 +24,12 @@ export class CsvSource implements ISource {
   }
 
   /**
-   * Searches for a CUIT in the CSV file.
-   * @param cuit - The CUIT to search for
-   * @returns Array of results where the CUIT was found
+   * Searches for a Tax ID in the CSV file.
+   * Reads and parses the file on every call (suitable for small files).
+   *
+   * @param taxId - The CUIT to search for
    */
-  async search(cuit: string): Promise<SearchResult[]> {
+  async search(taxId: string): Promise<SearchResult[]> {
     const content = fs.readFileSync(this.filePath, { encoding: "latin1" })
 
     const records = parse(content, {
@@ -33,16 +37,14 @@ export class CsvSource implements ISource {
       columns: true,
       skip_empty_lines: true,
       trim: true,
-    })
+    }) as Record<string, string>[]
 
     const fileName = path.basename(this.filePath)
 
-    const rows = records as Record<string, string>[]
-
-    return rows
-      .filter((row) => row["CUIT"] === cuit)
+    return records
+      .filter((row) => row["CUIT"] === taxId)
       .map((row) => ({
-        cuit,
+        cuit: taxId,
         source: this.name,
         file: fileName,
         data: {

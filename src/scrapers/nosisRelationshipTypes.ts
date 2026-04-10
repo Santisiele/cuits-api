@@ -1,6 +1,6 @@
 /**
- * Maps Nosis internal relationship type codes to human-readable names.
- * New codes are added as they are discovered.
+ * Maps Nosis internal relationship type codes to human-readable English names.
+ * Extend this record as new codes are discovered.
  */
 export const RELATIONSHIP_TYPES: Record<number, string> = {
   1: "Principal",
@@ -21,12 +21,13 @@ export const RELATIONSHIP_TYPES: Record<number, string> = {
   1003: "Brother",
   1004: "Sister",
   1005: "Cousin",
-  1006: "Friend"
+  1006: "Friend",
 }
 
 /**
- * Returns the human-readable name for a relationship type code.
- * Falls back to the raw code if unknown.
+ * Returns the human-readable name for a Nosis relationship type code.
+ * Falls back to `"Unknown (code)"` if the code is not mapped.
+ *
  * @param code - Nosis relationship type code
  */
 export function getRelationshipTypeName(code: number): string {
