@@ -40,6 +40,8 @@ await server.register(swagger, {
 
 await server.register(swaggerUi, { routePrefix: "/docs" })
 
+console.log("FRONT_ROUTE:", process.env["FRONT_ROUTE"])
+
 await server.register(cors, {
   origin: process.env["FRONT_ROUTE"] ?? "",
   methods: ["GET", "POST", "DELETE", "PATCH"],
