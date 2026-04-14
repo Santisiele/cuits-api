@@ -1,7 +1,9 @@
+import "dotenv/config"
 import Fastify from "fastify"
 import swagger from "@fastify/swagger"
 import swaggerUi from "@fastify/swagger-ui"
 import cors from "@fastify/cors"
+import rateLimit from "@fastify/rate-limit"
 import graphRoutes from "@routes/graph.js"
 import cuitRoutes from "@routes/cuit.js"
 import authRoutes from "@routes/auth.js"
@@ -40,27 +42,44 @@ await server.register(swagger, {
 
 await server.register(swaggerUi, { routePrefix: "/docs" })
 
-console.log("FRONT_ROUTE:", process.env["FRONT_ROUTE"])
+const allowedOrigins = [
+  process.env["FRONT_ROUTE"] ?? "http://localhost:5173",
+  "http://localhost:5173",
+]
+
+console.log("Allowed CORS origins:", allowedOrigins)
 
 await server.register(cors, {
-  origin: process.env["FRONT_ROUTE"] ?? "",
-  methods: ["GET", "POST", "DELETE", "PATCH"],
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true)
+    } else {
+      cb(new Error("Not allowed by CORS"), false)
+    }
+  },
+  methods: ["GET", "POST", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true,
+})
+
+// ─── Rate limiting ────────────────────────────────────────────────────────────
+
+await server.register(rateLimit, {
+  max: 60,
+  timeWindow: "1 minute",
+  errorResponseBuilder: () => ({
+    message: "Demasiadas solicitudes, intentá de nuevo en un minuto",
+  }),
 })
 
 // ─── Public routes (no auth required) ────────────────────────────────────────
 
 await server.register(authRoutes)
 
-// ─── Protected routes (auth middleware scoped only to these) ─────────────────
+// ─── Protected routes ─────────────────────────────────────────────────────────
 
-/**
- * Wraps all protected routes in a scoped plugin so that the auth hooks
- * only apply within this scope and NOT to public routes like /auth/login.
- * Uses fastify-plugin with { skip: false } (default) to keep the scope.
- */
 async function protectedRoutes(instance: FastifyInstance) {
   instance.addHook("preHandler", authMiddleware)
-
   await instance.register(cuitRoutes)
   await instance.register(graphRoutes)
 }
@@ -78,12 +97,12 @@ async function shutdown(): Promise<void> {
 process.on("SIGINT", shutdown)
 process.on("SIGTERM", shutdown)
 
-let targetPort = parseInt(process.env["PORT"] ?? "3000")
-
 // ─── Start ────────────────────────────────────────────────────────────────────
 
+const targetPort = parseInt(process.env["PORT"] ?? "3000")
+
 try {
-  await server.listen({ port: targetPort })
+  await server.listen({ port: targetPort, host: "0.0.0.0" })
   console.log(`Server running at http://localhost:${targetPort}`)
   console.log(`Docs available at http://localhost:${targetPort}/docs`)
 } catch (err) {
