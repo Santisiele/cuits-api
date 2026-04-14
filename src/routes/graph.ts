@@ -1,31 +1,19 @@
 import type { FastifyInstance } from "fastify"
-import { Neo4jSource } from "../sources/Neo4jSource.js"
+import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
+import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
-const DEFAULT_MAX_DEPTH = 3
-const MAX_ALLOWED_DEPTH = 10
-
 /**
- * Validates and parses maxDepth query parameter
- * @param value - Raw string value from query
- * @returns Parsed depth or null if invalid
- */
-function parseMaxDepth(value?: string): number | null {
-  if (!value) return DEFAULT_MAX_DEPTH
-  const parsed = Number(value)
-  if (isNaN(parsed) || parsed < 1 || parsed > MAX_ALLOWED_DEPTH) return null
-  return parsed
-}
-
-/**
- * Graph-based routes for Neo4j queries
+ * Graph-based routes for Neo4j queries.
+ * All routes delegate data access to {@link Neo4jSource} which in turn
+ * uses the {@link Neo4jRepository} — keeping routes thin and testable.
  */
 export default async function graphRoutes(server: FastifyInstance) {
 
-  /**
-   * Search for a Tax ID in the graph database
-   */
+  // ─── GET /graph/cuit/:taxId ───────────────────────────────────────────────
+
   server.get<{
     Params: { taxId: string }
     Querystring: { maxDepth?: string }
@@ -69,6 +57,7 @@ export default async function graphRoutes(server: FastifyInstance) {
         const results = await neo4jSource.search(taxId, maxDepth)
 
         if (results.length === 0) {
+          logCuitSearch(request.username, taxId, false)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
@@ -76,19 +65,17 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
 
+        logCuitSearch(request.username, taxId, true)
         return { cuit: taxId, found: true, results }
       } catch (error) {
         request.log.error(error)
-        return reply.code(500).send({
-          message: "Graph database unavailable",
-        })
+        return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }
   )
 
-  /**
-   * Find path between two Tax IDs in the graph
-   */
+  // ─── GET /graph/path ─────────────────────────────────────────────────────
+
   server.get<{
     Querystring: { from: string; to: string; maxDepth?: string }
   }>(
@@ -116,9 +103,23 @@ export default async function graphRoutes(server: FastifyInstance) {
                 items: {
                   type: "object",
                   properties: {
-                    taxId: { type: "string" },
-                    businessName: { type: "string" },
-                    relationshipType: { type: "string" },
+                    from: {
+                      type: "object",
+                      properties: {
+                        taxId: { type: "string" },
+                        businessName: { type: "string" },
+                        inMyBase: { type: "boolean" },
+                      },
+                    },
+                    to: {
+                      type: "object",
+                      properties: {
+                        taxId: { type: "string" },
+                        businessName: { type: "string" },
+                        inMyBase: { type: "boolean" },
+                      },
+                    },
+                    relationships: { type: "array", items: { type: "string" } },
                   },
                 },
               },
@@ -134,12 +135,320 @@ export default async function graphRoutes(server: FastifyInstance) {
       const { from, to, maxDepth: rawDepth } = request.query
 
       if (from === to) {
-        return reply.code(400).send({
-          message: "From and To Tax IDs must be different",
-        })
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
       }
 
       const maxDepth = parseMaxDepth(rawDepth)
+      if (maxDepth === null) {
+        return reply.code(400).send({
+          message: `Invalid maxDepth. Must be a number between 1 and ${MAX_ALLOWED_DEPTH}`,
+        })
+      }
+
+      try {
+        const path = await neo4jSource.findShortestPath(from, to, maxDepth)
+
+        if (!path) {
+          logPathSearch(request.username, from, to, false)
+          return reply.code(404).send({
+            cuit: from,
+            found: false,
+            message: "No path found between the two Tax IDs",
+          })
+        }
+
+        logPathSearch(request.username, from, to, true)
+        return { found: true, path }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── POST /graph/relationship ────────────────────────────────────────────
+
+  server.post<{
+    Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
+  }>(
+    "/graph/relationship",
+    {
+      schema: {
+        summary: "Add a relationship between two Tax IDs",
+        body: {
+          type: "object",
+          required: ["fromTaxId", "toTaxId", "relationshipType"],
+          properties: {
+            fromTaxId: { type: "string" },
+            toTaxId: { type: "string" },
+            relationshipType: { type: "number" },
+          },
+        },
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              message: { type: "string" },
+              fromTaxId: { type: "string" },
+              toTaxId: { type: "string" },
+              relationshipType: { type: "string" },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          404: { $ref: "NotFoundResponse" },
+          409: { type: "object", properties: { message: { type: "string" } } },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { fromTaxId, toTaxId, relationshipType } = request.body
+
+      if (fromTaxId === toTaxId) {
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
+      }
+
+      const relationshipName = neo4jSource.getRelationshipTypeName(relationshipType)
+      if (!relationshipName) {
+        return reply.code(400).send({
+          message: `Invalid relationship type code: ${relationshipType}. Valid codes: ${neo4jSource.validRelationshipCodes().join(", ")}`,
+        })
+      }
+
+      try {
+        const result = await neo4jSource.addRelationship(fromTaxId, toTaxId, relationshipName)
+
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: fromTaxId,
+            found: false,
+            message: "One or both Tax IDs not found in graph",
+          })
+        }
+
+        if (result === "duplicate") {
+          return reply.code(409).send({
+            message: "Relationship already exists between these two Tax IDs",
+          })
+        }
+
+        logRelationshipAdded(request.username, fromTaxId, toTaxId, relationshipName)
+        return reply.code(201).send({
+          message: "Relationship created successfully",
+          fromTaxId,
+          toTaxId,
+          relationshipType: relationshipName,
+        })
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── DELETE /graph/relationship ──────────────────────────────────────────
+
+  server.delete<{
+    Body: { fromTaxId: string; toTaxId: string; relationshipType: number }
+  }>(
+    "/graph/relationship",
+    {
+      schema: {
+        summary: "Delete a relationship between two Tax IDs",
+        body: {
+          type: "object",
+          required: ["fromTaxId", "toTaxId", "relationshipType"],
+          properties: {
+            fromTaxId: { type: "string" },
+            toTaxId: { type: "string" },
+            relationshipType: { type: "number" },
+          },
+        },
+        response: {
+          200: { type: "object", properties: { message: { type: "string" } } },
+          400: { $ref: "BadResponse" },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { fromTaxId, toTaxId, relationshipType } = request.body
+
+      if (fromTaxId === toTaxId) {
+        return reply.code(400).send({ message: "From and To Tax IDs must be different" })
+      }
+
+      const relationshipName = neo4jSource.getRelationshipTypeName(relationshipType)
+      if (!relationshipName) {
+        return reply.code(400).send({
+          message: `Invalid relationship type code: ${relationshipType}`,
+        })
+      }
+
+      try {
+        const result = await neo4jSource.deleteRelationship(fromTaxId, toTaxId, relationshipName)
+
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: fromTaxId,
+            found: false,
+            message: "Relationship not found",
+          })
+        }
+
+        logRelationshipDeleted(request.username, fromTaxId, toTaxId, relationshipName)
+        return { message: "Relationship deleted successfully" }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/node/:taxId ──────────────────────────────────────────────
+
+  server.get<{ Params: { taxId: string } }>(
+    "/graph/node/:taxId",
+    {
+      schema: {
+        summary: "Get node info by Tax ID",
+        params: { type: "object", properties: { taxId: { type: "string" } } },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              taxId: { type: "string" },
+              businessName: { type: "string" },
+              phone: { type: "string" },
+              email: { type: "string" },
+              birthday: { type: "string" },
+              inMyBase: { type: "boolean" },
+              source: { type: "string" },
+            },
+          },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+      try {
+        const node = await neo4jSource.findNode(taxId)
+        if (!node) {
+          logNodeViewed(request.username, taxId, null)
+          return reply.code(404).send({
+            cuit: taxId,
+            found: false,
+            message: "Tax ID not found in graph",
+          })
+        }
+        logNodeViewed(request.username, taxId, node.businessName)
+        return node
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── PATCH /graph/node/:taxId ────────────────────────────────────────────
+
+  server.patch<{
+    Params: { taxId: string }
+    Body: { phone?: string; email?: string; birthday?: string }
+  }>(
+    "/graph/node/:taxId",
+    {
+      schema: {
+        summary: "Update node fields",
+        params: { type: "object", properties: { taxId: { type: "string" } } },
+        body: {
+          type: "object",
+          properties: {
+            phone: { type: "string" },
+            email: { type: "string" },
+            birthday: { type: "string" },
+          },
+        },
+        response: {
+          200: { type: "object", properties: { message: { type: "string" } } },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+      const { phone, email, birthday } = request.body
+      try {
+        // Filter out undefined values — required by exactOptionalPropertyTypes
+        const fields = Object.fromEntries(
+          Object.entries({ phone, email, birthday }).filter(([, v]) => v !== undefined)
+        ) as { phone?: string; email?: string; birthday?: string }
+        const result = await neo4jSource.updateNode(taxId, fields)
+        if (result === "not_found") {
+          return reply.code(404).send({
+            cuit: taxId,
+            found: false,
+            message: "Tax ID not found in graph",
+          })
+        }
+        logNodeUpdated(request.username, taxId)
+        return { message: "Node updated successfully" }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/node/:taxId/relationships ────────────────────────────────
+
+  server.get<{
+    Params: { taxId: string }
+    Querystring: { maxDepth?: string }
+  }>(
+    "/graph/node/:taxId/relationships",
+    {
+      schema: {
+        summary: "Get all relationships of a node",
+        params: { type: "object", properties: { taxId: { type: "string" } } },
+        querystring: {
+          type: "object",
+          properties: {
+            maxDepth: { type: "string", description: `Maximum depth (default: ${DEFAULT_MAX_DEPTH}, max: ${MAX_ALLOWED_DEPTH})` },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              taxId: { type: "string" },
+              found: { type: "boolean" },
+              results: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    cuit: { type: "string" },
+                    source: { type: "string" },
+                    file: { type: "string" },
+                    data: { type: "object", additionalProperties: true },
+                  },
+                },
+              },
+            },
+          },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { taxId } = request.params
+      const maxDepth = parseMaxDepth(request.query.maxDepth)
 
       if (maxDepth === null) {
         return reply.code(400).send({
@@ -148,22 +457,63 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
 
       try {
-        const path = await neo4jSource.findPath(from, to, maxDepth)
+        const results = await neo4jSource.findAllRelationships(taxId, maxDepth)
 
-        if (!path) {
+        if (!results) {
+          logNodeRelationshipsViewed(request.username, taxId, maxDepth, 0)
           return reply.code(404).send({
-            cuit: from,
+            cuit: taxId,
             found: false,
-            message: "No path found between the two Tax IDs",
+            message: "Tax ID not found in graph",
           })
         }
 
-        return { found: true, path }
+        logNodeRelationshipsViewed(request.username, taxId, maxDepth, results.length)
+        return { taxId, found: true, results }
       } catch (error) {
         request.log.error(error)
-        return reply.code(500).send({
-          message: "Graph database unavailable",
-        })
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/nodes ────────────────────────────────────────────────────
+
+  server.get(
+    "/graph/nodes",
+    {
+      schema: {
+        summary: "Get all nodes in my base",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    source: { type: "string" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const nodes = await neo4jSource.findMyBaseNodes()
+        logMyBaseViewed(request.username, nodes.length)
+        return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }
   )

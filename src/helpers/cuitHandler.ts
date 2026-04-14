@@ -1,66 +1,87 @@
-import type { FastifyReply } from "fastify"
-import type { ISource, SearchResult } from "@sources/ISource.js"
+import type { FastifyInstance } from "fastify"
+import { CsvSource } from "@infrastructure/csv/CsvSource.js"
+import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
+import { CuitSearchService, SourceRegistry, isValidCuit } from "@application/CuitSearchService.js"
+import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
+import path from "path"
+import { fileURLToPath } from "url"
 
-export const CUIT_REGEX = /^\d{2}-\d{8}-\d{1}$/
-
-/**
- * Validates CUIT format
- * @param cuit - CUIT to validate
- * @returns true if valid
- */
-export function isValidCuit(cuit: string): boolean {
-  return CUIT_REGEX.test(cuit)
-}
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 /**
- * Searches for a CUIT across all sources, ignoring individual source failures
- * @param cuit - CUIT to search for
- * @param sources - List of data sources to search
+ * Multi-source CUIT search routes.
+ * Searches across all registered sources (CSV, Neo4j, future sources).
  */
-export async function searchAllSources(
-  cuit: string,
-  sources: ISource[]
-): Promise<{ results: SearchResult[]; failedCount: number }> {
-  const allResults = await Promise.allSettled(
-    sources.map((source) => source.search(cuit))
+export default async function cuitRoutes(server: FastifyInstance) {
+  const registry = new SourceRegistry([
+    new CsvSource("csv-poseidon", path.join(__dirname, "../../sources/Poseidon.csv")),
+    new Neo4jSource(),
+  ])
+
+  const searchService = new CuitSearchService(registry)
+
+  // ─── GET /cuit/:cuit ───────────────────────────────────────────────────────
+
+  server.get<{
+    Params: { cuit: string }
+    Querystring: { maxDepth?: string }
+  }>(
+    "/cuit/:cuit",
+    {
+      schema: {
+        summary: "Search for a CUIT across all sources",
+        params: {
+          type: "object",
+          properties: {
+            cuit: { type: "string", description: "CUIT in format XX-XXXXXXXX-X" },
+          },
+        },
+        querystring: {
+          type: "object",
+          properties: {
+            maxDepth: { type: "string", description: `Maximum graph depth (default: ${DEFAULT_MAX_DEPTH}, max: ${MAX_ALLOWED_DEPTH})` },
+          },
+        },
+        response: {
+          200: { $ref: "SearchResponse" },
+          400: { $ref: "BadResponse" },
+          404: { $ref: "NotFoundResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { cuit } = request.params
+
+      if (!isValidCuit(cuit)) {
+        return reply.code(400).send({
+          message: "Invalid CUIT format. Expected: XX-XXXXXXXX-X",
+        })
+      }
+
+      const maxDepth = parseMaxDepth(request.query.maxDepth)
+      if (maxDepth === null) {
+        return reply.code(400).send({
+          message: `Invalid maxDepth. Must be a number between 1 and ${MAX_ALLOWED_DEPTH}`,
+        })
+      }
+
+      const { results, failedCount } = await searchService.searchAll(cuit, maxDepth)
+
+      if (failedCount === registry.count && results.length === 0) {
+        return reply.code(500).send({ message: "All sources failed" })
+      }
+
+      if (results.length === 0) {
+        return reply.code(404).send({
+          cuit,
+          found: false,
+          message: "CUIT not found in any source",
+        })
+      }
+
+      return { cuit, found: true, results }
+    }
   )
-
-  const results = allResults
-    .filter((r): r is PromiseFulfilledResult<SearchResult[]> => r.status === "fulfilled")
-    .flatMap((r) => r.value)
-
-  const failedCount = allResults.filter((r) => r.status === "rejected").length
-
-  return { results, failedCount }
-}
-
-/**
- * Builds and sends the appropriate response based on search results
- */
-export async function handleCuitSearch(
-  cuit: string,
-  sources: ISource[],
-  reply: FastifyReply
-) {
-  if (!isValidCuit(cuit)) {
-    return reply.code(400).send({
-      message: "Invalid CUIT format. Expected: XX-XXXXXXXX-X",
-    })
-  }
-
-  const { results, failedCount } = await searchAllSources(cuit, sources)
-
-  if (failedCount === sources.length) {
-    return reply.code(500).send({ message: "All sources failed" })
-  }
-
-  if (results.length === 0) {
-    return reply.code(404).send({
-      cuit,
-      found: false,
-      message: "CUIT not found in any source",
-    })
-  }
-
-  return reply.send({ cuit, found: true, results })
 }

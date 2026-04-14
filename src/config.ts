@@ -14,4 +14,10 @@ export const config = {
     user: process.env["NOSIS_USER"] ?? "",
     password: process.env["NOSIS_PASSWORD"] ?? "",
   },
+  auth: {
+    /** Secret used to sign JWTs. Must be a long random string in production. */
+    jwtSecret: process.env["JWT_SECRET"] ?? "change-this-secret-in-production",
+    /** How long a token is valid. Examples: "8h", "1d", "7d" */
+    jwtExpiresIn: (process.env["JWT_EXPIRES_IN"] ?? "1h") as string,
+  },
 } as const
