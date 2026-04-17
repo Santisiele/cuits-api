@@ -93,4 +93,10 @@ export interface IGraphRepository {
    * Returns all valid relationship type codes.
    */
   validRelationshipCodes(): number[]
+
+  /**
+   * Returns all company nodes (taxId starting with 30 or 33, inMyBase = false)
+   * ordered by count of type-1 (Principal) relationships descending.
+   */
+  findCompanyNodes(): Promise<CuitNodeSummary[]>
 }

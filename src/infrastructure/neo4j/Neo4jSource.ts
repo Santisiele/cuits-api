@@ -75,4 +75,8 @@ export class Neo4jSource implements ISource {
   validRelationshipCodes(): number[] {
     return this.repository.validRelationshipCodes()
   }
+
+  findCompanyNodes(): Promise<CuitNodeSummary[]> {
+    return this.repository.findCompanyNodes()
+  }
 }
