@@ -124,4 +124,18 @@ export const Queries = {
     MATCH (b:CUIT {id: $toTaxId})
     MERGE (a)-[r:RELATED_TO {type: $relationshipType}]->(b)
   `,
+  /** Find all company nodes (taxId starting with 30 or 33, inMyBase = false)
+   *  ordered by count of direct relationships with inMyBase nodes descending.
+   */
+  FIND_COMPANIES: `
+    MATCH (c:CUIT)
+    WHERE (c.id STARTS WITH '30' OR c.id STARTS WITH '33')
+      AND (c.inMyBase IS NULL OR c.inMyBase = false)
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT {inMyBase: true})
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.source        AS source,
+           count(DISTINCT related) AS relationshipCount
+    ORDER BY relationshipCount DESC
+  `,
 } as const

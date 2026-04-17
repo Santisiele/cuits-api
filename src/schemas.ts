@@ -43,6 +43,13 @@ export const schemas = {
       message: { type: "string" },
     },
   },
+  UnauthorizedResponse: {
+    $id: "UnauthorizedResponse",
+    type: "object",
+    properties: {
+      message: { type: "string" },
+    },
+  },
   ServerErrorResponse: {
     $id: "ServerErrorResponse",
     type: "object",

@@ -131,6 +131,16 @@ export function logMyBaseViewed(username: string, nodeCount: number): void {
   })
 }
 
+/** Logs the companies list being viewed. */
+export function logCompaniesViewed(username: string, nodeCount: number): void {
+  activityLogger.info({
+    event: "companies_viewed",
+    username,
+    nodeCount,
+    message: `${username} consultó empresas a buscar (${nodeCount} empresas)`,
+  })
+}
+
 /** Logs a node being updated. */
 export function logNodeUpdated(username: string, taxId: string): void {
   activityLogger.info({
