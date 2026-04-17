@@ -1,14 +1,12 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
 /**
  * Graph-based routes for Neo4j queries.
- * All routes delegate data access to {@link Neo4jSource} which in turn
- * uses the {@link Neo4jRepository} — keeping routes thin and testable.
  */
 export default async function graphRoutes(server: FastifyInstance) {
 
@@ -39,6 +37,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           200: { $ref: "SearchResponse" },
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -127,6 +126,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           },
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -197,6 +197,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
           409: { type: "object", properties: { message: { type: "string" } } },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -268,6 +269,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           200: { type: "object", properties: { message: { type: "string" } } },
           400: { $ref: "BadResponse" },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -328,6 +330,7 @@ export default async function graphRoutes(server: FastifyInstance) {
             },
           },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -375,6 +378,7 @@ export default async function graphRoutes(server: FastifyInstance) {
         response: {
           200: { type: "object", properties: { message: { type: "string" } } },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -383,7 +387,6 @@ export default async function graphRoutes(server: FastifyInstance) {
       const { taxId } = request.params
       const { phone, email, birthday } = request.body
       try {
-        // Filter out undefined values — required by exactOptionalPropertyTypes
         const fields = Object.fromEntries(
           Object.entries({ phone, email, birthday }).filter(([, v]) => v !== undefined)
         ) as { phone?: string; email?: string; birthday?: string }
@@ -442,6 +445,7 @@ export default async function graphRoutes(server: FastifyInstance) {
             },
           },
           404: { $ref: "NotFoundResponse" },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -502,6 +506,7 @@ export default async function graphRoutes(server: FastifyInstance) {
               },
             },
           },
+          401: { $ref: "UnauthorizedResponse" },
           500: { $ref: "ServerErrorResponse" },
         },
       },
@@ -510,6 +515,49 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const nodes = await neo4jSource.findMyBaseNodes()
         logMyBaseViewed(request.username, nodes.length)
+        return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/companies ─────────────────────────────────────────────────
+
+  server.get(
+    "/graph/companies",
+    {
+      schema: {
+        summary: "Get all company nodes to search",
+        description: "Returns nodes with taxId starting with 30 or 33 and inMyBase = false, ordered by Principal relationship count",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    source: { type: "string" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const nodes = await neo4jSource.findCompanyNodes()
+        logCompaniesViewed(request.username, nodes.length)
         return { nodes }
       } catch (error) {
         request.log.error(error)

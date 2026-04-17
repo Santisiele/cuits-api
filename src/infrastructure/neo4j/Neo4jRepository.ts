@@ -273,6 +273,22 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  /** @inheritdoc */
+  async findCompanyNodes(): Promise<CuitNodeSummary[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_COMPANIES)
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        source: String(record.get("source") ?? ""),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Relationship types ────────────────────────────────────────────────────
 
   /** @inheritdoc */

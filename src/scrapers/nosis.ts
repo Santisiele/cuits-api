@@ -108,8 +108,8 @@ export class NosisScraper {
           cuitPadre: "",
           idVinculoPadre: "1",
           cuit: taxId,
-          maxNiveles: "2",
-          topeNodos: "49",
+          maxNiveles: "3",
+          topeNodos: "200",
         })
       )
     )
