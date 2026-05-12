@@ -4,6 +4,7 @@
  */
 export const RELATIONSHIP_TYPES: Record<number, string> = {
   1: "Principal",
+  3: "Partner",
   4: "Check Signer",
   5: "Parent",
   6: "Child",

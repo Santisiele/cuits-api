@@ -49,7 +49,7 @@ function sleep(ms: number): Promise<void> {
  * @param startRow - 1-based row index to start from (excluding header)
  * @param count - Number of CUITs to process
  */
-async function loadFromXlsx(filePath: string, startRow: number, count: number): Promise<void> {
+async function loadFromXlsx(filePath: string, startRow: number, count: number, sourceName: string): Promise<void> {
   const workbook = XLSX.readFile(filePath)
   const sheet = workbook.Sheets[workbook.SheetNames[0]!]!
   const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet)
@@ -79,7 +79,7 @@ async function loadFromXlsx(filePath: string, startRow: number, count: number): 
         await session.run(Queries.MERGE_BASE_NODE, {
           id: cuitClean,
           name,
-          source: "xlsx-poseidon",
+          source: sourceName,
         })
       } finally {
         await session.close()
@@ -112,6 +112,7 @@ async function loadFromXlsx(filePath: string, startRow: number, count: number): 
 const filePath = process.argv[2] ?? path.join(__dirname, "../../sources/Filled-dbPoseidon.xlsx")
 const startRow = Number(process.argv[3] ?? 1)
 const count = Number(process.argv[4] ?? 10)
+const sourceName = process.argv[5] ?? "poseidon"
 
 if (isNaN(startRow) || startRow < 1) {
   logger.error("startRow must be a positive number")
@@ -123,7 +124,7 @@ if (isNaN(count) || count < 1) {
   process.exit(1)
 }
 
-loadFromXlsx(filePath, startRow, count).catch((err) => {
+loadFromXlsx(filePath, startRow, count, sourceName).catch((err) => {
   logger.error(err)
   process.exit(1)
 })
