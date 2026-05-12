@@ -79,12 +79,26 @@ export class Neo4jRepository implements IGraphRepository {
       return result.records.map((record) => ({
         taxId: String(record.get("taxId") ?? ""),
         businessName: String(record.get("businessName") ?? ""),
-        source: String(record.get("source") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
       }))
     } finally {
       await session.close()
     }
+  }
+
+
+  /**
+   * Normalises the "sources" field from Neo4j into a string array.
+   * Handles three cases:
+   *  - Array (post-migration): returned as-is
+   *  - String (pre-migration legacy): wrapped into a single-element array
+   *  - null/undefined: empty array
+   */
+  private normalizeSources(value: unknown): string[] {
+    if (Array.isArray(value)) return value.map((s) => String(s)).filter(Boolean)
+    if (typeof value === "string" && value.length > 0) return [value]
+    return []
   }
 
   // ─── Path ──────────────────────────────────────────────────────────────────
@@ -281,7 +295,7 @@ export class Neo4jRepository implements IGraphRepository {
       return result.records.map((record) => ({
         taxId: String(record.get("taxId") ?? ""),
         businessName: String(record.get("businessName") ?? ""),
-        source: String(record.get("source") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
       }))
     } finally {
@@ -314,7 +328,7 @@ export class Neo4jRepository implements IGraphRepository {
       email: props["email"] != null ? String(props["email"]) : null,
       birthday: props["birthday"] != null ? String(props["birthday"]) : null,
       inMyBase: Boolean(props["inMyBase"] ?? false),
-      source: props["source"] != null ? String(props["source"]) : null,
+      sources: this.normalizeSources(props["sources"] ?? props["source"]),
     }
   }
 

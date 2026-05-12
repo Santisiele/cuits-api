@@ -15,7 +15,8 @@ export interface CuitNode {
   email: string | null
   birthday: string | null
   inMyBase: boolean
-  source: string | null
+  /** All sources that contributed this node (e.g. ["poseidon", "seniorHome"]). */
+  sources: string[]
 }
 
 /**
@@ -34,7 +35,8 @@ export interface CuitNodeUpdate {
 export interface CuitNodeSummary {
   taxId: string
   businessName: string
-  source: string
+  /** All sources that contributed this node. */
+  sources: string[]
   relationshipCount: number
 }
 
