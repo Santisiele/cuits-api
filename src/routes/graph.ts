@@ -326,7 +326,7 @@ export default async function graphRoutes(server: FastifyInstance) {
               email: { type: "string" },
               birthday: { type: "string" },
               inMyBase: { type: "boolean" },
-              source: { type: "string" },
+              sources: { type: "array", items: { type: "string" } },
             },
           },
           404: { $ref: "NotFoundResponse" },
@@ -436,7 +436,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                   type: "object",
                   properties: {
                     cuit: { type: "string" },
-                    source: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
                     file: { type: "string" },
                     data: { type: "object", additionalProperties: true },
                   },
@@ -499,7 +499,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                   properties: {
                     taxId: { type: "string" },
                     businessName: { type: "string" },
-                    source: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
                   },
                 },
@@ -542,7 +542,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                   properties: {
                     taxId: { type: "string" },
                     businessName: { type: "string" },
-                    source: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
                   },
                 },

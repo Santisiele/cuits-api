@@ -29,7 +29,7 @@ export const Queries = {
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
     RETURN c.id            AS taxId,
            c.businessName  AS businessName,
-           c.source        AS source,
+           c.sources       AS sources,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName
   `,
@@ -94,11 +94,24 @@ export const Queries = {
     CREATE (a)-[:RELATED_TO {type: $relationshipType, source: "manual", createdAt: datetime()}]->(b)
   `,
 
-  /** Delete a specific relationship between two nodes. */
+  /** Delete a specific relationship between two nodes.
+   *  After deletion, orphaned nodes that are not inMyBase are also removed.
+   */
   DELETE_RELATIONSHIP: `
     MATCH (a:CUIT {id: $fromTaxId})-[r:RELATED_TO {type: $relationshipType}]->(b:CUIT {id: $toTaxId})
     DELETE r
-    RETURN count(r) AS deleted
+    WITH a, b
+    FOREACH (_ IN CASE
+      WHEN NOT (a)-[:RELATED_TO]-() AND (a.inMyBase IS NULL OR a.inMyBase = false)
+      THEN [1] ELSE [] END |
+      DETACH DELETE a
+    )
+    FOREACH (_ IN CASE
+      WHEN NOT (b)-[:RELATED_TO]-() AND (b.inMyBase IS NULL OR b.inMyBase = false)
+      THEN [1] ELSE [] END |
+      DETACH DELETE b
+    )
+    RETURN 1 AS deleted
   `,
 
   // ─── Scripts (used by loadCuits / loadFromXlsx) ───────────────────────────
@@ -110,12 +123,18 @@ export const Queries = {
     ON MATCH  SET c.businessName = COALESCE(c.businessName, $businessName)
   `,
 
-  /** Upsert a node marking it as inMyBase. */
+  /** Upsert a node marking it as inMyBase, appending the source to the
+   *  sources array if not already present (idempotent re-runs are safe).
+   */
   MERGE_BASE_NODE: `
     MERGE (c:CUIT {id: $id})
     SET c.businessName = $name,
         c.inMyBase     = true,
-        c.source       = $source
+        c.sources      = CASE
+          WHEN c.sources IS NULL THEN [$source]
+          WHEN $source IN c.sources THEN c.sources
+          ELSE c.sources + $source
+        END
   `,
 
   /** Upsert a relationship between two nodes. */
@@ -134,7 +153,7 @@ export const Queries = {
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT {inMyBase: true})
     RETURN c.id            AS taxId,
            c.businessName  AS businessName,
-           c.source        AS source,
+           c.sources       AS sources,
            count(DISTINCT related) AS relationshipCount
     ORDER BY relationshipCount DESC
   `,
