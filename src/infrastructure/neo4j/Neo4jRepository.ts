@@ -13,6 +13,8 @@ import type {
   AddRelationshipResult,
   DeleteRelationshipResult,
   UpdateNodeResult,
+  GraphRelationship,
+  LoadableNodeAttributes,
 } from "@domain/entities.js"
 
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
@@ -29,9 +31,9 @@ interface Neo4jSegment {
  * Neo4j adapter implementing the {@link IGraphRepository} port.
  *
  * Responsibilities:
- * - Execute Cypher queries via the shared driver singleton
- * - Map raw Neo4j records to domain entities
- * - Handle session lifecycle (always close in finally blocks)
+ *  - Execute Cypher queries via the shared driver singleton
+ *  - Map raw Neo4j records to domain entities
+ *  - Handle session lifecycle (always close in finally blocks)
  *
  * This class contains NO business logic — only data access and mapping.
  */
@@ -43,7 +45,6 @@ export class Neo4jRepository implements IGraphRepository {
 
   // ─── Node ─────────────────────────────────────────────────────────────────
 
-  /** @inheritdoc */
   async findNode(taxId: string): Promise<CuitNode | null> {
     const session = this.session()
     try {
@@ -55,7 +56,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async updateNode(taxId: string, fields: CuitNodeUpdate): Promise<UpdateNodeResult> {
     const session = this.session()
     try {
@@ -71,7 +71,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async findMyBaseNodes(): Promise<CuitNodeSummary[]> {
     const session = this.session()
     try {
@@ -87,33 +86,63 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  // ─── Ingestion (LoaderService) ────────────────────────────────────────────
 
-  /**
-   * Normalises the "sources" field from Neo4j into a string array.
-   * Handles three cases:
-   *  - Array (post-migration): returned as-is
-   *  - String (pre-migration legacy): wrapped into a single-element array
-   *  - null/undefined: empty array
-   */
-  private normalizeSources(value: unknown): string[] {
-    if (Array.isArray(value)) return value.map((s) => String(s)).filter(Boolean)
-    if (typeof value === "string" && value.length > 0) return [value]
-    return []
+  async upsertBaseNode(
+    taxId: string,
+    businessName: string,
+    source: string,
+    attributes: LoadableNodeAttributes
+  ): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.MERGE_BASE_NODE, {
+        id: taxId,
+        name: businessName,
+        source,
+        phone:     attributes.phone     ?? null,
+        email:     attributes.email     ?? null,
+        entryDate: attributes.entryDate ?? null,
+        exitDate:  attributes.exitDate  ?? null,
+        loadedAt:  attributes.loadedAt  ?? null,
+      })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async upsertEnrichmentNode(taxId: string, businessName: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.MERGE_ENRICHMENT_NODE, { taxId, businessName })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async mergeRelationship(rel: GraphRelationship): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.MERGE_RELATIONSHIP, {
+        fromTaxId: rel.fromTaxId,
+        toTaxId: rel.toTaxId,
+        relationshipType: rel.relationshipType,
+      })
+    } finally {
+      await session.close()
+    }
   }
 
   // ─── Path ──────────────────────────────────────────────────────────────────
 
-  /** @inheritdoc */
   async findPathsToBase(taxId: string, maxDepth: number): Promise<SearchResult[] | null> {
     const session = this.session()
     try {
-      // First verify the node exists
       const nodeResult = await session.run(Queries.FIND_NODE, { taxId })
       if (nodeResult.records.length === 0) return null
 
       const node = nodeResult.records[0]!.get("c").properties
 
-      // If the node itself is in our base, return it directly
       if (node.inMyBase) {
         return [{
           cuit: taxId,
@@ -154,7 +183,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async findShortestPath(
     fromTaxId: string,
     toTaxId: string,
@@ -207,7 +235,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null> {
     const session = this.session()
     try {
@@ -242,7 +269,6 @@ export class Neo4jRepository implements IGraphRepository {
 
   // ─── Relationship ──────────────────────────────────────────────────────────
 
-  /** @inheritdoc */
   async addRelationship(
     fromTaxId: string,
     toTaxId: string,
@@ -267,7 +293,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async deleteRelationship(
     fromTaxId: string,
     toTaxId: string,
@@ -287,7 +312,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /** @inheritdoc */
   async findCompanyNodes(): Promise<CuitNodeSummary[]> {
     const session = this.session()
     try {
@@ -305,12 +329,10 @@ export class Neo4jRepository implements IGraphRepository {
 
   // ─── Relationship types ────────────────────────────────────────────────────
 
-  /** @inheritdoc */
   getRelationshipTypeName(code: number): string | null {
     return RELATIONSHIP_TYPES[code] ?? null
   }
 
-  /** @inheritdoc */
   validRelationshipCodes(): number[] {
     return Object.keys(RELATIONSHIP_TYPES).map(Number)
   }
@@ -318,8 +340,18 @@ export class Neo4jRepository implements IGraphRepository {
   // ─── Mapping helpers ───────────────────────────────────────────────────────
 
   /**
-   * Maps raw Neo4j node properties to the {@link CuitNode} domain entity.
+   * Normalises the "sources" field from Neo4j into a string array.
+   * Handles three cases:
+   *  - Array (post-migration): returned as-is
+   *  - String (pre-migration legacy): wrapped into a single-element array
+   *  - null/undefined: empty array
    */
+  private normalizeSources(value: unknown): string[] {
+    if (Array.isArray(value)) return value.map((s) => String(s)).filter(Boolean)
+    if (typeof value === "string" && value.length > 0) return [value]
+    return []
+  }
+
   private mapNode(props: Record<string, unknown>): CuitNode {
     return {
       taxId: String(props["id"] ?? ""),
@@ -332,21 +364,6 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  /**
-   * Converts a list of Neo4j path segments into an ordered array of
-   * {@link PathHop} objects.
-   *
-   * **Bug fix:** The previous implementation included the start node as
-   * `path[0]` with no relationship type, and left the last node's
-   * `relationshipType` empty. This method corrects both issues:
-   *
-   * - `path[0]` is the start node itself (skipped — already known to the caller)
-   * - Each subsequent hop carries the relationship that leads TO it
-   * - The last node's relationship is read from the last segment's relationship
-   *
-   * Resulting array: `[hop1, hop2, ..., hopN]` where `hop1.relationshipType`
-   * is the type of the edge from the start node to hop1, and so on.
-   */
   private mapSegmentsToHops(segments: Neo4jSegment[]): PathHop[] {
     return segments.map((segment) => ({
       taxId: String(segment.end.properties["id"] ?? ""),

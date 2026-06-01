@@ -72,6 +72,7 @@ export const RELATIONSHIP_TYPES: Record<number, string> = {
   1004: "Sister",
   1005: "Cousin",
   1006: "Friend",
+  2000: "Responsible",
 }
 
 /**
