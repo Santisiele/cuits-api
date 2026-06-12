@@ -350,7 +350,6 @@ export default async function graphRoutes(server: FastifyInstance) {
             message: "Tax ID not found in graph",
           })
         }
-        console.log(node)
         logNodeViewed(request.username, taxId, node.businessName, node.entryDate, node.exitDate, node.loadedAt)
         return node
       } catch (error) {

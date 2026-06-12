@@ -4,7 +4,7 @@ import type { LoadableRow, LoadableNode } from "@domain/entities.js"
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const SOURCE_RESIDENT = "Residente Senior Home"
+const SOURCE_RESIDENT = "Residentes Senior Home"
 const SOURCE_RESPONSIBLE = "Responsables Senior Home"
 const RELATIONSHIP_TYPE = "Responsible"
 
