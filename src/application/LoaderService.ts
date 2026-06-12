@@ -34,9 +34,11 @@ interface LoaderServiceOptions {
  *  - Persist inter-node relationships explicitly declared by the loader
  *  - Aggregate per-row outcomes for the optional writer
  *
- * This class is the heart of the loading pipeline and is the only place
- * where the steps are sequenced. Loaders and the enricher don't know about
- * each other — they only talk to this service through their interfaces.
+ * Throttling: a randomised delay in [minDelayMs, maxDelayMs] is applied
+ * BETWEEN every pair of successive enricher calls — both within a row
+ * (after each node that actually hit the enricher) AND between rows.
+ * This is to avoid tripping rate-limit / anti-scraping heuristics on the
+ * upstream provider, regardless of how many nodes a single row contains.
  *
  * Concrete adapters are injected via the constructor (DI), making the
  * service trivially testable with mocks.
@@ -80,7 +82,7 @@ export class LoaderService {
       const outcome = await this.processRow(row)
       outcomes.push(outcome)
 
-      if (i < rows.length - 1) await this.sleepRandom()
+      if (i < rows.length - 1) await this.sleepRandom("before next row")
     }
 
     if (this.writer) {
@@ -98,15 +100,25 @@ export class LoaderService {
    * resolved nodes, scrapes their relationship graphs, and finally creates
    * the inter-node relationships the loader requested.
    *
-   * The processing is **sequential** within a row — if one node fails, the
-   * row's outcome reflects which nodes were loaded and which weren't.
+   * Throttling within a row: after every node whose processing actually
+   * reached the enricher (i.e. it wasn't skipped by a dependency rule),
+   * we sleep before processing the next one. This is symmetric with the
+   * inter-row sleep so the upstream provider sees evenly-spaced traffic
+   * regardless of row size.
    */
   private async processRow(row: LoadableRow): Promise<RowLoadOutcome> {
     const nodeOutcomes: NodeLoadOutcome[] = []
     /** roleKey → resolved CUIT, used to resolve inter-node relationships. */
     const resolvedByRole = new Map<string, string>()
 
-    for (const [roleKey, node] of Object.entries(row.nodes)) {
+    const entries = Object.entries(row.nodes)
+    /** Tracks whether a previous node in this row actually called the enricher,
+     *  so we can decide whether to sleep before the current one. */
+    let lastNodeHitEnricher = false
+
+    for (let i = 0; i < entries.length; i++) {
+      const [roleKey, node] = entries[i]!
+
       // Respect role-key dependencies: skip nodes whose prerequisite role
       // wasn't loaded in this row. This lets loaders express "load B only
       // if A succeeded" without putting source-specific policy here.
@@ -119,7 +131,13 @@ export class LoaderService {
           status: "skipped_due_to_dependency",
           notes: `Skipped because "${node.requiresRole}" was not loaded`,
         })
+        // No enricher call happened — no throttling needed.
         continue
+      }
+
+      // Throttle between consecutive enricher hits within the same row.
+      if (lastNodeHitEnricher) {
+        await this.sleepRandom(`before role "${roleKey}"`)
       }
 
       const outcome = await this.processNode(roleKey, node, resolvedByRole)
@@ -127,6 +145,9 @@ export class LoaderService {
       if (outcome.status === "loaded" && outcome.resolvedTaxId) {
         resolvedByRole.set(roleKey, outcome.resolvedTaxId)
       }
+      // Any outcome other than the early-skip above implies we called the
+      // enricher at least once for this node.
+      lastNodeHitEnricher = true
     }
 
     // Create the inter-node relationships declared by the loader,
@@ -205,9 +226,6 @@ export class LoaderService {
       }
       logger.info(`  ✓ Loaded ${taxId} (${graph.nodes.length} nodes, ${graph.relationships.length} rels)`)
 
-      // Keep resolvedSoFar in sync so callers can use it (unused here, but
-      // we surface it for potential extension where the enricher's nodes
-      // need to be matched against role keys).
       void resolvedSoFar
       return { roleKey, status: "loaded", resolvedTaxId: taxId }
     } catch (err) {
@@ -237,10 +255,13 @@ export class LoaderService {
    * Pauses for a random duration in [minDelayMs, maxDelayMs].
    * Mimics human-like browsing intervals to avoid tripping anti-scraping
    * heuristics on the upstream provider.
+   *
+   * @param reason - Free-text reason logged alongside the wait, useful for
+   *                 disambiguating intra-row vs inter-row pauses in the log.
    */
-  private sleepRandom(): Promise<void> {
+  private sleepRandom(reason: string): Promise<void> {
     const ms = Math.floor(Math.random() * (this.maxDelayMs - this.minDelayMs + 1)) + this.minDelayMs
-    logger.info(`  ... waiting ${(ms / 1000).toFixed(1)}s before next row`)
+    logger.info(`  ... waiting ${(ms / 1000).toFixed(1)}s ${reason}`)
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }

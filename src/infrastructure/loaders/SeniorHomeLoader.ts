@@ -13,12 +13,43 @@ const RESPONSIBLE_KEY = "responsible"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Reads a cell as a trimmed string, formatting Excel-native Dates as dd/mm/yyyy. */
+/** Formats a Date as dd/mm/yyyy. */
+function formatDate(d: Date): string {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`
+}
+
+/**
+ * Heuristic: returns true if the value looks like an Excel serial date
+ * (a number between 25569 = 1970-01-01 and 2958465 = 9999-12-31).
+ * The lower bound avoids treating small numeric IDs as dates by mistake.
+ */
+function looksLikeExcelDateSerial(n: number): boolean {
+  return Number.isFinite(n) && n >= 25569 && n <= 2958465
+}
+
+/**
+ * Converts an Excel serial date number into a JavaScript Date.
+ * Excel days are counted from 1900-01-01, but with a 1900 leap-year bug
+ * that we offset by using the Lotus epoch (25569 days from Unix epoch).
+ */
+function excelSerialToDate(serial: number): Date {
+  const utcMs = Math.round((serial - 25569) * 86400 * 1000)
+  return new Date(utcMs)
+}
+
+/**
+ * Reads a cell as a trimmed string, formatting any value that represents
+ * a date (Excel-native Date OR Excel serial-number date) as dd/mm/yyyy.
+ *
+ * Excel sometimes returns date cells as numbers (e.g. 45658.99...) when
+ * the workbook's cell type isn't normalised. We detect those by range and
+ * convert them properly.
+ */
 function cellAsString(raw: unknown): string {
   if (raw == null) return ""
-  if (raw instanceof Date) {
-    const d = raw
-    return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`
+  if (raw instanceof Date) return formatDate(raw)
+  if (typeof raw === "number" && looksLikeExcelDateSerial(raw)) {
+    return formatDate(excelSerialToDate(raw))
   }
   return String(raw).trim()
 }
@@ -58,13 +89,8 @@ function buildAttributes(input: Partial<Record<string, string>>): import("@domai
  *  - `resident`    — looked up by DocumentoResidente
  *  - `responsible` — looked up by CUIT (preferred) or DNI (fallback)
  *
- * The loader declares an inter-node relationship `responsible → resident`
- * of type "Responsible". The {@link LoaderService} will create this
- * relationship only when both nodes were actually loaded.
- *
- * The loader does NOT decide whether to skip the responsible if the
- * resident fails — that's the service's job. The loader only describes the
- * row's structure and lets the service apply its policy.
+ * The responsible node declares `requiresRole: RESIDENT_KEY`, so the
+ * LoaderService will skip it entirely if the resident lookup fails.
  *
  * Special behaviour: if the input row has no responsible document at all,
  * the `responsible` node is simply omitted from the row, so the service
@@ -97,11 +123,6 @@ export class SeniorHomeLoader implements ISourceLoader {
 
   // ─── Column indexing ──────────────────────────────────────────────────────
 
-  /**
-   * Maps each expected column header to its column index in the input file,
-   * supporting both exact matches and "starts with" for variable suffixes
-   * like "Fecha de ingreso(fecha_de_ingreso)".
-   */
   private indexColumns(headerRow: string[]): ColumnIndex {
     const norm = headerRow.map((h) => String(h).trim().toLowerCase())
     const exact = (name: string) => norm.findIndex((h) => h === name.toLowerCase())
@@ -134,13 +155,6 @@ export class SeniorHomeLoader implements ISourceLoader {
 
   // ─── Row mapping ──────────────────────────────────────────────────────────
 
-  /**
-   * Converts a single raw row into a structured {@link LoadableRow}.
-   *
-   * The responsible node is included only if the row carries at least one
-   * usable document (CUIT or DNI). The relationship is unconditionally
-   * declared — the service will skip it if the responsible isn't loaded.
-   */
   private mapRow(row: unknown[], idx: ColumnIndex, rowNumber: number, loadedAt: string): LoadableRow {
     const residentDoc = digitsOnly(row[idx.documentoResidente])
 

@@ -325,6 +325,9 @@ export default async function graphRoutes(server: FastifyInstance) {
               phone: { type: "string" },
               email: { type: "string" },
               birthday: { type: "string" },
+              entryDate: { type: "string" },
+              exitDate: { type: "string" },
+              loadedAt: { type: "string" },
               inMyBase: { type: "boolean" },
               sources: { type: "array", items: { type: "string" } },
             },
@@ -340,14 +343,15 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const node = await neo4jSource.findNode(taxId)
         if (!node) {
-          logNodeViewed(request.username, taxId, null)
+          logNodeViewed(request.username, taxId, null,null,null,null)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
             message: "Tax ID not found in graph",
           })
         }
-        logNodeViewed(request.username, taxId, node.businessName)
+        console.log(node)
+        logNodeViewed(request.username, taxId, node.businessName, node.entryDate, node.exitDate, node.loadedAt)
         return node
       } catch (error) {
         request.log.error(error)

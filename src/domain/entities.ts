@@ -14,7 +14,10 @@ export interface CuitNode {
   phone: string | null
   email: string | null
   birthday: string | null
-  inMyBase: boolean
+  inMyBase: boolean,
+  entryDate: string | null,
+  exitDate: string | null,
+  loadedAt: string | null,
   /** All sources that contributed this node (e.g. ["poseidon", "seniorHome"]). */
   sources: string[]
 }

@@ -4,3 +4,4 @@ docs/*
 .env
 data/users.json
 logs/
+output/*

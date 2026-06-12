@@ -360,6 +360,9 @@ export class Neo4jRepository implements IGraphRepository {
       email: props["email"] != null ? String(props["email"]) : null,
       birthday: props["birthday"] != null ? String(props["birthday"]) : null,
       inMyBase: Boolean(props["inMyBase"] ?? false),
+      entryDate: props["entryDate"] != null ? String(props["entryDate"]) : null,
+      exitDate: props["exitDate"] != null ? String(props["exitDate"]) : null,
+      loadedAt: props["loadedAt"] != null ? String(props["loadedAt"]) : null,
       sources: this.normalizeSources(props["sources"] ?? props["source"]),
     }
   }
