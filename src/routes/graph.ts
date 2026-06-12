@@ -364,7 +364,7 @@ export default async function graphRoutes(server: FastifyInstance) {
 
   server.patch<{
     Params: { taxId: string }
-    Body: { phone?: string; email?: string; birthday?: string }
+    Body: { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string }
   }>(
     "/graph/node/:taxId",
     {
@@ -377,6 +377,9 @@ export default async function graphRoutes(server: FastifyInstance) {
             phone: { type: "string" },
             email: { type: "string" },
             birthday: { type: "string" },
+            entryDate: { type: "string" },
+            exitDate: { type: "string" },
+            loadedAt: { type: "string" },
           },
         },
         response: {
@@ -389,11 +392,11 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { taxId } = request.params
-      const { phone, email, birthday } = request.body
+      const { phone, email, birthday, entryDate, exitDate, loadedAt } = request.body
       try {
         const fields = Object.fromEntries(
           Object.entries({ phone, email, birthday }).filter(([, v]) => v !== undefined)
-        ) as { phone?: string; email?: string; birthday?: string }
+        ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string }
         const result = await neo4jSource.updateNode(taxId, fields)
         if (result === "not_found") {
           return reply.code(404).send({
