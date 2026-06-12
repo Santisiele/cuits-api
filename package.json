@@ -9,7 +9,9 @@
     "dev": "tsx src/index.ts",
     "generate:docs": "typedoc --entryPointStrategy expand --out docs ./src",
     "nosis:test": "tsx src/scripts/testNosis.ts",
-    "load:xlsx": "tsx src/scripts/loadFromXlsx.ts",
+    "load:poseidon": "tsx src/scripts/loadFromPoseidon.ts",
+    "load:seniorhome": "tsx src/scripts/loadFromSeniorHome.ts",
+    "scrape:xlsx": "tsx src/scripts/scrapeToXlsx.ts",
     "create:user": "tsx src/scripts/createUser.ts"
   },
   "keywords": [],

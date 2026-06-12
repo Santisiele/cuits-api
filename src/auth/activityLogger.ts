@@ -99,13 +99,28 @@ export function logRelationshipDeleted(username: string, fromTaxId: string, toTa
 }
 
 /** Logs a node being viewed. */
-export function logNodeViewed(username: string, taxId: string, businessName: string | null): void {
+export function logNodeViewed(
+  username: string,
+  taxId: string,
+  businessName: string | null,
+  entryDate: string | null,
+  exitDate: string | null,
+  loadedAt: string | null
+): void {
   activityLogger.info({
     event: "node_viewed",
     username,
     taxId,
     businessName,
-    message: `${username} consultó el nodo ${taxId}${businessName ? ` (${businessName})` : ""}`,
+    entryDate,
+    exitDate,
+    loadedAt,
+    message:
+      `${username} consultó el nodo ${taxId}` +
+      (businessName ? ` (${businessName})` : "") +
+      (entryDate ? ` | alta: ${entryDate}` : "") +
+      (exitDate ? ` | baja: ${exitDate}` : "") +
+      (loadedAt ? ` | cargado: ${loadedAt}` : "")
   })
 }
 
