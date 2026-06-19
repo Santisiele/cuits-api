@@ -36,20 +36,12 @@ export const Queries = {
 
   // ─── Path ──────────────────────────────────────────────────────────────────
 
-  /**
-   * Find all paths from a node to inMyBase nodes up to a given depth.
-   * Inject maxDepth as a template literal before running.
-   */
   FIND_PATHS_TO_BASE: (maxDepth: number) => `
     MATCH path = (c:CUIT {id: $taxId})-[:RELATED_TO*1..${maxDepth}]-(target:CUIT {inMyBase: true})
     RETURN path
     LIMIT 10
   `,
 
-  /**
-   * Find the shortest path between two nodes.
-   * Inject maxDepth as a template literal before running.
-   */
   FIND_SHORTEST_PATH: (maxDepth: number) => `
     MATCH path = shortestPath(
       (a:CUIT {id: $fromTaxId})-[:RELATED_TO*1..${maxDepth}]-(b:CUIT {id: $toTaxId})
@@ -57,16 +49,11 @@ export const Queries = {
     RETURN [node IN nodes(path) | node] AS pathNodes
   `,
 
-  /** Find all relationships between two specific nodes. */
   FIND_RELATIONSHIPS_BETWEEN: `
     MATCH (a:CUIT {id: $fromId})-[r:RELATED_TO]-(b:CUIT {id: $toId})
     RETURN r.type AS type
   `,
 
-  /**
-   * Find all nodes reachable from a given node up to a given depth.
-   * Inject maxDepth as a template literal before running.
-   */
   FIND_ALL_RELATIONSHIPS: (maxDepth: number) => `
     MATCH path = (c:CUIT {id: $taxId})-[:RELATED_TO*1..${maxDepth}]-(connected:CUIT)
     RETURN path
@@ -74,20 +61,17 @@ export const Queries = {
 
   // ─── Relationship ──────────────────────────────────────────────────────────
 
-  /** Check whether both nodes exist. */
   CHECK_NODES_EXIST: `
     MATCH (a:CUIT {id: $fromTaxId})
     MATCH (b:CUIT {id: $toTaxId})
     RETURN a, b
   `,
 
-  /** Check whether a specific relationship already exists. */
   CHECK_RELATIONSHIP_EXISTS: `
     MATCH (a:CUIT {id: $fromTaxId})-[r:RELATED_TO {type: $relationshipType}]->(b:CUIT {id: $toTaxId})
     RETURN r
   `,
 
-  /** Create a manual relationship between two nodes. */
   CREATE_RELATIONSHIP: `
     MATCH (a:CUIT {id: $fromTaxId})
     MATCH (b:CUIT {id: $toTaxId})
@@ -114,22 +98,37 @@ export const Queries = {
     RETURN 1 AS deleted
   `,
 
-  // ─── Scripts (used by loadCuits / loadFromXlsx) ───────────────────────────
+  // ─── Ingestion (used by the LoaderService) ─────────────────────────────────
 
-  /** Upsert a node without overwriting an existing businessName. */
-  MERGE_NODE: `
+  /**
+   * Upsert an enrichment node (e.g. coming from Nosis tree traversal).
+   * Does NOT mark the node as inMyBase and does NOT touch sources.
+   * Preserves any existing businessName.
+   */
+  MERGE_ENRICHMENT_NODE: `
     MERGE (c:CUIT {id: $taxId})
     ON CREATE SET c.businessName = $businessName, c.inMyBase = false
     ON MATCH  SET c.businessName = COALESCE(c.businessName, $businessName)
   `,
 
-  /** Upsert a node marking it as inMyBase, appending the source to the
-   *  sources array if not already present (idempotent re-runs are safe).
+  /**
+   * Upsert a base node marking it as inMyBase, appending the source to
+   * the sources array idempotently and writing whichever optional
+   * attributes the caller provided (nulls are ignored at app level).
+   *
+   * The COALESCE pattern ensures: "if the parameter is null, keep the
+   * existing value", giving callers fine-grained control over which
+   * attributes a particular run overwrites.
    */
   MERGE_BASE_NODE: `
     MERGE (c:CUIT {id: $id})
     SET c.businessName = $name,
         c.inMyBase     = true,
+        c.phone        = COALESCE($phone,     c.phone),
+        c.email        = COALESCE($email,     c.email),
+        c.entryDate    = COALESCE($entryDate, c.entryDate),
+        c.exitDate     = COALESCE($exitDate,  c.exitDate),
+        c.loadedAt     = COALESCE($loadedAt,  c.loadedAt),
         c.sources      = CASE
           WHEN c.sources IS NULL THEN [$source]
           WHEN $source IN c.sources THEN c.sources
@@ -137,15 +136,15 @@ export const Queries = {
         END
   `,
 
-  /** Upsert a relationship between two nodes. */
+  /** Idempotently creates a typed relationship between two nodes. */
   MERGE_RELATIONSHIP: `
     MATCH (a:CUIT {id: $fromTaxId})
     MATCH (b:CUIT {id: $toTaxId})
     MERGE (a)-[r:RELATED_TO {type: $relationshipType}]->(b)
   `,
-  /** Find all company nodes (taxId starting with 30 or 33, inMyBase = false)
-   *  ordered by count of direct relationships with inMyBase nodes descending.
-   */
+
+  // ─── Companies ─────────────────────────────────────────────────────────────
+
   FIND_COMPANIES: `
     MATCH (c:CUIT)
     WHERE (c.id STARTS WITH '30' OR c.id STARTS WITH '33')

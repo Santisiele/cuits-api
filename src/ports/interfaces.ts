@@ -7,9 +7,14 @@ import type {
   AddRelationshipResult,
   DeleteRelationshipResult,
   UpdateNodeResult,
+  LoadableRow,
+  LoadableNode,
+  LoadableNodeAttributes,
+  GraphRelationship,
+  RowLoadOutcome,
 } from "@domain/entities.js"
 
-// ─── Source port (inbound) ────────────────────────────────────────────────────
+// ─── Source port (inbound, for search) ────────────────────────────────────────
 
 /**
  * Port that every data source adapter must implement.
@@ -36,67 +41,114 @@ export interface ISource {
  * New graph databases (e.g. ArangoDB, Amazon Neptune) only need to implement this.
  */
 export interface IGraphRepository {
-  /**
-   * Finds a node by Tax ID. Returns null if not found.
-   */
   findNode(taxId: string): Promise<CuitNode | null>
-
-  /**
-   * Finds all paths from a given Tax ID to inMyBase nodes.
-   * Returns an empty array if the node exists but has no paths.
-   * Returns null if the node does not exist.
-   *
-   * @param taxId - The CUIT to start from
-   * @param maxDepth - Maximum hops to traverse
-   */
   findPathsToBase(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
-
-  /**
-   * Finds the shortest path between two Tax IDs.
-   * Returns null if no path exists within maxDepth.
-   */
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>
-
-  /**
-   * Returns all nodes and relationships reachable from a given Tax ID.
-   * Returns null if the node does not exist.
-   */
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
-
-  /**
-   * Returns all nodes with inMyBase = true and their relationship counts.
-   */
   findMyBaseNodes(): Promise<CuitNodeSummary[]>
-
-  /**
-   * Updates editable fields on a node.
-   */
   updateNode(taxId: string, fields: CuitNodeUpdate): Promise<UpdateNodeResult>
-
-  /**
-   * Adds a directed relationship between two existing nodes.
-   */
   addRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<AddRelationshipResult>
-
-  /**
-   * Deletes a directed relationship between two nodes.
-   */
   deleteRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<DeleteRelationshipResult>
-
-  /**
-   * Returns the human-readable name for a relationship type code.
-   * Returns null if the code is unknown.
-   */
   getRelationshipTypeName(code: number): string | null
-
-  /**
-   * Returns all valid relationship type codes.
-   */
   validRelationshipCodes(): number[]
+  findCompanyNodes(): Promise<CuitNodeSummary[]>
 
   /**
-   * Returns all company nodes (taxId starting with 30 or 33, inMyBase = false)
-   * ordered by count of type-1 (Principal) relationships descending.
+   * Upserts a node as `inMyBase = true`, persisting the given attributes
+   * and idempotently appending `source` to its `sources` array.
+   *
+   * Used by the LoaderService — the contract is "this source is authoritative
+   * for these attributes on this run", meaning provided fields are written
+   * unconditionally and omitted fields are left untouched.
    */
-  findCompanyNodes(): Promise<CuitNodeSummary[]>
+  upsertBaseNode(
+    taxId: string,
+    businessName: string,
+    source: string,
+    attributes: LoadableNodeAttributes
+  ): Promise<void>
+
+  /**
+   * Upserts a plain node (not marked `inMyBase`), used for enrichment nodes
+   * brought in by relationship trees. Existing `businessName` is preserved.
+   */
+  upsertEnrichmentNode(taxId: string, businessName: string): Promise<void>
+
+  /**
+   * Idempotently creates a typed directed relationship between two nodes.
+   */
+  mergeRelationship(rel: GraphRelationship): Promise<void>
 }
+
+// ─── Source loader port (outbound, for ingestion) ────────────────────────────
+
+/**
+ * Outbound port that knows how to read a specific source format and
+ * yield rows ready to be processed by the LoaderService.
+ *
+ * Each concrete loader (PoseidonLoader, SeniorHomeLoader, etc.) encapsulates
+ * its own parsing rules, column mappings, and per-row business logic.
+ */
+export interface ISourceLoader {
+  /** Unique identifier for the source as a whole (e.g. "poseidon"). */
+  readonly sourceName: string
+
+  /**
+   * Reads the input and returns the rows to be processed.
+   *
+   * @param opts.startRow - 1-based index of the first row to load (excluding header)
+   * @param opts.count    - Maximum number of rows to load
+   */
+  load(opts: { startRow: number; count: number }): Promise<LoadableRow[]>
+}
+
+// ─── Enricher port (outbound, for resolving + scraping documents) ────────────
+
+/**
+ * Outbound port that resolves a document (DNI or CUIT) to a real CUIT
+ * and fetches its relationship graph from an external system (e.g. Nosis).
+ *
+ * Implementations are responsible for rate-limiting and authentication.
+ */
+export interface IEnricher {
+  /**
+   * Resolves a document string to a real CUIT + business name.
+   * Returns null if the document is not found in the external system.
+   *
+   * @param document - DNI (e.g. "12345678") or CUIT (e.g. "20123456789"),
+   *                   with or without separators.
+   */
+  resolveDocument(document: string): Promise<EnrichmentIdentity | null>
+
+  /**
+   * Fetches the relationship tree for an already-resolved CUIT and returns
+   * it as a flat list of nodes + relationships ready to persist.
+   */
+  fetchRelationshipGraph(taxId: string, businessName: string): Promise<EnrichmentGraph>
+}
+
+export interface EnrichmentIdentity {
+  taxId: string
+  businessName: string
+}
+
+export interface EnrichmentGraph {
+  nodes: { taxId: string; businessName: string }[]
+  relationships: GraphRelationship[]
+}
+
+// ─── Load output writer port (outbound, optional) ────────────────────────────
+
+/**
+ * Outbound port for writing the result of a load run.
+ * Optional — sources that don't need an output report can skip it.
+ *
+ * Senior Home uses this to write its colour-coded Excel report.
+ */
+export interface ILoadOutputWriter {
+  write(outcomes: RowLoadOutcome[]): Promise<void>
+}
+
+// ─── Helpers re-exported for adapter use ─────────────────────────────────────
+
+export type { LoadableNode, LoadableNodeAttributes, GraphRelationship }
