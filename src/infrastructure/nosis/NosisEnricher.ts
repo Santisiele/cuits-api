@@ -1,11 +1,24 @@
-import type {
-  IEnricher,
-  EnrichmentIdentity,
-  EnrichmentGraph,
-} from "@ports/interfaces.js"
+import type { IEnricher } from "@ports/interfaces.js"
 import type { GraphRelationship } from "@domain/entities.js"
 import { NosisScraper } from "@scrapers/nosis.js"
 import type { NosisRelation } from "@scrapers/nosis.js"
+
+// ─── Internal type aliases ───────────────────────────────────────────────────
+
+/**
+ * Shape returned by {@link IEnricher.resolveDocument}.
+ * Kept as a local alias because the port defines it inline.
+ */
+type EnrichmentIdentity = { taxId: string; businessName: string }
+
+/**
+ * Shape returned by {@link IEnricher.fetchRelationshipGraph}.
+ * Kept as a local alias because the port defines it inline.
+ */
+type EnrichmentGraph = {
+  nodes: { taxId: string; businessName: string }[]
+  relationships: GraphRelationship[]
+}
 
 /**
  * Adapter implementing the {@link IEnricher} port using Nosis Manager as
@@ -30,12 +43,10 @@ export class NosisEnricher implements IEnricher {
     return new NosisEnricher(scraper)
   }
 
-  /** @inheritdoc */
   async resolveDocument(document: string): Promise<EnrichmentIdentity | null> {
     return this.scraper.searchAndResolve(document)
   }
 
-  /** @inheritdoc */
   async fetchRelationshipGraph(
     taxId: string,
     businessName: string

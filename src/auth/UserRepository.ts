@@ -1,7 +1,22 @@
 import fs from "fs"
 import path from "path"
 
-const USERS_PATH = path.join(process.cwd(), process.env["DATA_ROUTE"] ?? "")
+/**
+ * Resolves DATA_ROUTE into an absolute path.
+ *  - If the env var is already absolute (e.g. "/data/users.json" in Railway
+ *    with a volume mounted at /data), use it as-is.
+ *  - Otherwise, resolve it relative to the project root (process.cwd()),
+ *    which is the typical local-dev case (e.g. "./data/users.json").
+ *
+ * IMPORTANT: never use `path.join(cwd, route)` here — `path.join` does NOT
+ * preserve absolute paths in the second argument, so an env value like
+ * "/data/users.json" would become "/app/data/users.json" on Railway,
+ * which lives on the ephemeral filesystem and gets wiped on every deploy.
+ */
+const rawRoute = process.env["DATA_ROUTE"] ?? ""
+const USERS_PATH = path.isAbsolute(rawRoute)
+  ? rawRoute
+  : path.resolve(process.cwd(), rawRoute)
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,8 +31,6 @@ export interface User {
 
 /**
  * Simple file-based user repository backed by a JSON file.
- * Uses process.cwd() to resolve the path relative to the project root,
- * regardless of where the compiled file ends up.
  *
  * The file is read on every call — suitable for a small number of users
  * managed manually. No caching needed at this scale.

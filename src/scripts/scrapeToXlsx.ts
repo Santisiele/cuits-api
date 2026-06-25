@@ -135,7 +135,11 @@ async function scrapeToXlsx(
     logger.info(`Row ${startRow + i}: scraping ${formatCuit(taxId)}...`)
 
     try {
-      const relations = await scraper.scrape(taxId)
+      // New scraper API: resolve identity first, then fetch the tree.
+      const identity = await scraper.searchAndResolve(taxId)
+      const relations = identity
+        ? await scraper.fetchRelations(identity.taxId, identity.businessName)
+        : []
       const flat = buildFlatTree(relations)
       enriched.push({ original: row, flat })
 
