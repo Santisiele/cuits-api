@@ -29,7 +29,7 @@ import type {
  * Different implementations cover different storage backends (Neo4j, CSV...).
  */
 export interface ISource {
-  search(taxId: string, maxDepth: number): Promise<SearchResult[]>
+  search(taxId: string, maxDepth: number | undefined): Promise<SearchResult[]>
   /** Optional human-readable identifier for the source. */
   readonly name?: string
 }
