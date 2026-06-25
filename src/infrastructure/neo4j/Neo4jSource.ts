@@ -79,4 +79,17 @@ export class Neo4jSource implements ISource {
   findCompanyNodes(): Promise<CuitNodeSummary[]> {
     return this.repository.findCompanyNodes()
   }
+
+  /**
+   * Returns every inMyBase node whose birthday falls in the given
+   * (month, day) range. Delegates to the underlying repository.
+   */
+  async findBirthdaysBetween(
+    fromMonth: number,
+    fromDay: number,
+    toMonth: number,
+    toDay: number
+  ): Promise<import("@domain/entities.js").BirthdayResult[]> {
+    return this.repository.findBirthdaysBetween(fromMonth, fromDay, toMonth, toDay)
+  } 
 }

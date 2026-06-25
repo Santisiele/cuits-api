@@ -1,9 +1,24 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
+
+/**
+ * Parses a date string into its day/month components.
+ * Accepts dd/mm/yyyy, dd-mm-yyyy, or just dd/mm (year ignored).
+ * Returns null when the string can't be parsed or the values are out of range.
+ */
+function parseDayMonth(raw: string): { day: number; month: number } | null {
+  const match = /^(\d{1,2})[/-](\d{1,2})(?:[/-]\d{2,4})?$/.exec(raw.trim())
+  if (!match) return null
+  const day = Number(match[1])
+  const month = Number(match[2])
+  if (!Number.isFinite(day) || !Number.isFinite(month)) return null
+  if (day < 1 || day > 31 || month < 1 || month > 12) return null
+  return { day, month }
+}
 
 /**
  * Graph-based routes for Neo4j queries.
@@ -565,6 +580,81 @@ export default async function graphRoutes(server: FastifyInstance) {
         const nodes = await neo4jSource.findCompanyNodes()
         logCompaniesViewed(request.username, nodes.length)
         return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/birthdays ─────────────────────────────────────────────────
+
+  server.get<{
+    Querystring: { from?: string; to?: string }
+  }>(
+    "/graph/birthdays",
+    {
+      schema: {
+        summary: "List inMyBase nodes whose birthday falls in a date range",
+        description:
+          "Both endpoints (from and to) are inclusive and use dd/mm/yyyy. " +
+          "Year is ignored — only month and day are matched. The range can " +
+          "wrap around the year boundary (e.g. from=20/12 to=05/01).",
+        querystring: {
+          type: "object",
+          required: ["from", "to"],
+          properties: {
+            from: { type: "string", description: "dd/mm/yyyy or dd/mm" },
+            to:   { type: "string", description: "dd/mm/yyyy or dd/mm" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              count: { type: "number" },
+              results: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    birthday: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const fromRaw = request.query.from ?? ""
+      const toRaw   = request.query.to   ?? ""
+
+      const from = parseDayMonth(fromRaw)
+      const to   = parseDayMonth(toRaw)
+
+      if (!from || !to) {
+        return reply.code(400).send({
+          message: "Invalid date format. Use dd/mm/yyyy (year optional).",
+        })
+      }
+
+      try {
+        const results = await neo4jSource.findBirthdaysBetween(
+          from.month, from.day,
+          to.month,   to.day
+        )
+
+        logBirthdaysViewed(request.username, fromRaw, toRaw, results.length)
+        return { count: results.length, results }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })

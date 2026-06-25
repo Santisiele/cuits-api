@@ -17,7 +17,22 @@ import path from "path"
 import bcrypt from "bcrypt"
 import type { User } from "@auth/UserRepository.js"
 
-const USERS_PATH = path.join(process.cwd(), process.env["DATA_ROUTE"] ?? "")
+/**
+ * Resolves DATA_ROUTE into an absolute path.
+ *  - If the env var is already absolute (e.g. "/data/users.json" in Railway
+ *    with a volume mounted at /data), use it as-is.
+ *  - Otherwise, resolve it relative to the project root (process.cwd()).
+ *
+ * IMPORTANT: never use `path.join(cwd, route)` — `path.join` does NOT
+ * preserve absolute paths in the second argument, so "/data/users.json"
+ * would become "/app/data/users.json" on Railway, which lives on the
+ * ephemeral filesystem and gets wiped on every deploy.
+ */
+const rawRoute = process.env["DATA_ROUTE"] ?? ""
+const USERS_PATH = path.isAbsolute(rawRoute)
+  ? rawRoute
+  : path.resolve(process.cwd(), rawRoute)
+
 const SALT_ROUNDS = 12
 
 const username = process.argv[2]
@@ -47,4 +62,4 @@ users.push({ username, passwordHash })
 fs.mkdirSync(path.dirname(USERS_PATH), { recursive: true })
 fs.writeFileSync(USERS_PATH, JSON.stringify(users, null, 2), "utf-8")
 
-console.log(`✓ User "${username}" created successfully.`)
+console.log(`✓ User "${username}" created successfully at ${USERS_PATH}`)

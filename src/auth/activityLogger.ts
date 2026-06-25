@@ -2,10 +2,21 @@ import pino from "pino"
 import path from "path"
 import fs from "fs"
 
+/**
+ * Resolves LOG_ROUTE into an absolute directory path.
+ *  - If already absolute (e.g. "/data/logs" in Railway with a mounted volume),
+ *    use as-is.
+ *  - Otherwise, resolve relative to the project root.
+ *
+ * IMPORTANT: avoid `path.join(cwd, route)` for absolute routes — `path.join`
+ * does NOT preserve absolute paths in the second argument, which would
+ * silently route logs into the ephemeral `/app/...` filesystem.
+ */
 const rawLogRoute = process.env["LOG_ROUTE"] ?? "logs"
 const LOGS_DIR = path.isAbsolute(rawLogRoute)
   ? rawLogRoute
-  : path.join(process.cwd(), rawLogRoute)
+  : path.resolve(process.cwd(), rawLogRoute)
+
 const LOG_FILE = path.join(LOGS_DIR, process.env["LOG_DOC"] ?? "activity.log")
 
 if (!fs.existsSync(LOGS_DIR)) {
@@ -163,5 +174,26 @@ export function logNodeUpdated(username: string, taxId: string): void {
     username,
     taxId,
     message: `${username} editó el nodo ${taxId}`,
+  })
+}
+
+/**
+ * Logs a birthday-range query.
+ * Mirrors the structure of the other logXxxViewed helpers so audit logs
+ * remain uniform across endpoints.
+ */
+export function logBirthdaysViewed(
+  username: string,
+  from: string,
+  to: string,
+  resultCount: number
+): void {
+  activityLogger.info({
+    event: "birthdays_viewed",
+    username,
+    from,
+    to,
+    resultCount,
+    message: `${username} consultó cumpleaños entre ${from} y ${to} — ${resultCount} resultados`,
   })
 }
