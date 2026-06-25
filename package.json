@@ -6,11 +6,15 @@
   "type": "module",
   "scripts": {
     "test": "vitest",
+    "setup": "pnpm install && playwright install chromium",
     "dev": "tsx src/index.ts",
     "generate:docs": "typedoc --entryPointStrategy expand --out docs ./src",
     "nosis:test": "tsx src/scripts/testNosis.ts",
     "load:poseidon": "tsx src/scripts/loadFromPoseidon.ts",
+    "load:conocidosluchi": "tsx src/scripts/loadFromConocidosLuchi.ts",
     "load:seniorhome": "tsx src/scripts/loadFromSeniorHome.ts",
+    "load:macabeadas": "tsx src/scripts/loadFromMacabeadas.ts",
+    "load:credivico": "tsx src/scripts/loadFromCredivico.ts",
     "scrape:xlsx": "tsx src/scripts/scrapeToXlsx.ts",
     "create:user": "tsx src/scripts/createUser.ts"
   },

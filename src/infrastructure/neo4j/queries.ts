@@ -1,20 +1,14 @@
 /**
  * Centralised Cypher query strings.
- *
- * Keeping queries here (rather than inlined in repository methods) makes them
- * easy to review, test, and optimise independently of application logic.
- * Dynamic depth parameters use template literals at call sites.
  */
 export const Queries = {
   // ─── Node ──────────────────────────────────────────────────────────────────
 
-  /** Find a single node by Tax ID. */
   FIND_NODE: `
     MATCH (c:CUIT {id: $taxId})
     RETURN c
   `,
 
-  /** Update editable fields on a node. */
   UPDATE_NODE: `
     MATCH (c:CUIT {id: $taxId})
     SET c.phone    = $phone,
@@ -23,7 +17,6 @@ export const Queries = {
     RETURN c
   `,
 
-  /** Find all inMyBase nodes with their relationship counts. */
   FIND_MY_BASE_NODES: `
     MATCH (c:CUIT {inMyBase: true})
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
@@ -32,6 +25,23 @@ export const Queries = {
            c.sources       AS sources,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName
+  `,
+
+  /**
+   * Returns every inMyBase node that has a non-empty `birthday` field.
+   * Date-range filtering happens in the application layer, since
+   * `birthday` is stored as a dd/mm/yyyy string — comparing it in Cypher
+   * would require expensive string parsing per row.
+   */
+  FIND_BIRTHDAY_CANDIDATES: `
+    MATCH (c:CUIT {inMyBase: true})
+    WHERE c.birthday IS NOT NULL AND c.birthday <> ""
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.birthday      AS birthday,
+           c.sources       AS sources,
+           count(DISTINCT related) AS relationshipCount
   `,
 
   // ─── Path ──────────────────────────────────────────────────────────────────
@@ -78,9 +88,6 @@ export const Queries = {
     CREATE (a)-[:RELATED_TO {type: $relationshipType, source: "manual", createdAt: datetime()}]->(b)
   `,
 
-  /** Delete a specific relationship between two nodes.
-   *  After deletion, orphaned nodes that are not inMyBase are also removed.
-   */
   DELETE_RELATIONSHIP: `
     MATCH (a:CUIT {id: $fromTaxId})-[r:RELATED_TO {type: $relationshipType}]->(b:CUIT {id: $toTaxId})
     DELETE r
@@ -98,34 +105,21 @@ export const Queries = {
     RETURN 1 AS deleted
   `,
 
-  // ─── Ingestion (used by the LoaderService) ─────────────────────────────────
+  // ─── Ingestion ─────────────────────────────────────────────────────────────
 
-  /**
-   * Upsert an enrichment node (e.g. coming from Nosis tree traversal).
-   * Does NOT mark the node as inMyBase and does NOT touch sources.
-   * Preserves any existing businessName.
-   */
   MERGE_ENRICHMENT_NODE: `
     MERGE (c:CUIT {id: $taxId})
     ON CREATE SET c.businessName = $businessName, c.inMyBase = false
     ON MATCH  SET c.businessName = COALESCE(c.businessName, $businessName)
   `,
 
-  /**
-   * Upsert a base node marking it as inMyBase, appending the source to
-   * the sources array idempotently and writing whichever optional
-   * attributes the caller provided (nulls are ignored at app level).
-   *
-   * The COALESCE pattern ensures: "if the parameter is null, keep the
-   * existing value", giving callers fine-grained control over which
-   * attributes a particular run overwrites.
-   */
   MERGE_BASE_NODE: `
     MERGE (c:CUIT {id: $id})
     SET c.businessName = $name,
         c.inMyBase     = true,
         c.phone        = COALESCE($phone,     c.phone),
         c.email        = COALESCE($email,     c.email),
+        c.birthday     = COALESCE($birthday,  c.birthday),
         c.entryDate    = COALESCE($entryDate, c.entryDate),
         c.exitDate     = COALESCE($exitDate,  c.exitDate),
         c.loadedAt     = COALESCE($loadedAt,  c.loadedAt),
@@ -136,7 +130,6 @@ export const Queries = {
         END
   `,
 
-  /** Idempotently creates a typed relationship between two nodes. */
   MERGE_RELATIONSHIP: `
     MATCH (a:CUIT {id: $fromTaxId})
     MATCH (b:CUIT {id: $toTaxId})

@@ -15,6 +15,7 @@ import type {
   UpdateNodeResult,
   GraphRelationship,
   LoadableNodeAttributes,
+  BirthdayResult,
 } from "@domain/entities.js"
 
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
@@ -36,9 +37,12 @@ interface Neo4jSegment {
  *  - Handle session lifecycle (always close in finally blocks)
  *
  * This class contains NO business logic — only data access and mapping.
+ * Date-range filtering for birthdays is the one exception: parsing the
+ * stored dd/mm/yyyy strings in Cypher would be slow and ugly, so we pull
+ * the candidate set and filter in-process. The "in-process" part is still
+ * mapping/transformation, not business rules, so it belongs here.
  */
 export class Neo4jRepository implements IGraphRepository {
-  /** Opens a new session from the shared driver singleton. */
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -86,7 +90,50 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  // ─── Ingestion (LoaderService) ────────────────────────────────────────────
+  // ─── Birthdays ────────────────────────────────────────────────────────────
+
+  async findBirthdaysBetween(
+    fromMonth: number,
+    fromDay: number,
+    toMonth: number,
+    toDay: number
+  ): Promise<BirthdayResult[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_BIRTHDAY_CANDIDATES)
+      const candidates: BirthdayResult[] = result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        birthday: String(record.get("birthday") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+      }))
+ 
+      const inRange = (m: number, d: number): boolean => {
+        const from = fromMonth * 100 + fromDay
+        const to   = toMonth   * 100 + toDay
+        const cur  = m * 100 + d
+        if (from <= to) return cur >= from && cur <= to
+        return cur >= from || cur <= to
+      }
+ 
+      return candidates
+        .filter((c) => {
+          const parsed = this.parseDayMonth(c.birthday)
+          if (!parsed) return false
+          return inRange(parsed.month, parsed.day)
+        })
+        .sort((a, b) => {
+          const pa = this.parseDayMonth(a.birthday)!
+          const pb = this.parseDayMonth(b.birthday)!
+          return (pa.month * 100 + pa.day) - (pb.month * 100 + pb.day)
+        })
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Ingestion ────────────────────────────────────────────────────────────
 
   async upsertBaseNode(
     taxId: string,
@@ -102,6 +149,7 @@ export class Neo4jRepository implements IGraphRepository {
         source,
         phone:     attributes.phone     ?? null,
         email:     attributes.email     ?? null,
+        birthday:  attributes.birthday  ?? null,
         entryDate: attributes.entryDate ?? null,
         exitDate:  attributes.exitDate  ?? null,
         loadedAt:  attributes.loadedAt  ?? null,
@@ -340,12 +388,19 @@ export class Neo4jRepository implements IGraphRepository {
   // ─── Mapping helpers ───────────────────────────────────────────────────────
 
   /**
-   * Normalises the "sources" field from Neo4j into a string array.
-   * Handles three cases:
-   *  - Array (post-migration): returned as-is
-   *  - String (pre-migration legacy): wrapped into a single-element array
-   *  - null/undefined: empty array
+   * Parses a dd/mm/yyyy birthday string into its month/day components.
+   * Returns null when the string can't be parsed or contains invalid values.
    */
+  private parseDayMonth(birthday: string): { day: number; month: number } | null {
+    const match = /^(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}$/.exec(birthday.trim())
+    if (!match) return null
+    const day = Number(match[1])
+    const month = Number(match[2])
+    if (!Number.isFinite(day) || !Number.isFinite(month)) return null
+    if (day < 1 || day > 31 || month < 1 || month > 12) return null
+    return { day, month }
+  }
+
   private normalizeSources(value: unknown): string[] {
     if (Array.isArray(value)) return value.map((s) => String(s)).filter(Boolean)
     if (typeof value === "string" && value.length > 0) return [value]
@@ -359,10 +414,10 @@ export class Neo4jRepository implements IGraphRepository {
       phone: props["phone"] != null ? String(props["phone"]) : null,
       email: props["email"] != null ? String(props["email"]) : null,
       birthday: props["birthday"] != null ? String(props["birthday"]) : null,
-      inMyBase: Boolean(props["inMyBase"] ?? false),
       entryDate: props["entryDate"] != null ? String(props["entryDate"]) : null,
       exitDate: props["exitDate"] != null ? String(props["exitDate"]) : null,
       loadedAt: props["loadedAt"] != null ? String(props["loadedAt"]) : null,
+      inMyBase: Boolean(props["inMyBase"] ?? false),
       sources: this.normalizeSources(props["sources"] ?? props["source"]),
     }
   }

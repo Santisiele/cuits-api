@@ -242,7 +242,7 @@ NOSIS_PASSWORD=...
 ### Install
 
 ```bash
-pnpm install
+pnpm setup
 ```
 
 ### Run the API
