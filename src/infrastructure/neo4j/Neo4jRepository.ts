@@ -84,6 +84,7 @@ export class Neo4jRepository implements IGraphRepository {
         businessName: String(record.get("businessName") ?? ""),
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        relatedSources: [],
       }))
     } finally {
       await session.close()
@@ -369,6 +370,7 @@ export class Neo4jRepository implements IGraphRepository {
         businessName: String(record.get("businessName") ?? ""),
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        relatedSources: this.normalizeSources(record.get("relatedSources")),
       }))
     } finally {
       await session.close()
