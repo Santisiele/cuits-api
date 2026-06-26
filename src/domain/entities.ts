@@ -43,6 +43,7 @@ export interface CuitNodeSummary {
   businessName: string
   sources: string[]
   relationshipCount: number
+  relatedSources: string[]
 }
 
 /**

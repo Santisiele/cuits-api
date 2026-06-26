@@ -143,10 +143,16 @@ export const Queries = {
     WHERE (c.id STARTS WITH '30' OR c.id STARTS WITH '33')
       AND (c.inMyBase IS NULL OR c.inMyBase = false)
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT {inMyBase: true})
+    WITH c, related
+    UNWIND CASE WHEN related.sources IS NULL THEN [null] ELSE related.sources END AS srcRaw
+    WITH c,
+         count(DISTINCT related) AS relationshipCount,
+         collect(DISTINCT srcRaw) AS rawSources
     RETURN c.id            AS taxId,
            c.businessName  AS businessName,
            c.sources       AS sources,
-           count(DISTINCT related) AS relationshipCount
+           relationshipCount,
+           [s IN rawSources WHERE s IS NOT NULL] AS relatedSources
     ORDER BY relationshipCount DESC
   `,
 } as const
