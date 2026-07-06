@@ -15,6 +15,7 @@ import type {
   UpdateNodeResult,
   GraphRelationship,
   LoadableNodeAttributes,
+  LoadableNodeCategory,
   BirthdayResult,
 } from "@domain/entities.js"
 
@@ -36,11 +37,11 @@ interface Neo4jSegment {
  *  - Map raw Neo4j records to domain entities
  *  - Handle session lifecycle (always close in finally blocks)
  *
- * This class contains NO business logic — only data access and mapping.
- * Date-range filtering for birthdays is the one exception: parsing the
- * stored dd/mm/yyyy strings in Cypher would be slow and ugly, so we pull
- * the candidate set and filter in-process. The "in-process" part is still
- * mapping/transformation, not business rules, so it belongs here.
+ * Classification handling:
+ *  - `upsertBaseNode` takes a `category` ("known" | "to_know") and translates
+ *    it into the `isKnown`/`isToKnow` flags passed to MERGE_BASE_NODE.
+ *  - The Cypher query uses additive logic: a flag is only flipped TRUE if
+ *    explicitly requested, so existing flags are preserved.
  */
 export class Neo4jRepository implements IGraphRepository {
   private session(): Session {
@@ -84,6 +85,8 @@ export class Neo4jRepository implements IGraphRepository {
         businessName: String(record.get("businessName") ?? ""),
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: [],
       }))
     } finally {
@@ -109,15 +112,15 @@ export class Neo4jRepository implements IGraphRepository {
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
       }))
- 
+
       const inRange = (m: number, d: number): boolean => {
         const from = fromMonth * 100 + fromDay
-        const to   = toMonth   * 100 + toDay
-        const cur  = m * 100 + d
+        const to = toMonth * 100 + toDay
+        const cur = m * 100 + d
         if (from <= to) return cur >= from && cur <= to
         return cur >= from || cur <= to
       }
- 
+
       return candidates
         .filter((c) => {
           const parsed = this.parseDayMonth(c.birthday)
@@ -136,11 +139,18 @@ export class Neo4jRepository implements IGraphRepository {
 
   // ─── Ingestion ────────────────────────────────────────────────────────────
 
+  /**
+   * Upserts a base-group node, additively setting the classification flag
+   * implied by `category`. Existing values are preserved — a node already
+   * marked isKnown won't lose that flag if re-loaded as to_know, and vice
+   * versa. A node loaded for the first time gets exactly one flag set.
+   */
   async upsertBaseNode(
     taxId: string,
     businessName: string,
     source: string,
-    attributes: LoadableNodeAttributes
+    attributes: LoadableNodeAttributes,
+    category: LoadableNodeCategory = "known"
   ): Promise<void> {
     const session = this.session()
     try {
@@ -148,12 +158,15 @@ export class Neo4jRepository implements IGraphRepository {
         id: taxId,
         name: businessName,
         source,
-        phone:     attributes.phone     ?? null,
-        email:     attributes.email     ?? null,
-        birthday:  attributes.birthday  ?? null,
+        isKnown: category === "known",
+        isToKnow: category === "to_know",
+        phone: attributes.phone ?? null,
+        email: attributes.email ?? null,
+        birthday: attributes.birthday ?? null,
         entryDate: attributes.entryDate ?? null,
-        exitDate:  attributes.exitDate  ?? null,
-        loadedAt:  attributes.loadedAt  ?? null,
+        exitDate: attributes.exitDate ?? null,
+        loadedAt: attributes.loadedAt ?? null,
+        customFields: attributes.customFields ?? {},
       })
     } finally {
       await session.close()
@@ -370,6 +383,8 @@ export class Neo4jRepository implements IGraphRepository {
         businessName: String(record.get("businessName") ?? ""),
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: this.normalizeSources(record.get("relatedSources")),
       }))
     } finally {
@@ -389,10 +404,6 @@ export class Neo4jRepository implements IGraphRepository {
 
   // ─── Mapping helpers ───────────────────────────────────────────────────────
 
-  /**
-   * Parses a dd/mm/yyyy birthday string into its month/day components.
-   * Returns null when the string can't be parsed or contains invalid values.
-   */
   private parseDayMonth(birthday: string): { day: number; month: number } | null {
     const match = /^(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}$/.exec(birthday.trim())
     if (!match) return null
@@ -410,6 +421,25 @@ export class Neo4jRepository implements IGraphRepository {
   }
 
   private mapNode(props: Record<string, unknown>): CuitNode {
+    const isKnown = Boolean(props["isKnown"] ?? false)
+    const isToKnow = Boolean(props["isToKnow"] ?? false)
+
+    // Keys that already map to first-class fields on CuitNode. Everything
+    // else in `props` is considered a custom field.
+    const KNOWN_KEYS = new Set([
+      "id", "businessName", "phone", "email", "birthday",
+      "entryDate", "exitDate", "loadedAt",
+      "isKnown", "isToKnow", "inMyBase",
+      "sources", "source",
+    ])
+
+    const customFields: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(props)) {
+      if (!KNOWN_KEYS.has(key) && value != null) {
+        customFields[key] = value
+      }
+    }
+
     return {
       taxId: String(props["id"] ?? ""),
       businessName: props["businessName"] != null ? String(props["businessName"]) : null,
@@ -419,8 +449,11 @@ export class Neo4jRepository implements IGraphRepository {
       entryDate: props["entryDate"] != null ? String(props["entryDate"]) : null,
       exitDate: props["exitDate"] != null ? String(props["exitDate"]) : null,
       loadedAt: props["loadedAt"] != null ? String(props["loadedAt"]) : null,
-      inMyBase: Boolean(props["inMyBase"] ?? false),
+      isKnown,
+      isToKnow,
+      inMyBase: isKnown || isToKnow,
       sources: this.normalizeSources(props["sources"] ?? props["source"]),
+      customFields,
     }
   }
 
