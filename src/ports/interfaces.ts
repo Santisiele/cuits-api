@@ -77,6 +77,19 @@ export interface IGraphRepository {
    * @param category - "known" (default) or "to_know". Additive: re-loading
    *                   an existing node never clears the other flag.
    */
+  findBirthdaysBetween(
+    fromMonth: number,
+    fromDay: number,
+    toMonth: number,
+    toDay: number
+  ): Promise<BirthdayResult[]>
+
+  // Writes
+  updateNode(taxId: string, fields: CuitNodeUpdate): Promise<UpdateNodeResult>
+  addRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<AddRelationshipResult>
+  deleteRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<DeleteRelationshipResult>
+
+  // Ingestion (used by LoaderService)
   upsertBaseNode(
     taxId: string,
     businessName: string,
