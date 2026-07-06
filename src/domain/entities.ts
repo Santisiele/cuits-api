@@ -67,6 +67,7 @@ export interface BirthdayResult {
   birthday: string
   sources: string[]
   relationshipCount: number
+  relatedSources: string[]
 }
 
 // ─── Path ────────────────────────────────────────────────────────────────────
