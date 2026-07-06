@@ -332,7 +332,6 @@ Notable design decisions:
 - `MERGE_BASE_NODE` is **idempotent**: re-running it appends the source to the `sources` array only if not already present, and uses `COALESCE($attr, c.attr)` for every optional field so that `null` parameters preserve existing values instead of clobbering them.
 - `DELETE_RELATIONSHIP` also performs **orphan cleanup**: if removing an edge leaves a node with no remaining relationships AND it's not `inMyBase`, the node itself is detached and deleted. This keeps the graph clean of zombie nodes left over from Nosis enrichment.
 
-
 ## Authentication
 
 ### User storage
