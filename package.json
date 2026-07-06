@@ -15,6 +15,10 @@
     "load:seniorhome": "tsx src/scripts/loadFromSeniorHome.ts",
     "load:macabeadas": "tsx src/scripts/loadFromMacabeadas.ts",
     "load:credivico": "tsx src/scripts/loadFromCredivico.ts",
+    "load:concursadas": "tsx src/scripts/loadFromConcursadas.ts",
+    "load:nordelta": "tsx src/scripts/loadFromNordelta.ts",
+    "load:crm": "tsx src/scripts/loadFromCrm.ts",
+    "update:birthdays": "tsx src/scripts/updateBirthdays.ts",
     "scrape:xlsx": "tsx src/scripts/scrapeToXlsx.ts",
     "create:user": "tsx src/scripts/createUser.ts"
   },

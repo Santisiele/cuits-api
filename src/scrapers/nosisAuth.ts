@@ -9,7 +9,7 @@ const LOGIN_URL = "https://sac31.nosis.com/net/manager"
  * the session cookies for use in subsequent HTTP requests
  */
 export async function nosisLogin(): Promise<{ jar: CookieJar; baseUrl: string }> {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await chromium.launch({ headless: false, slowMo: 300 })
   const context = await browser.newContext()
   const page = await context.newPage()
 

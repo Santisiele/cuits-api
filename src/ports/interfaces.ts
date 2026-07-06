@@ -20,6 +20,7 @@ import type {
   LoadableRow,
   LoadableNodeAttributes,
   BirthdayResult,
+  LoadableNodeCategory
 } from "@domain/entities.js"
 
 // ─── Driving ports (inbound) ──────────────────────────────────────────────────
@@ -71,12 +72,30 @@ export interface IGraphRepository {
   addRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<AddRelationshipResult>
   deleteRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<DeleteRelationshipResult>
 
+  /**
+   * Upserts a base-group node.
+   * @param category - "known" (default) or "to_know". Additive: re-loading
+   *                   an existing node never clears the other flag.
+   */
+  findBirthdaysBetween(
+    fromMonth: number,
+    fromDay: number,
+    toMonth: number,
+    toDay: number
+  ): Promise<BirthdayResult[]>
+
+  // Writes
+  updateNode(taxId: string, fields: CuitNodeUpdate): Promise<UpdateNodeResult>
+  addRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<AddRelationshipResult>
+  deleteRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<DeleteRelationshipResult>
+
   // Ingestion (used by LoaderService)
   upsertBaseNode(
     taxId: string,
     businessName: string,
     source: string,
-    attributes: LoadableNodeAttributes
+    attributes: LoadableNodeAttributes,
+    category?: LoadableNodeCategory
   ): Promise<void>
   upsertEnrichmentNode(taxId: string, businessName: string): Promise<void>
   mergeRelationship(rel: GraphRelationship): Promise<void>
