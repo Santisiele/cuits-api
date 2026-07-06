@@ -12,256 +12,243 @@ import type {
 } from "@domain/entities.js"
 import { logger } from "@logger"
 
-// ─── Config ───────────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-interface LoaderServiceOptions {
-  /** Minimum delay between successive enrichments, in ms. Default 30s. */
-  minDelayMs?: number
-  /** Maximum delay between successive enrichments, in ms. Default 90s. */
-  maxDelayMs?: number
-}
+const MIN_DELAY_MS = 30_000
+const MAX_DELAY_MS = 90_000
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 /**
- * Application service that orchestrates the full source ingestion pipeline.
+ * Orchestrates the loading of a source into the graph.
  *
- * Responsibilities:
- *  - Ask a loader for rows to ingest
- *  - For each row, resolve every node's document via the enricher
- *  - Persist resolved nodes (as inMyBase) to the repository
- *  - Fetch each resolved node's relationship graph and persist it
- *  - Persist inter-node relationships explicitly declared by the loader
- *  - Aggregate per-row outcomes for the optional writer
+ * Two modes:
+ *   - With enricher  → traditional pipeline: resolve identity via Nosis,
+ *                       fetch relationship graph, throttle. Used by the
+ *                       "conocidos" loaders.
+ *   - Without enricher → lightweight pipeline: write nodes as-is, no Nosis
+ *                       calls, no throttling. Used by "por conocer" loaders
+ *                       where the input is already canonical.
  *
- * Throttling: a randomised delay in [minDelayMs, maxDelayMs] is applied
- * BETWEEN every pair of successive enricher calls — both within a row
- * (after each node that actually hit the enricher) AND between rows.
- * This is to avoid tripping rate-limit / anti-scraping heuristics on the
- * upstream provider, regardless of how many nodes a single row contains.
- *
- * Concrete adapters are injected via the constructor (DI), making the
- * service trivially testable with mocks.
+ * Progress logging: every row emits a "Processing [i/N]" line at start and
+ * a "✓ Loaded" / "✗ Failed" line at end so long runs are observable.
  */
 export class LoaderService {
-  private readonly minDelayMs: number
-  private readonly maxDelayMs: number
-
   constructor(
     private readonly repository: IGraphRepository,
-    private readonly enricher: IEnricher,
+    private readonly enricher: IEnricher | null = null,
     private readonly writer: ILoadOutputWriter | null = null,
-    options: LoaderServiceOptions = {}
-  ) {
-    this.minDelayMs = options.minDelayMs ?? 30_000
-    this.maxDelayMs = options.maxDelayMs ?? 90_000
-  }
+  ) {}
 
   /**
-   * Runs the full ingestion pipeline for a single loader.
-   *
-   * @param loader  - The source loader supplying the rows
-   * @param startRow - 1-based index of the first row to load
-   * @param count   - Maximum number of rows to load
+   * Runs a loader: reads rows, processes each, writes outcomes.
    */
-  async run(
-    loader: ISourceLoader,
-    startRow: number,
-    count: number
-  ): Promise<RowLoadOutcome[]> {
-    logger.info(`Loading rows from "${loader.sourceName}" (start=${startRow}, count=${count})`)
+  async run(loader: ISourceLoader, startRow: number, count: number): Promise<void> {
     const rows = await loader.load({ startRow, count })
-    logger.info(`Loader yielded ${rows.length} rows`)
+    logger.info(`Loaded ${rows.length} rows from ${loader.sourceName}`)
 
     const outcomes: RowLoadOutcome[] = []
-
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i]!
-      logger.info(`[${i + 1}/${rows.length}] Processing row ${row.rowId}`)
+
+      // Row-level progress line — surfaces the humans-readable label of the
+      // first node in the row (usually there's only one anyway) plus the
+      // source file's row number, so the log reads like the old xlsx loaders
+      // did AND still tells you exactly which spreadsheet row is in play.
+      const label = this.describeRow(row)
+      logger.info(`[${i + 1}/${rows.length}] Processing row ${row.rowId}: ${label}`)
 
       const outcome = await this.processRow(row)
       outcomes.push(outcome)
 
-      if (i < rows.length - 1) await this.sleepRandom("before next row")
+      this.logRowOutcome(outcome, i, rows.length)
+
+      // Inter-row throttling: only when we actually hit Nosis.
+      // "Por conocer" loads finish instantly because they don't call out.
+      if (this.enricher && i < rows.length - 1) {
+        await this.sleepRandom("between rows")
+      }
     }
 
     if (this.writer) {
-      logger.info("Writing load outcomes via configured writer")
       await this.writer.write(outcomes)
     }
-
-    return outcomes
   }
 
-  // ─── Per-row pipeline ─────────────────────────────────────────────────────
+  // ─── Row processing ──────────────────────────────────────────────────────
 
-  /**
-   * Processes a single row: resolves each node's document, persists the
-   * resolved nodes, scrapes their relationship graphs, and finally creates
-   * the inter-node relationships the loader requested.
-   *
-   * Throttling within a row: after every node whose processing actually
-   * reached the enricher (i.e. it wasn't skipped by a dependency rule),
-   * we sleep before processing the next one. This is symmetric with the
-   * inter-row sleep so the upstream provider sees evenly-spaced traffic
-   * regardless of row size.
-   */
   private async processRow(row: LoadableRow): Promise<RowLoadOutcome> {
-    const nodeOutcomes: NodeLoadOutcome[] = []
-    /** roleKey → resolved CUIT, used to resolve inter-node relationships. */
-    const resolvedByRole = new Map<string, string>()
+    const outcomes: NodeLoadOutcome[] = []
+    const resolvedTaxIds = new Map<string, string>()
 
-    const entries = Object.entries(row.nodes)
-    /** Tracks whether a previous node in this row actually called the enricher,
-     *  so we can decide whether to sleep before the current one. */
-    let lastNodeHitEnricher = false
+    const roleEntries = Object.entries(row.nodes)
+    for (let i = 0; i < roleEntries.length; i++) {
+      const [roleKey, node] = roleEntries[i]!
 
-    for (let i = 0; i < entries.length; i++) {
-      const [roleKey, node] = entries[i]!
-
-      // Respect role-key dependencies: skip nodes whose prerequisite role
-      // wasn't loaded in this row. This lets loaders express "load B only
-      // if A succeeded" without putting source-specific policy here.
-      if (node.requiresRole && !resolvedByRole.has(node.requiresRole)) {
-        logger.warn(
-          `  Skipping role "${roleKey}" — required role "${node.requiresRole}" was not loaded`
-        )
-        nodeOutcomes.push({
-          roleKey,
-          status: "skipped_due_to_dependency",
-          notes: `Skipped because "${node.requiresRole}" was not loaded`,
-        })
-        // No enricher call happened — no throttling needed.
-        continue
+      // Skip if this node depends on a role that failed earlier in the row.
+      if (node.requiresRole) {
+        const depTaxId = resolvedTaxIds.get(node.requiresRole)
+        if (!depTaxId) {
+          outcomes.push({ roleKey, status: "skipped_due_to_dependency" })
+          continue
+        }
       }
 
-      // Throttle between consecutive enricher hits within the same row.
-      if (lastNodeHitEnricher) {
-        await this.sleepRandom(`before role "${roleKey}"`)
-      }
+      const outcome = await this.processNode(roleKey, node, resolvedTaxIds)
+      outcomes.push(outcome)
 
-      const outcome = await this.processNode(roleKey, node, resolvedByRole)
-      nodeOutcomes.push(outcome)
-      if (outcome.status === "loaded" && outcome.resolvedTaxId) {
-        resolvedByRole.set(roleKey, outcome.resolvedTaxId)
+      // Intra-row throttling: only between Nosis-touching nodes.
+      const hitEnricher = outcome.status === "loaded" && this.enricher !== null
+      const moreNodes = i < roleEntries.length - 1
+      if (hitEnricher && moreNodes) {
+        await this.sleepRandom("between nodes in row")
       }
-      // Any outcome other than the early-skip above implies we called the
-      // enricher at least once for this node.
-      lastNodeHitEnricher = true
     }
 
-    // Create the inter-node relationships declared by the loader,
-    // but only between nodes that actually got loaded.
+    // Apply intra-row relationships (only meaningful if at least two nodes loaded).
     for (const rel of row.relationships) {
-      const from = resolvedByRole.get(rel.fromKey)
-      const to = resolvedByRole.get(rel.toKey)
-      if (!from || !to) {
-        logger.warn(
-          `  Skipping relationship ${rel.fromKey} → ${rel.toKey} ` +
-          `(${from ? "from ok" : "from missing"}, ${to ? "to ok" : "to missing"})`
-        )
-        continue
-      }
-      try {
-        await this.repository.mergeRelationship({
-          fromTaxId: from,
-          toTaxId: to,
-          relationshipType: rel.relationshipType,
-        })
-        logger.info(`  ✓ Linked ${rel.fromKey} → ${rel.toKey} as "${rel.relationshipType}"`)
-      } catch (err) {
-        logger.error(`  ✗ Failed to link ${rel.fromKey} → ${rel.toKey}: ${(err as Error).message}`)
-      }
+      const from = resolvedTaxIds.get(rel.fromKey)
+      const to = resolvedTaxIds.get(rel.toKey)
+      if (!from || !to) continue
+      await this.repository.mergeRelationship({
+        fromTaxId: from,
+        toTaxId: to,
+        relationshipType: rel.relationshipType,
+      })
     }
 
-    return {
-      rowId: row.rowId,
-      row,
-      nodes: nodeOutcomes,
-      overall: this.summarise(nodeOutcomes),
-    }
+    const overall = this.overallStatus(outcomes)
+    return { rowId: row.rowId, row, nodes: outcomes, overall }
   }
 
   /**
-   * Resolves a single node's document, persists the node, and brings in its
-   * enrichment graph from the upstream provider.
+   * Processes a single node within a row.
    *
-   * If resolution fails (document not found) the node is reported as
-   * `not_found` and no persistence happens. If persistence itself fails, the
-   * node is reported as `failed` with the error message attached.
+   * Without enricher: write the node as-is (the loader is responsible for
+   * providing a canonical taxId in `node.document`).
+   *
+   * With enricher: resolve identity via Nosis, then write and pull relations.
    */
   private async processNode(
     roleKey: string,
-    node: LoadableNode,
-    resolvedSoFar: Map<string, string>
+    node: NonNullable<LoadableRow["nodes"][string]>,
+    resolvedTaxIds: Map<string, string>,
   ): Promise<NodeLoadOutcome> {
-    logger.info(`  Role "${roleKey}": resolving document "${node.document}"`)
+    const category = node.category ?? "known"
 
-    let identity: { taxId: string; businessName: string } | null = null
-    try {
-      identity = await this.enricher.resolveDocument(node.document)
-    } catch (err) {
-      logger.error(`  ✗ resolve failed for "${node.document}": ${(err as Error).message}`)
-      return { roleKey, status: "failed", notes: `Error resolving document: ${(err as Error).message}` }
+    // ── No enricher: take the document as canonical and write the node ──
+    if (!this.enricher) {
+      try {
+        await this.repository.upsertBaseNode(
+          node.document,
+          node.businessName,
+          node.source,
+          node.attributes,
+          category,
+        )
+        resolvedTaxIds.set(roleKey, node.document)
+        return { roleKey, status: "loaded", resolvedTaxId: node.document }
+      } catch (err) {
+        logger.error({ err, roleKey, document: node.document }, "Failed to upsert base node")
+        return { roleKey, status: "failed" }
+      }
     }
 
-    if (!identity) {
-      logger.warn(`  ✗ Document "${node.document}" not found in enricher`)
-      return { roleKey, status: "not_found", notes: "Documento no encontrado" }
-    }
-
-    const taxId = identity.taxId
-    const businessName = node.businessName.trim() || identity.businessName
-    logger.info(`  → resolved to ${taxId}`)
-
+    // ── With enricher: resolve, write, and pull the relationship graph ──
     try {
-      await this.repository.upsertBaseNode(taxId, businessName, node.source, node.attributes)
+      const identity = await this.enricher.resolveDocument(node.document)
+      if (!identity) return { roleKey, status: "not_found" }
 
-      const graph = await this.enricher.fetchRelationshipGraph(taxId, businessName)
-      for (const n of graph.nodes) {
-        await this.repository.upsertEnrichmentNode(n.taxId, n.businessName)
+      const taxId = identity.taxId
+      await this.repository.upsertBaseNode(
+        taxId,
+        identity.businessName || node.businessName,
+        node.source,
+        node.attributes,
+        category,
+      )
+      resolvedTaxIds.set(roleKey, taxId)
+
+      const graph = await this.enricher.fetchRelationshipGraph(taxId, identity.businessName)
+      let enrichmentNodeCount = 0
+      for (const enrichmentNode of graph.nodes) {
+        if (enrichmentNode.taxId === taxId) continue
+        await this.repository.upsertEnrichmentNode(enrichmentNode.taxId, enrichmentNode.businessName)
+        enrichmentNodeCount++
       }
       for (const rel of graph.relationships) {
         await this.repository.mergeRelationship(rel)
       }
-      logger.info(`  ✓ Loaded ${taxId} (${graph.nodes.length} nodes, ${graph.relationships.length} rels)`)
 
-      void resolvedSoFar
-      return { roleKey, status: "loaded", resolvedTaxId: taxId }
+      // Structured note so the row-level summary can report enrichment size
+      // without having to re-count at the end.
+      const notes = `${enrichmentNodeCount} related, ${graph.relationships.length} relationships`
+      return { roleKey, status: "loaded", resolvedTaxId: taxId, notes }
     } catch (err) {
-      logger.error(`  ✗ Persistence failed for ${taxId}: ${(err as Error).message}`)
-      return {
-        roleKey,
-        status: "failed",
-        resolvedTaxId: taxId,
-        notes: `Error persistiendo: ${(err as Error).message}`,
-      }
+      logger.error({ err, roleKey, document: node.document }, "Failed to process node")
+      return { roleKey, status: "failed" }
     }
   }
 
-  // ─── Utilities ────────────────────────────────────────────────────────────
+  // ─── Logging helpers ─────────────────────────────────────────────────────
 
   /**
-   * Aggregates per-node outcomes into a single row-level summary.
+   * Builds a short human-readable label for a row — used in the
+   * "[i/N] Processing ..." line. Prefers "<name> (<document>)" from the
+   * first node in the row.
    */
-  private summarise(outcomes: NodeLoadOutcome[]): RowLoadOutcome["overall"] {
-    const loaded = outcomes.filter((o) => o.status === "loaded").length
-    if (loaded === 0) return "none"
-    if (loaded === outcomes.length) return "all_loaded"
-    return "partial"
+  private describeRow(row: LoadableRow): string {
+    const firstNode: LoadableNode | undefined = Object.values(row.nodes)[0]
+    if (!firstNode) return `row ${row.rowId}`
+    const name = firstNode.businessName?.trim()
+    return name
+      ? `${name} (${firstNode.document})`
+      : firstNode.document
   }
 
   /**
-   * Pauses for a random duration in [minDelayMs, maxDelayMs].
-   * Mimics human-like browsing intervals to avoid tripping anti-scraping
-   * heuristics on the upstream provider.
-   *
-   * @param reason - Free-text reason logged alongside the wait, useful for
-   *                 disambiguating intra-row vs inter-row pauses in the log.
+   * Emits a per-row summary line. Mirrors the "✓ Loaded" / "✗ Failed" style
+   * of the old xlsx loaders so long runs are readable at a glance.
    */
-  private sleepRandom(reason: string): Promise<void> {
-    const ms = Math.floor(Math.random() * (this.maxDelayMs - this.minDelayMs + 1)) + this.minDelayMs
-    logger.info(`  ... waiting ${(ms / 1000).toFixed(1)}s ${reason}`)
-    return new Promise((resolve) => setTimeout(resolve, ms))
+  private logRowOutcome(outcome: RowLoadOutcome, index: number, total: number): void {
+    const prefix = `[${index + 1}/${total}] row ${outcome.rowId}`
+
+    if (outcome.overall === "all_loaded") {
+      // Aggregate notes from all loaded nodes (usually just one).
+      const notes = outcome.nodes
+        .filter((n) => n.status === "loaded" && n.notes)
+        .map((n) => n.notes)
+        .join(" | ")
+      logger.info(`${prefix} ✓ Loaded${notes ? ` — ${notes}` : ""}`)
+      return
+    }
+
+    if (outcome.overall === "none") {
+      const reasons = outcome.nodes.map((n) => `${n.roleKey}: ${n.status}`).join(", ")
+      logger.warn(`${prefix} ✗ Failed — ${reasons}`)
+      return
+    }
+
+    // Partial: some nodes loaded, some didn't
+    const failed = outcome.nodes
+      .filter((n) => n.status !== "loaded")
+      .map((n) => `${n.roleKey}: ${n.status}`)
+      .join(", ")
+    logger.warn(`${prefix} ~ Partial — ${failed}`)
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  private overallStatus(outcomes: NodeLoadOutcome[]): RowLoadOutcome["overall"] {
+    const loadedCount = outcomes.filter((o) => o.status === "loaded").length
+    if (loadedCount === outcomes.length) return "all_loaded"
+    if (loadedCount === 0) return "none"
+    return "partial"
+  }
+
+  private async sleepRandom(reason: string): Promise<void> {
+    const delay = MIN_DELAY_MS + Math.random() * (MAX_DELAY_MS - MIN_DELAY_MS)
+    logger.info(`Sleeping ${Math.round(delay / 1000)}s (${reason})`)
+    await new Promise((resolve) => setTimeout(resolve, delay))
   }
 }

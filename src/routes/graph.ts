@@ -565,6 +565,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     businessName: { type: "string" },
                     sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
+                    relatedSources: { type: "array", items: { type: "string" } },
                   },
                 },
               },
