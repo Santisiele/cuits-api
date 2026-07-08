@@ -9,7 +9,8 @@
  *     for backward compatibility
  *   - The standard list queries filter by isKnown=true so the existing
  *     "Mi base / Empresas / Cumpleaños" views show only the "conocidos"
- *     group, as agreed
+ *     group. FIND_TO_KNOW_NODES mirrors the same shape but filters by
+ *     isToKnow=true, powering the "Objetivos" view.
  */
 export const Queries = {
   // ─── Node ──────────────────────────────────────────────────────────────────
@@ -34,6 +35,23 @@ export const Queries = {
    */
   FIND_MY_BASE_NODES: `
     MATCH (c:CUIT {isKnown: true})
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.sources       AS sources,
+           c.isKnown       AS isKnown,
+           c.isToKnow      AS isToKnow,
+           count(DISTINCT related) AS relationshipCount
+    ORDER BY c.businessName
+  `,
+
+  /**
+   * Lists all "por conocer" nodes — the ones flagged as isToKnow=true.
+   * Nodes that are also isKnown appear in this view too (a node can belong
+   * to both groups simultaneously, and the objetivos view is inclusive).
+   */
+  FIND_TO_KNOW_NODES: `
+    MATCH (c:CUIT {isToKnow: true})
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
     RETURN c.id            AS taxId,
            c.businessName  AS businessName,

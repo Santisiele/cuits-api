@@ -94,6 +94,24 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  async findToKnowNodes(): Promise<CuitNodeSummary[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_TO_KNOW_NODES)
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
+        relatedSources: [],
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Birthdays ────────────────────────────────────────────────────────────
 
   async findBirthdaysBetween(
@@ -424,8 +442,6 @@ export class Neo4jRepository implements IGraphRepository {
     const isKnown = Boolean(props["isKnown"] ?? false)
     const isToKnow = Boolean(props["isToKnow"] ?? false)
 
-    // Keys that already map to first-class fields on CuitNode. Everything
-    // else in `props` is considered a custom field.
     const KNOWN_KEYS = new Set([
       "id", "businessName", "phone", "email", "birthday",
       "entryDate", "exitDate", "loadedAt",

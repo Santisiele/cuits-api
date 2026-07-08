@@ -197,3 +197,14 @@ export function logBirthdaysViewed(
     message: `${username} consultó cumpleaños entre ${from} y ${to} — ${resultCount} resultados`,
   })
 }
+
+/** Logs the to-know nodes list being viewed. */
+export function logToKnowViewed(username: string, nodeCount: number): void {
+  activityLogger.info({
+    event: "to_know_viewed",
+    username,
+    nodeCount,
+    message: `${username} consultó objetivos (${nodeCount} nodos)`,
+  })
+}
+ 
