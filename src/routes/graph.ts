@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -543,6 +543,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
     }
   )
+  
 
   // ─── GET /graph/companies ─────────────────────────────────────────────────
 
@@ -656,6 +657,58 @@ export default async function graphRoutes(server: FastifyInstance) {
 
         logBirthdaysViewed(request.username, fromRaw, toRaw, results.length)
         return { count: results.length, results }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/to-know ───────────────────────────────────────────────────
+
+  /**
+   * Lists all "por conocer" nodes (isToKnow = true).
+   *
+   * A node that is also isKnown appears here too — the two flags are
+   * independent classifications, and this view is the "objetivos" mirror
+   * of GET /graph/nodes (which lists the isKnown group).
+   */
+  server.get(
+    "/graph/to-know",
+    {
+      schema: {
+        summary: "Get all objetivos (isToKnow) nodes",
+        description: "Returns all nodes flagged as isToKnow = true.",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    isKnown: { type: "boolean" },
+                    isToKnow: { type: "boolean" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const nodes = await neo4jSource.findToKnowNodes()
+        logToKnowViewed(request.username, nodes.length)
+        return { nodes }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })

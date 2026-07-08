@@ -52,6 +52,14 @@ export class Neo4jSource implements ISource {
     return this.repository.findMyBaseNodes()
   }
 
+  /**
+   * Lists all "por conocer" nodes (isToKnow=true). Mirrors findMyBaseNodes
+   * so the /graph/to-know route has a symmetric API to /graph/nodes.
+   */
+  findToKnowNodes(): Promise<CuitNodeSummary[]> {
+    return this.repository.findToKnowNodes()
+  }
+
   findNode(taxId: string): Promise<CuitNode | null> {
     return this.repository.findNode(taxId)
   }
