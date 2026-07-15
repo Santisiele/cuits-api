@@ -50,6 +50,7 @@ export interface IGraphRepository {
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findToKnowNodes(): Promise<CuitNodeSummary[]>
+  findAllMyNodes(): Promise <CuitNodeSummary[]>
 
   /**
    * Returns every inMyBase node whose birthday falls on or between

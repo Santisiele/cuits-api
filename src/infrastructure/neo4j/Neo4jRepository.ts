@@ -112,6 +112,24 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  async findAllMyNodes(): Promise<CuitNodeSummary[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_ALL_MY_NODES)
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
+        relatedSources: [],
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Birthdays ────────────────────────────────────────────────────────────
 
   async findBirthdaysBetween(

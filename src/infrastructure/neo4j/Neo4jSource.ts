@@ -60,6 +60,10 @@ export class Neo4jSource implements ISource {
     return this.repository.findToKnowNodes()
   }
 
+  findAllMyNodes(): Promise<CuitNodeSummary[]> {
+    return this.repository.findAllMyNodes()
+  }
+
   findNode(taxId: string): Promise<CuitNode | null> {
     return this.repository.findNode(taxId)
   }
@@ -99,5 +103,5 @@ export class Neo4jSource implements ISource {
     toDay: number
   ): Promise<import("@domain/entities.js").BirthdayResult[]> {
     return this.repository.findBirthdaysBetween(fromMonth, fromDay, toMonth, toDay)
-  } 
+  }
 }

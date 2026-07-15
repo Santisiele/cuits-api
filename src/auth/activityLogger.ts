@@ -207,4 +207,13 @@ export function logToKnowViewed(username: string, nodeCount: number): void {
     message: `${username} consultó objetivos (${nodeCount} nodos)`,
   })
 }
- 
+
+/** Logs the combined "all mine" nodes list being viewed. */
+export function logAllMyNodesViewed(username: string, nodeCount: number): void {
+  activityLogger.info({
+    event: "all_my_nodes_viewed",
+    username,
+    nodeCount,
+    message: `${username} consultó todos sus nodos (${nodeCount} nodos)`,
+  })
+}

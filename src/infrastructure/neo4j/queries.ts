@@ -62,6 +62,17 @@ export const Queries = {
     ORDER BY c.businessName
   `,
 
+  FIND_ALL_MY_NODES: `
+    MATCH (c:CUIT {inMyBase: true})
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.sources       AS sources,
+           c.isKnown       AS isKnown,
+           c.isToKnow      AS isToKnow,
+           count(DISTINCT related) AS relationshipCount
+    ORDER BY c.businessName`,
+
   FIND_BIRTHDAY_CANDIDATES: `
     MATCH (c:CUIT {isKnown: true})
     WHERE c.birthday IS NOT NULL AND c.birthday <> ""

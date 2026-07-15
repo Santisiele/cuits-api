@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -358,7 +358,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const node = await neo4jSource.findNode(taxId)
         if (!node) {
-          logNodeViewed(request.username, taxId, null,null,null,null)
+          logNodeViewed(request.username, taxId, null, null, null, null)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
@@ -543,7 +543,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
     }
   )
-  
+
 
   // ─── GET /graph/companies ─────────────────────────────────────────────────
 
@@ -607,7 +607,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           required: ["from", "to"],
           properties: {
             from: { type: "string", description: "dd/mm/yyyy or dd/mm" },
-            to:   { type: "string", description: "dd/mm/yyyy or dd/mm" },
+            to: { type: "string", description: "dd/mm/yyyy or dd/mm" },
           },
         },
         response: {
@@ -638,10 +638,10 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const fromRaw = request.query.from ?? ""
-      const toRaw   = request.query.to   ?? ""
+      const toRaw = request.query.to ?? ""
 
       const from = parseDayMonth(fromRaw)
-      const to   = parseDayMonth(toRaw)
+      const to = parseDayMonth(toRaw)
 
       if (!from || !to) {
         return reply.code(400).send({
@@ -652,7 +652,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const results = await neo4jSource.findBirthdaysBetween(
           from.month, from.day,
-          to.month,   to.day
+          to.month, to.day
         )
 
         logBirthdaysViewed(request.username, fromRaw, toRaw, results.length)
@@ -715,4 +715,54 @@ export default async function graphRoutes(server: FastifyInstance) {
       }
     }
   )
+
+  // ─── GET /graph/base-full ──────────────────────────────────────────────────
+
+  /**
+   * Lists every node the user considers "their own" — the union of the
+   * conocidos (isKnown) and por conocer (isToKnow) groups. Nodes that are
+   * both appear once.
+   */
+  server.get(
+    "/graph/base-full",
+    {
+      schema: {
+        summary: "Get all my nodes (union of isKnown and isToKnow)",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    isKnown: { type: "boolean" },
+                    isToKnow: { type: "boolean" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const nodes = await neo4jSource.findAllMyNodes()
+        logAllMyNodesViewed(request.username, nodes.length)
+        return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
 }
+
