@@ -217,3 +217,23 @@ export function logAllMyNodesViewed(username: string, nodeCount: number): void {
     message: `${username} consultó todos sus nodos (${nodeCount} nodos)`,
   })
 }
+
+/**
+ * Logs the creation of a new source entity in the graph.
+ * Used by the migration script (called once per created source) and
+ * by future admin endpoints whenever a source name that didn't exist
+ * before shows up.
+ */
+export function logSourceCreated(
+  username: string,
+  sourceName: string,
+  category: string,
+): void {
+  activityLogger.info({
+    event: "source_created",
+    username,
+    sourceName,
+    category,
+    message: `${username} registró la fuente "${sourceName}" (${category})`,
+  })
+}
