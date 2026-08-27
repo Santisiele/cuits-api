@@ -263,4 +263,249 @@ export const Queries = {
     CREATE CONSTRAINT source_name_unique IF NOT EXISTS
     FOR (s:Source) REQUIRE s.name IS UNIQUE
   `,
+
+  // ─── Source admin — shared ─────────────────────────────────────────────────
+
+  /**
+   * Number of CUITs currently attached to a source. Measured before an
+   * operation runs so a dry run and the real execution report the same
+   * figure.
+   */
+  COUNT_CUITS_FOR_SOURCE: `
+    MATCH (c:CUIT)-[:HAS_SOURCE]->(:Source {name: $sourceName})
+    RETURN count(c) AS affectedNodeCount
+  `,
+
+  /** Existence check used before delete, which has no other precondition. */
+  CHECK_SOURCE_EXISTS: `
+    OPTIONAL MATCH (s:Source {name: $sourceName})
+    RETURN s IS NOT NULL AS sourceExists
+  `,
+
+  /**
+   * Ids of every CUIT attached to a source.
+   *
+   * Captured BEFORE a delete detaches them, because afterwards there is no
+   * way to tell which orphans the operation produced and which were already
+   * in the graph. The orphan sweep is then restricted to these ids.
+   */
+  FIND_CUIT_IDS_FOR_SOURCE: `
+    MATCH (c:CUIT)-[:HAS_SOURCE]->(:Source {name: $sourceName})
+    RETURN c.id AS id
+  `,
+
+  // ─── Source admin — rename ─────────────────────────────────────────────────
+
+  /**
+   * Checks that the source exists and the target name is free.
+   * A taken name would mean an implicit merge, which rename refuses.
+   */
+  CHECK_RENAME_ELIGIBILITY: `
+    OPTIONAL MATCH (existing:Source {name: $oldName})
+    OPTIONAL MATCH (conflict:Source {name: $newName})
+    RETURN existing IS NOT NULL AS sourceExists,
+           conflict IS NOT NULL AS newNameExists
+  `,
+
+  /**
+   * Renames the source node itself. O(1): the relationships already point
+   * at this node, so only the cached arrays need a follow-up pass.
+   */
+  RENAME_SOURCE_NODE: `
+    MATCH (s:Source {name: $oldName})
+    SET s.name = $newName
+    RETURN s.category AS category
+  `,
+
+  /**
+   * Rewrites the cached `sources` array on CUITs still holding the old name.
+   *
+   * Self-terminating: every pass strips `$oldName` from the batch it touches,
+   * so those rows stop matching the WHERE and the next pass moves on. Runs
+   * after RENAME_SOURCE_NODE, hence matching on the NEW name.
+   */
+  UPDATE_SOURCES_ARRAY_FOR_RENAME_BATCH: `
+    MATCH (c:CUIT)-[:HAS_SOURCE]->(:Source {name: $newName})
+    WHERE $oldName IN c.sources
+    WITH c LIMIT $batchSize
+    SET c.sources = [x IN c.sources WHERE x <> $oldName] + $newName
+    RETURN count(c) AS batchProcessed
+  `,
+
+  // ─── Source admin — merge ──────────────────────────────────────────────────
+
+  /**
+   * Both sources must exist and share a category: merging across categories
+   * would silently reclassify every node involved.
+   */
+  CHECK_MERGE_ELIGIBILITY: `
+    OPTIONAL MATCH (keep:Source {name: $sourceToKeep})
+    OPTIONAL MATCH (drop:Source {name: $sourceToDrop})
+    RETURN keep IS NOT NULL AS keepExists,
+           drop IS NOT NULL AS dropExists,
+           keep.category    AS keepCategory,
+           drop.category    AS dropCategory
+  `,
+
+  /**
+   * Moves up to $batchSize CUITs from the dropped source onto the kept one
+   * and rewrites their cached array in the same statement.
+   *
+   * Flags are left alone on purpose: both sources share a category, so the
+   * node's known/toKnow standing cannot change.
+   */
+  MERGE_SOURCE_RELATIONSHIPS_BATCH: `
+    MATCH (c:CUIT)-[oldRel:HAS_SOURCE]->(:Source {name: $sourceToDrop})
+    WITH c, oldRel LIMIT $batchSize
+    MATCH (keep:Source {name: $sourceToKeep})
+    MERGE (c)-[:HAS_SOURCE]->(keep)
+    DELETE oldRel
+    SET c.sources = [x IN c.sources WHERE x <> $sourceToDrop AND x <> $sourceToKeep] + $sourceToKeep
+    RETURN count(c) AS batchProcessed
+  `,
+
+  /**
+   * Drops the merged-away source. The emptiness guard is a safety net: if a
+   * batch failed silently, the node survives with its remaining CUITs rather
+   * than taking them down with it.
+   */
+  DELETE_SOURCE_NODE_AFTER_MERGE: `
+    MATCH (s:Source {name: $sourceToDrop})
+    WHERE NOT EXISTS { MATCH (:CUIT)-[:HAS_SOURCE]->(s) }
+    DETACH DELETE s
+  `,
+
+  // ─── Source admin — delete ─────────────────────────────────────────────────
+
+  /**
+   * Dry-run estimate of how many CUITs the delete would leave orphaned:
+   * attached to this source, to no other source, and to no node that is
+   * itself in the base.
+   */
+  COUNT_ORPHANS_FOR_SOURCE: `
+    MATCH (c:CUIT)-[:HAS_SOURCE]->(:Source {name: $sourceName})
+    WHERE NOT EXISTS {
+            MATCH (c)-[:HAS_SOURCE]->(other:Source)
+            WHERE other.name <> $sourceName
+          }
+      AND NOT EXISTS { MATCH (c)-[:RELATED_TO]-(:CUIT {inMyBase: true}) }
+    RETURN count(c) AS orphanCount
+  `,
+
+  /**
+   * Detaches up to $batchSize CUITs from the source and recalculates their
+   * flags from whatever sources remain.
+   *
+   * `collect` drops nulls, so a node left with no source yields an empty
+   * list and lands on isKnown=false / isToKnow=false / inMyBase=false.
+   * Deleting the (:Source) and the orphaned CUITs are separate passes.
+   */
+  DELETE_SOURCE_RELATIONSHIPS_BATCH: `
+    MATCH (c:CUIT)-[r:HAS_SOURCE]->(:Source {name: $sourceName})
+    WITH c, r LIMIT $batchSize
+    DELETE r
+    WITH c
+    SET c.sources = [x IN c.sources WHERE x <> $sourceName]
+    WITH c
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS remainingCategories
+    SET c.isKnown  = "known"  IN remainingCategories,
+        c.isToKnow = "toKnow" IN remainingCategories,
+        c.inMyBase = size(remainingCategories) > 0
+    RETURN count(c) AS batchProcessed
+  `,
+
+  /** Removes the source node once every attachment is gone. */
+  DELETE_SOURCE_NODE: `
+    MATCH (s:Source {name: $sourceName})
+    DETACH DELETE s
+  `,
+
+  /**
+   * Deletes the CUITs from $ids that the operation left orphaned: no source
+   * left, not in the base, and not hanging off anyone who is.
+   *
+   * Scoped to $ids rather than sweeping the whole graph, so an unrelated
+   * enrichment node that merely looks orphaned is never collateral damage.
+   * The count is taken before the delete, since a deleted node can no longer
+   * be projected.
+   */
+  DELETE_ORPHANED_NODES_BATCH: `
+    UNWIND $ids AS cuitId
+    MATCH (c:CUIT {id: cuitId})
+    WHERE c.inMyBase = false
+      AND NOT EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) }
+      AND NOT EXISTS { MATCH (c)-[:RELATED_TO]-(:CUIT {inMyBase: true}) }
+    WITH collect(c) AS orphans
+    FOREACH (orphan IN orphans | DETACH DELETE orphan)
+    RETURN size(orphans) AS removedCount
+  `,
+
+  // ─── Source admin — node level ─────────────────────────────────────────────
+
+  /** Node and target source must both exist before an add. */
+  CHECK_ADD_ELIGIBILITY: `
+    OPTIONAL MATCH (c:CUIT {id: $taxId})
+    OPTIONAL MATCH (s:Source {name: $sourceName})
+    RETURN c IS NOT NULL AS nodeExists,
+           s IS NOT NULL AS sourceExists
+  `,
+
+  /**
+   * Attaches a source to one CUIT. Idempotent - re-running changes nothing.
+   *
+   * COALESCE guards nodes created by MERGE_ENRICHMENT_NODE, which carry no
+   * `sources` property at all; without it the array arithmetic yields null
+   * and wipes the cache.
+   */
+  ADD_SOURCE_TO_NODE: `
+    MATCH (c:CUIT {id: $taxId})
+    MATCH (s:Source {name: $sourceName})
+    MERGE (c)-[:HAS_SOURCE]->(s)
+    SET c.sources = CASE
+      WHEN $sourceName IN COALESCE(c.sources, []) THEN c.sources
+      ELSE COALESCE(c.sources, []) + $sourceName
+    END
+    WITH c
+    MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS categories
+    SET c.isKnown  = "known"  IN categories,
+        c.isToKnow = "toKnow" IN categories,
+        c.inMyBase = size(categories) > 0
+    RETURN c.id AS taxId
+  `,
+
+  /**
+   * Node must exist, must currently carry `fromSource`, and `toSource` must
+   * exist. `fromExists` conflates "no such source" with "not attached to it"
+   * because the caller treats both the same way.
+   */
+  CHECK_MOVE_ELIGIBILITY: `
+    OPTIONAL MATCH (c:CUIT {id: $taxId})
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(from:Source {name: $fromSource})
+    OPTIONAL MATCH (to:Source {name: $toSource})
+    RETURN c IS NOT NULL    AS nodeExists,
+           from IS NOT NULL AS fromExists,
+           to IS NOT NULL   AS toExists
+  `,
+
+  /**
+   * Detaches one source and attaches another in a single statement, then
+   * recalculates flags. A move always leaves at least `toSource` attached,
+   * so it can never orphan the node.
+   */
+  MOVE_SOURCE_ON_NODE: `
+    MATCH (c:CUIT {id: $taxId})-[r:HAS_SOURCE]->(:Source {name: $fromSource})
+    MATCH (to:Source {name: $toSource})
+    DELETE r
+    MERGE (c)-[:HAS_SOURCE]->(to)
+    SET c.sources = [x IN COALESCE(c.sources, []) WHERE x <> $fromSource AND x <> $toSource] + $toSource
+    WITH c
+    MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS categories
+    SET c.isKnown  = "known"  IN categories,
+        c.isToKnow = "toKnow" IN categories,
+        c.inMyBase = size(categories) > 0
+    RETURN c.id AS taxId
+  `,
 } as const

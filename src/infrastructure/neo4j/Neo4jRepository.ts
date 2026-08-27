@@ -1,4 +1,4 @@
-import type { Session } from "neo4j-driver"
+import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
@@ -195,6 +195,263 @@ export class Neo4jRepository implements IGraphRepository {
             : ("known" as const),
         nodeCount: Number(record.get("nodeCount") ?? 0),
       }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Source administration ────────────────────────────────────────────────
+
+  /**
+   * Batched queries take their LIMIT as a parameter, and the driver packs a
+   * plain JS number as a Float, which Cypher refuses as a LIMIT. Wrapping in
+   * neo4j.int() is what makes the batch size land as an integer.
+   */
+  private batchParam(batchSize: number): unknown {
+    return neo4j.int(batchSize)
+  }
+
+  async countCuitsForSource(sourceName: string): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_CUITS_FOR_SOURCE, { sourceName })
+      return Number(result.records[0]?.get("affectedNodeCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async checkSourceExists(sourceName: string): Promise<boolean> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_SOURCE_EXISTS, { sourceName })
+      return Boolean(result.records[0]?.get("sourceExists") ?? false)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findCuitIdsForSource(sourceName: string): Promise<string[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_CUIT_IDS_FOR_SOURCE, { sourceName })
+      return result.records.map((record) => String(record.get("id")))
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Rename ───────────────────────────────────────────────────────────────
+
+  async checkRenameEligibility(
+    oldName: string,
+    newName: string
+  ): Promise<{ sourceExists: boolean; newNameExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_RENAME_ELIGIBILITY, { oldName, newName })
+      const record = result.records[0]
+      return {
+        sourceExists: Boolean(record?.get("sourceExists") ?? false),
+        newNameExists: Boolean(record?.get("newNameExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async renameSourceNode(oldName: string, newName: string): Promise<string> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.RENAME_SOURCE_NODE, { oldName, newName })
+      return String(result.records[0]?.get("category") ?? "known")
+    } finally {
+      await session.close()
+    }
+  }
+
+  async updateSourcesArrayForRenameBatch(
+    oldName: string,
+    newName: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.UPDATE_SOURCES_ARRAY_FOR_RENAME_BATCH, {
+        oldName,
+        newName,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Merge ────────────────────────────────────────────────────────────────
+
+  async checkMergeEligibility(
+    sourceToKeep: string,
+    sourceToDrop: string
+  ): Promise<{
+    keepExists: boolean
+    dropExists: boolean
+    keepCategory: string | null
+    dropCategory: string | null
+  }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_MERGE_ELIGIBILITY, {
+        sourceToKeep,
+        sourceToDrop,
+      })
+      const record = result.records[0]
+      const keepCategory = record?.get("keepCategory") ?? null
+      const dropCategory = record?.get("dropCategory") ?? null
+      return {
+        keepExists: Boolean(record?.get("keepExists") ?? false),
+        dropExists: Boolean(record?.get("dropExists") ?? false),
+        keepCategory: keepCategory === null ? null : String(keepCategory),
+        dropCategory: dropCategory === null ? null : String(dropCategory),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async mergeSourceRelationshipsBatch(
+    sourceToKeep: string,
+    sourceToDrop: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.MERGE_SOURCE_RELATIONSHIPS_BATCH, {
+        sourceToKeep,
+        sourceToDrop,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async finalizeSourceMerge(sourceToDrop: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.DELETE_SOURCE_NODE_AFTER_MERGE, { sourceToDrop })
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Delete ───────────────────────────────────────────────────────────────
+
+  async deleteSourceRelationshipsBatch(
+    sourceName: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.DELETE_SOURCE_RELATIONSHIPS_BATCH, {
+        sourceName,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteSourceNode(sourceName: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.DELETE_SOURCE_NODE, { sourceName })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async countOrphansForSource(sourceName: string): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_ORPHANS_FOR_SOURCE, { sourceName })
+      return Number(result.records[0]?.get("orphanCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteOrphanedNodesBatch(taxIds: string[]): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.DELETE_ORPHANED_NODES_BATCH, { ids: taxIds })
+      return Number(result.records[0]?.get("removedCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Node level ───────────────────────────────────────────────────────────
+
+  async checkAddEligibility(
+    taxId: string,
+    sourceName: string
+  ): Promise<{ nodeExists: boolean; sourceExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_ADD_ELIGIBILITY, { taxId, sourceName })
+      const record = result.records[0]
+      return {
+        nodeExists: Boolean(record?.get("nodeExists") ?? false),
+        sourceExists: Boolean(record?.get("sourceExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async addSourceToNode(taxId: string, sourceName: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.ADD_SOURCE_TO_NODE, { taxId, sourceName })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async checkMoveEligibility(
+    taxId: string,
+    fromSource: string,
+    toSource: string
+  ): Promise<{ nodeExists: boolean; fromExists: boolean; toExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_MOVE_ELIGIBILITY, {
+        taxId,
+        fromSource,
+        toSource,
+      })
+      const record = result.records[0]
+      return {
+        nodeExists: Boolean(record?.get("nodeExists") ?? false),
+        fromExists: Boolean(record?.get("fromExists") ?? false),
+        toExists: Boolean(record?.get("toExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async moveSourceOnNode(
+    taxId: string,
+    fromSource: string,
+    toSource: string
+  ): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.MOVE_SOURCE_ON_NODE, { taxId, fromSource, toSource })
     } finally {
       await session.close()
     }

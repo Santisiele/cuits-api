@@ -101,6 +101,19 @@ export class Neo4jSource implements ISource {
   }
 
   /**
+   * Exposes the underlying port so SourceAdminService can be built over the
+   * same adapter instance.
+   *
+   * The admin service depends on IGraphRepository directly because it drives
+   * batching loops over a dozen primitives; funnelling those through
+   * pass-through methods here would add a layer with no behaviour of its own.
+   * The concrete adapter stays hidden — callers only ever see the port.
+   */
+  getRepository(): IGraphRepository {
+    return this.repository
+  }
+
+  /**
    * Returns every inMyBase node whose birthday falls in the given
    * (month, day) range. Delegates to the underlying repository.
    */

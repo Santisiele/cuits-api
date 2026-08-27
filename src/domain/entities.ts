@@ -135,6 +135,50 @@ export interface SourceInfo {
   nodeCount: number
 }
 
+/**
+ * Administrative operations that can be performed over sources.
+ */
+export type SourceAdminOperation =
+  | "rename"
+  | "merge"
+  | "delete"
+  | "add-source"
+  | "move-source"
+
+/**
+ * Standardised summary returned by every source admin operation.
+ * Callers use this to display feedback and to log the effect.
+ *
+ * `affectedNodeCount` is the count measured BEFORE executing, so a dry
+ * run and its real counterpart report the same figure.
+ */
+export interface OperationSummary {
+  operation: SourceAdminOperation
+  affectedNodeCount: number
+  removedNodeCount: number
+  updatedNodeCount: number
+  createdSourceName?: string
+  removedSourceName?: string
+  dryRun: boolean
+  message: string
+}
+
+/**
+ * Reason a source admin operation was rejected before execution.
+ * Handlers map these to HTTP status codes:
+ *   - "source_not_found"     → 404
+ *   - "name_conflict"        → 409
+ *   - "category_mismatch"    → 409
+ *   - "node_not_found"       → 404
+ *   - "invalid_move_params"  → 400
+ */
+export type SourceAdminRejection =
+  | "source_not_found"
+  | "name_conflict"
+  | "category_mismatch"
+  | "node_not_found"
+  | "invalid_move_params"
+
 export interface LoadableNode {
   document: string
   businessName: string
