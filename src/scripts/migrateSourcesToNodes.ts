@@ -1,5 +1,5 @@
 import "dotenv/config"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { logSourceCreated } from "@auth/activityLogger.js"

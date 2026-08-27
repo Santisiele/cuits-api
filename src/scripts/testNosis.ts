@@ -1,5 +1,5 @@
 import { NosisScraper } from "@scrapers/nosis.js"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 
 /**
  * One-off CLI that exercises the Nosis scraper for a single Tax ID and

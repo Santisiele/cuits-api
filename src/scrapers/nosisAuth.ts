@@ -1,6 +1,6 @@
 import { chromium } from "playwright"
 import { CookieJar } from "tough-cookie"
-import { config } from "@config"
+import { config } from "@config.js"
 
 const LOGIN_URL = "https://sac31.nosis.com/net/manager"
 
