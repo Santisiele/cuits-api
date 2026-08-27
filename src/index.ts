@@ -7,6 +7,7 @@ import rateLimit from "@fastify/rate-limit"
 import graphRoutes from "@routes/graph.js"
 import cuitRoutes from "@routes/cuit.js"
 import authRoutes from "@routes/auth.js"
+import sourceAdminRoutes from "@routes/sources.js"
 import { schemas } from "@schemas.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { authMiddleware } from "@middleware/authMiddleware.js"
@@ -82,6 +83,7 @@ async function protectedRoutes(instance: FastifyInstance) {
   instance.addHook("preHandler", authMiddleware)
   await instance.register(cuitRoutes)
   await instance.register(graphRoutes)
+  await instance.register(sourceAdminRoutes)
 }
 
 await server.register(protectedRoutes)
