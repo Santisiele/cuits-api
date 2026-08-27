@@ -8,6 +8,8 @@
     "test": "vitest",
     "setup": "pnpm install && playwright install chromium",
     "dev": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths",
+    "start": "node dist/index.js",
     "generate:docs": "typedoc --entryPointStrategy expand --out docs ./src",
     "nosis:test": "tsx src/scripts/testNosis.ts",
     "load:poseidon": "tsx src/scripts/loadFromPoseidon.ts",
@@ -60,6 +62,7 @@
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
+    "tsc-alias": "^1.9.2",
     "typedoc": "^0.28.17",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
