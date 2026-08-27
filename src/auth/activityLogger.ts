@@ -1,6 +1,7 @@
 import pino from "pino"
 import path from "path"
 import fs from "fs"
+import type { OperationSummary } from "@domain/entities.js"
 
 /**
  * Resolves LOG_ROUTE into an absolute directory path.
@@ -235,5 +236,66 @@ export function logSourceCreated(
     sourceName,
     category,
     message: `${username} registró la fuente "${sourceName}" (${category})`,
+  })
+}
+
+// ─── Source admin operations ─────────────────────────────────────────────────
+
+/**
+ * Structured log emitted BEFORE every destructive source operation.
+ *
+ * Initiated and completed events are deliberately separate: if the process
+ * dies mid-operation, the orphaned "initiated" line is what tells you which
+ * operation was in flight and roughly how much it was about to touch.
+ *
+ * The affected node list is intentionally NOT logged — on a source with
+ * thousands of CUITs it would dwarf the log. Granular reconstruction relies
+ * on the Aura snapshot instead.
+ */
+export function logSourceOperationInitiated(payload: {
+  event: string
+  username: string
+  sourceName: string
+  operationParams: Record<string, unknown>
+  affectedNodeCount: number
+}): void {
+  activityLogger.info({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} inició "${payload.event}" sobre "${payload.sourceName}" (~${payload.affectedNodeCount} nodos)`,
+  })
+}
+
+/** Structured log emitted after a destructive source operation succeeds. */
+export function logSourceOperationCompleted(payload: {
+  event: string
+  username: string
+  sourceName: string
+  finalSummary: OperationSummary
+  durationMs: number
+}): void {
+  activityLogger.info({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} completó "${payload.event}" sobre "${payload.sourceName}" en ${payload.durationMs}ms`,
+  })
+}
+
+/**
+ * Structured log emitted when a destructive source operation throws.
+ * `partialProgress` carries whatever the service managed to finish before
+ * failing, which is what makes a half-applied batch recoverable by hand.
+ */
+export function logSourceOperationFailed(payload: {
+  event: string
+  username: string
+  sourceName: string
+  error: string
+  partialProgress?: Record<string, unknown>
+}): void {
+  activityLogger.error({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} falló "${payload.event}" sobre "${payload.sourceName}": ${payload.error}`,
   })
 }
