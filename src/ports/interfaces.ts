@@ -20,7 +20,8 @@ import type {
   LoadableRow,
   LoadableNodeAttributes,
   BirthdayResult,
-  LoadableNodeCategory
+  LoadableNodeCategory,
+  SourceInfo
 } from "@domain/entities.js"
 
 // ─── Driving ports (inbound) ──────────────────────────────────────────────────
@@ -53,6 +54,16 @@ export interface IGraphRepository {
   findAllMyNodes(): Promise <CuitNodeSummary[]>
 
   /**
+   * Lists every source registered in the graph, with its category
+   * and the number of CuitNodes currently attached to it.
+   *
+   * Uses the (:Source) nodes as source of truth. The array
+   * `CuitNode.sources` is a denormalised cache and should not be
+   * scanned to build this list.
+   */
+  findSources(): Promise<SourceInfo[]>
+
+  /**
    * Returns every inMyBase node whose birthday falls on or between
    * (`fromMonth`/`fromDay`) and (`toMonth`/`toDay`), ignoring the year.
    * The year of `birthday` itself is preserved in the result so callers
@@ -74,12 +85,29 @@ export interface IGraphRepository {
   addRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<AddRelationshipResult>
   deleteRelationship(fromTaxId: string, toTaxId: string, relationshipType: string): Promise<DeleteRelationshipResult>
 
+  // Ingestion (used by LoaderService)
+
   /**
    * Upserts a base-group node.
-   * @param category - "known" (default) or "to_know". Additive: re-loading
-   *                   an existing node never clears the other flag.
+   *
+   * Additive semantics for isKnown / isToKnow flags: existing values
+   * are preserved. Category-implied flag is only flipped TRUE, never
+   * back to FALSE.
+   *
+   * Sources are stored in two places:
+   *   - c.sources: string[] (denormalised cache for read paths)
+   *   - (:Source {name})<-[:HAS_SOURCE]-(c) (source of truth)
+   *
+   * Both are updated atomically inside MERGE_BASE_NODE. When the
+   * (:Source) is created for the first time, its category is set
+   * from the caller's `category` argument; subsequent calls that
+   * reference the same source do NOT overwrite the category.
+   *
+   * @param category - "known" (default) or "to_know". Determines the
+   *                   isKnown/isToKnow flag on the node AND, on first
+   *                   encounter of the source name, the category of
+   *                   the (:Source) node.
    */
-  // Ingestion (used by LoaderService)
   upsertBaseNode(
     taxId: string,
     businessName: string,

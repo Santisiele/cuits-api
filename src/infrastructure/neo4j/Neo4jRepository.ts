@@ -17,6 +17,7 @@ import type {
   LoadableNodeAttributes,
   LoadableNodeCategory,
   BirthdayResult,
+  SourceInfo,
 } from "@domain/entities.js"
 
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
@@ -173,6 +174,32 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  // ─── Sources ──────────────────────────────────────────────────────────────
+
+  /**
+   * Lists every (:Source) node with its category and attached CUIT count.
+   *
+   * The category is stored as "known" | "toKnow" in the graph and mapped
+   * back to the domain's `LoadableNodeCategory` ("known" | "to_know") here,
+   * so callers never see the graph-level spelling.
+   */
+  async findSources(): Promise<SourceInfo[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_SOURCES)
+      return result.records.map((record) => ({
+        name: String(record.get("name") ?? ""),
+        category:
+          String(record.get("category") ?? "known") === "toKnow"
+            ? ("to_know" as const)
+            : ("known" as const),
+        nodeCount: Number(record.get("nodeCount") ?? 0),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Ingestion ────────────────────────────────────────────────────────────
 
   /**
@@ -180,6 +207,10 @@ export class Neo4jRepository implements IGraphRepository {
    * implied by `category`. Existing values are preserved — a node already
    * marked isKnown won't lose that flag if re-loaded as to_know, and vice
    * versa. A node loaded for the first time gets exactly one flag set.
+   *
+   * Sources are written to both representations inside the same statement:
+   * the `c.sources` array (read cache) and the (:Source)<-[:HAS_SOURCE]-(c)
+   * relationship (source of truth).
    */
   async upsertBaseNode(
     taxId: string,
@@ -194,6 +225,13 @@ export class Neo4jRepository implements IGraphRepository {
         id: taxId,
         name: businessName,
         source,
+        /**
+         * Maps the loader's "known" | "to_know" onto the (:Source) node's
+         * "known" | "toKnow" property. The distinction is historical: the
+         * loader-facing type uses snake_case, while the graph model uses
+         * camelCase to match the frontend contract.
+         */
+        sourceCategory: category === "to_know" ? "toKnow" : "known",
         isKnown: category === "known",
         isToKnow: category === "to_know",
         phone: attributes.phone ?? null,

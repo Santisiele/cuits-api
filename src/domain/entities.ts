@@ -122,6 +122,19 @@ export interface GraphRelationship {
 
 export type LoadableNodeCategory = "known" | "to_know"
 
+/**
+ * A source registered in the graph as a first-class entity.
+ * Sources are shared across many CuitNodes via the [:HAS_SOURCE]
+ * relationship. The array `CuitNode.sources` is kept in sync as a
+ * denormalised cache of the source names, but the Source node is
+ * the source of truth for category and any future metadata.
+ */
+export interface SourceInfo {
+  name: string
+  category: LoadableNodeCategory
+  nodeCount: number
+}
+
 export interface LoadableNode {
   document: string
   businessName: string

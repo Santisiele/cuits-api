@@ -167,6 +167,13 @@ export const Queries = {
    *
    * `inMyBase` is derived (isKnown OR isToKnow) and updated in the same
    * statement, so the legacy field stays accurate.
+   *
+   * Source semantics: the (:Source) node is the source of truth, while
+   * `c.sources` is a denormalised read cache. Both are written in this
+   * single statement so they can never drift apart. `$sourceCategory` is
+   * applied ON CREATE only — the first loader to touch a source name
+   * decides its category, and later loaders never overwrite it (changing
+   * it is an admin operation, not an ingestion side effect).
    */
   MERGE_BASE_NODE: `
     MERGE (c:CUIT {id: $id})
@@ -187,6 +194,10 @@ export const Queries = {
         c += $customFields
     WITH c
     SET c.inMyBase = (c.isKnown = true OR c.isToKnow = true)
+    WITH c
+    MERGE (s:Source {name: $source})
+    ON CREATE SET s.category = $sourceCategory
+    MERGE (c)-[:HAS_SOURCE]->(s)
   `,
 
   MERGE_RELATIONSHIP: `
@@ -226,5 +237,30 @@ export const Queries = {
            relationshipCount,
            [s IN rawSources WHERE s IS NOT NULL] AS relatedSources
     ORDER BY relationshipCount DESC
+  `,
+
+  // ─── Sources ───────────────────────────────────────────────────────────────
+
+  /**
+   * Lists every Source node with its category and the count of CUITs
+   * currently attached. Used by the admin UI (fase 2) and available
+   * for internal reporting.
+   */
+  FIND_SOURCES: `
+    MATCH (s:Source)
+    OPTIONAL MATCH (c:CUIT)-[:HAS_SOURCE]->(s)
+    RETURN s.name       AS name,
+           s.category   AS category,
+           count(c)     AS nodeCount
+    ORDER BY s.name
+  `,
+
+  /**
+   * Guarantees one (:Source) per name. Idempotent, so the migration script
+   * can run it on every pass; it also backs name lookups with an index.
+   */
+  CREATE_SOURCE_CONSTRAINT: `
+    CREATE CONSTRAINT source_name_unique IF NOT EXISTS
+    FOR (s:Source) REQUIRE s.name IS UNIQUE
   `,
 } as const
