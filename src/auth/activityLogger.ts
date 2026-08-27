@@ -262,7 +262,7 @@ export function logSourceOperationInitiated(payload: {
   activityLogger.info({
     ...payload,
     timestamp: new Date().toISOString(),
-    message: `${payload.username} inició "${payload.event}" sobre "${payload.sourceName}" (~${payload.affectedNodeCount} nodos)`,
+    message: `${payload.username} inició "${payload.event}" sobre "${payload.sourceName}" (~${payload.affectedNodeCount} CUITs)`,
   })
 }
 

@@ -72,7 +72,7 @@ export class SourceAdminService {
     if (eligibility.newNameExists) {
       throw new SourceAdminError(
         "name_conflict",
-        `El nombre "${trimmedNewName}" ya está en uso. Usá merge en su lugar.`
+        `El nombre "${trimmedNewName}" ya está en uso. Usá unificar en su lugar.`
       )
     }
 
@@ -87,7 +87,7 @@ export class SourceAdminService {
         createdSourceName: trimmedNewName,
         removedSourceName: oldName,
         dryRun: true,
-        message: `Preview: se renombraría "${oldName}" a "${trimmedNewName}" afectando ${affectedNodeCount} nodos.`,
+        message: `Preview: se renombraría "${oldName}" a "${trimmedNewName}" afectando ${affectedNodeCount} CUITs.`,
       }
     }
 
@@ -122,7 +122,7 @@ export class SourceAdminService {
         createdSourceName: trimmedNewName,
         removedSourceName: oldName,
         dryRun: false,
-        message: `Se renombró "${oldName}" a "${trimmedNewName}" afectando ${updatedTotal} nodos.`,
+        message: `Se renombró "${oldName}" a "${trimmedNewName}" afectando ${updatedTotal} CUITs.`,
       }
 
       logSourceOperationCompleted({
@@ -154,7 +154,7 @@ export class SourceAdminService {
     if (sourceToKeep === sourceToDrop) {
       throw new SourceAdminError(
         "name_conflict",
-        "No se puede mergear una fuente consigo misma"
+        "No se puede unificar una fuente consigo misma"
       )
     }
 
@@ -168,7 +168,7 @@ export class SourceAdminService {
     if (eligibility.keepCategory !== eligibility.dropCategory) {
       throw new SourceAdminError(
         "category_mismatch",
-        `No se pueden mergear fuentes de distinta categoría: "${sourceToKeep}" es ${eligibility.keepCategory} y "${sourceToDrop}" es ${eligibility.dropCategory}`
+        `No se pueden unificar fuentes de distinta categoría: "${sourceToKeep}" es ${eligibility.keepCategory} y "${sourceToDrop}" es ${eligibility.dropCategory}`
       )
     }
 
@@ -183,7 +183,7 @@ export class SourceAdminService {
         createdSourceName: sourceToKeep,
         removedSourceName: sourceToDrop,
         dryRun: true,
-        message: `Preview: se mergearía "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${affectedNodeCount} nodos.`,
+        message: `Preview: se unificaría "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${affectedNodeCount} CUITs.`,
       }
     }
 
@@ -218,7 +218,7 @@ export class SourceAdminService {
         createdSourceName: sourceToKeep,
         removedSourceName: sourceToDrop,
         dryRun: false,
-        message: `Se mergeó "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${updatedTotal} nodos.`,
+        message: `Se unificó "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${updatedTotal} CUITs.`,
       }
 
       logSourceOperationCompleted({
@@ -262,7 +262,7 @@ export class SourceAdminService {
         updatedNodeCount: affectedNodeCount - estimatedOrphans,
         removedSourceName: sourceName,
         dryRun: true,
-        message: `Preview: se borraría "${sourceName}" afectando ${affectedNodeCount} nodos, de los cuales ${estimatedOrphans} quedarían sin fuentes y se eliminarían.`,
+        message: `Preview: se borraría "${sourceName}" afectando ${affectedNodeCount} CUITs, de los cuales ${estimatedOrphans} quedarían sin fuentes y se eliminarían.`,
       }
     }
 
@@ -307,7 +307,7 @@ export class SourceAdminService {
         updatedNodeCount: detachedTotal - removedTotal,
         removedSourceName: sourceName,
         dryRun: false,
-        message: `Se borró "${sourceName}": ${detachedTotal} nodos afectados, ${removedTotal} eliminados por quedar sin fuentes.`,
+        message: `Se borró "${sourceName}": ${detachedTotal} CUITs afectados, ${removedTotal} eliminados por quedar sin fuentes.`,
       }
 
       logSourceOperationCompleted({
