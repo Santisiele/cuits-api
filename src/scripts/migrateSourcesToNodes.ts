@@ -43,6 +43,7 @@ const MIGRATION_CATEGORIES: Record<string, "known" | "toKnow"> = {
   "Empresas Credivico":       "known",
   "Residentes Senior Home":   "known",
   "Responsables Senior Home": "known",
+  "xlsx-poseidon":            "known",
 }
 
 /**
