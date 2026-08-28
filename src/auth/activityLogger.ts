@@ -74,6 +74,17 @@ export function logCuitSearch(username: string, taxId: string, found: boolean): 
   })
 }
 
+/** Logs a search by business name. */
+export function logNameSearch(username: string, query: string, resultCount: number): void {
+  activityLogger.info({
+    event: "name_search",
+    username,
+    query,
+    resultCount,
+    message: `${username} buscó por nombre "${query}" — ${resultCount} resultados`,
+  })
+}
+
 /** Logs a path search between two CUITs. */
 export function logPathSearch(username: string, from: string, to: string, found: boolean): void {
   activityLogger.info({

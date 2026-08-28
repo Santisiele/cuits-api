@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logNameSearch } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -582,6 +582,83 @@ export default async function graphRoutes(server: FastifyInstance) {
         const nodes = await neo4jSource.findCompanyNodes()
         logCompaniesViewed(request.username, nodes.length)
         return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/search-by-name ────────────────────────────────────────────
+
+  server.get<{
+    Querystring: { q?: string; limit?: string }
+  }>(
+    "/graph/search-by-name",
+    {
+      schema: {
+        summary: "Search nodes by business name across the whole graph",
+        description:
+          "Case-insensitive substring match on businessName. Searches every " +
+          "CUIT node, not just the ones in the base, because the point of " +
+          "searching by name is to find a company whose CUIT you don't know.",
+        querystring: {
+          type: "object",
+          required: ["q"],
+          properties: {
+            q: { type: "string", description: "Name fragment, at least 3 characters" },
+            limit: { type: "string", description: "Max results (default 50, max 200)" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              count: { type: "number" },
+              results: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    inMyBase: { type: "boolean" },
+                    relationshipCount: { type: "number" },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const query = (request.query.q ?? "").trim()
+
+      /**
+       * Two characters would match a large share of the graph and turn every
+       * keystroke into a full scan, so the floor is enforced here rather than
+       * left to the caller.
+       */
+      if (query.length < 3) {
+        return reply.code(400).send({
+          message: "La búsqueda por nombre necesita al menos 3 caracteres",
+        })
+      }
+
+      const parsedLimit = Number(request.query.limit ?? 50)
+      const limit = Number.isFinite(parsedLimit)
+        ? Math.min(Math.max(Math.trunc(parsedLimit), 1), 200)
+        : 50
+
+      try {
+        const results = await neo4jSource.searchNodesByName(query, limit)
+        logNameSearch(request.username, query, results.length)
+        return { count: results.length, results }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })
