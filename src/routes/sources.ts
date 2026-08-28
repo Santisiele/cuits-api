@@ -35,7 +35,7 @@ async function requirePassword(
   reply: FastifyReply
 ): Promise<boolean> {
   if (!password) {
-    await reply.code(400).send({ message: "Password requerida para esta operación" })
+    await reply.code(400).send({ message: "Password required for this operation" })
     return false
   }
   try {
@@ -43,7 +43,7 @@ async function requirePassword(
     return true
   } catch (err) {
     if (err instanceof PasswordVerificationError) {
-      await reply.code(401).send({ message: "Password incorrecta" })
+      await reply.code(401).send({ message: "Invalid password" })
       return false
     }
     throw err
@@ -328,7 +328,7 @@ export default async function sourceAdminRoutes(server: FastifyInstance) {
       const dryRun = request.query.dryRun === "true"
 
       if (mode === "move" && !fromSource) {
-        return reply.code(400).send({ message: "fromSource es obligatorio en modo move" })
+        return reply.code(400).send({ message: "fromSource is required in move mode" })
       }
 
       if (!dryRun && !(await requirePassword(request.username, password, reply))) return

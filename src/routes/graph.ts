@@ -646,7 +646,7 @@ export default async function graphRoutes(server: FastifyInstance) {
        */
       if (query.length < 3) {
         return reply.code(400).send({
-          message: "La búsqueda por nombre necesita al menos 3 caracteres",
+          message: "Name search requires at least 3 characters",
         })
       }
 

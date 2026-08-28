@@ -62,17 +62,17 @@ export class SourceAdminService {
   ): Promise<OperationSummary> {
     const trimmedNewName = newName.trim()
     if (!trimmedNewName) {
-      throw new SourceAdminError("name_conflict", "El nuevo nombre no puede estar vacío")
+      throw new SourceAdminError("name_conflict", "The new name cannot be empty")
     }
 
     const eligibility = await this.repository.checkRenameEligibility(oldName, trimmedNewName)
     if (!eligibility.sourceExists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${oldName}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${oldName}" does not exist`)
     }
     if (eligibility.newNameExists) {
       throw new SourceAdminError(
         "name_conflict",
-        `El nombre "${trimmedNewName}" ya está en uso. Usá unificar en su lugar.`
+        `The name "${trimmedNewName}" is already in use`
       )
     }
 
@@ -87,7 +87,7 @@ export class SourceAdminService {
         createdSourceName: trimmedNewName,
         removedSourceName: oldName,
         dryRun: true,
-        message: `Preview: se renombraría "${oldName}" a "${trimmedNewName}" afectando ${affectedNodeCount} CUITs.`,
+        message: `Preview: renaming "${oldName}" to "${trimmedNewName}" would affect ${affectedNodeCount} CUITs`,
       }
     }
 
@@ -122,7 +122,7 @@ export class SourceAdminService {
         createdSourceName: trimmedNewName,
         removedSourceName: oldName,
         dryRun: false,
-        message: `Se renombró "${oldName}" a "${trimmedNewName}" afectando ${updatedTotal} CUITs.`,
+        message: `Renamed "${oldName}" to "${trimmedNewName}", affecting ${updatedTotal} CUITs`,
       }
 
       logSourceOperationCompleted({
@@ -154,21 +154,21 @@ export class SourceAdminService {
     if (sourceToKeep === sourceToDrop) {
       throw new SourceAdminError(
         "name_conflict",
-        "No se puede unificar una fuente consigo misma"
+        "A source cannot be merged into itself"
       )
     }
 
     const eligibility = await this.repository.checkMergeEligibility(sourceToKeep, sourceToDrop)
     if (!eligibility.keepExists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${sourceToKeep}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${sourceToKeep}" does not exist`)
     }
     if (!eligibility.dropExists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${sourceToDrop}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${sourceToDrop}" does not exist`)
     }
     if (eligibility.keepCategory !== eligibility.dropCategory) {
       throw new SourceAdminError(
         "category_mismatch",
-        `No se pueden unificar fuentes de distinta categoría: "${sourceToKeep}" es ${eligibility.keepCategory} y "${sourceToDrop}" es ${eligibility.dropCategory}`
+        `Cannot merge sources of different categories: "${sourceToKeep}" is ${eligibility.keepCategory} and "${sourceToDrop}" is ${eligibility.dropCategory}`
       )
     }
 
@@ -183,7 +183,7 @@ export class SourceAdminService {
         createdSourceName: sourceToKeep,
         removedSourceName: sourceToDrop,
         dryRun: true,
-        message: `Preview: se unificaría "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${affectedNodeCount} CUITs.`,
+        message: `Preview: merging "${sourceToDrop}" into "${sourceToKeep}" would move ${affectedNodeCount} CUITs`,
       }
     }
 
@@ -218,7 +218,7 @@ export class SourceAdminService {
         createdSourceName: sourceToKeep,
         removedSourceName: sourceToDrop,
         dryRun: false,
-        message: `Se unificó "${sourceToDrop}" dentro de "${sourceToKeep}" moviendo ${updatedTotal} CUITs.`,
+        message: `Merged "${sourceToDrop}" into "${sourceToKeep}", moving ${updatedTotal} CUITs`,
       }
 
       logSourceOperationCompleted({
@@ -248,7 +248,7 @@ export class SourceAdminService {
   ): Promise<OperationSummary> {
     const exists = await this.repository.checkSourceExists(sourceName)
     if (!exists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${sourceName}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${sourceName}" does not exist`)
     }
 
     const affectedNodeCount = await this.repository.countCuitsForSource(sourceName)
@@ -262,7 +262,7 @@ export class SourceAdminService {
         updatedNodeCount: affectedNodeCount - estimatedOrphans,
         removedSourceName: sourceName,
         dryRun: true,
-        message: `Preview: se borraría "${sourceName}" afectando ${affectedNodeCount} CUITs, de los cuales ${estimatedOrphans} quedarían sin fuentes y se eliminarían.`,
+        message: `Preview: deleting "${sourceName}" would affect ${affectedNodeCount} CUITs, of which ${estimatedOrphans} would be left without sources and removed`,
       }
     }
 
@@ -307,7 +307,7 @@ export class SourceAdminService {
         updatedNodeCount: detachedTotal - removedTotal,
         removedSourceName: sourceName,
         dryRun: false,
-        message: `Se borró "${sourceName}": ${detachedTotal} CUITs afectados, ${removedTotal} eliminados por quedar sin fuentes.`,
+        message: `Deleted "${sourceName}": ${detachedTotal} CUITs affected, ${removedTotal} removed for having no sources left`,
       }
 
       logSourceOperationCompleted({
@@ -338,15 +338,15 @@ export class SourceAdminService {
   ): Promise<OperationSummary> {
     const eligibility = await this.repository.checkAddEligibility(taxId, sourceName)
     if (!eligibility.nodeExists) {
-      throw new SourceAdminError("node_not_found", `El CUIT ${taxId} no existe`)
+      throw new SourceAdminError("node_not_found", `CUIT ${taxId} does not exist`)
     }
     if (!eligibility.sourceExists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${sourceName}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${sourceName}" does not exist`)
     }
 
     if (dryRun) {
       return this.nodeSummary("add-source", sourceName, false, {
-        message: `Preview: se agregaría la fuente "${sourceName}" al CUIT ${taxId}.`,
+        message: `Preview: source "${sourceName}" would be added to CUIT ${taxId}`,
         dryRun: true,
       })
     }
@@ -364,7 +364,7 @@ export class SourceAdminService {
       await this.repository.addSourceToNode(taxId, sourceName)
 
       const summary = this.nodeSummary("add-source", sourceName, false, {
-        message: `Se agregó la fuente "${sourceName}" al CUIT ${taxId}.`,
+        message: `Added source "${sourceName}" to CUIT ${taxId}`,
         dryRun: false,
       })
 
@@ -395,28 +395,28 @@ export class SourceAdminService {
   ): Promise<OperationSummary> {
     if (fromSource === toSource) {
       return this.nodeSummary("move-source", toSource, true, {
-        message: `El CUIT ${taxId} ya está en "${toSource}", no hubo cambios.`,
+        message: `CUIT ${taxId} is already in "${toSource}", nothing changed`,
         dryRun,
       })
     }
 
     const eligibility = await this.repository.checkMoveEligibility(taxId, fromSource, toSource)
     if (!eligibility.nodeExists) {
-      throw new SourceAdminError("node_not_found", `El CUIT ${taxId} no existe`)
+      throw new SourceAdminError("node_not_found", `CUIT ${taxId} does not exist`)
     }
     if (!eligibility.toExists) {
-      throw new SourceAdminError("source_not_found", `La fuente "${toSource}" no existe`)
+      throw new SourceAdminError("source_not_found", `Source "${toSource}" does not exist`)
     }
     if (!eligibility.fromExists) {
       throw new SourceAdminError(
         "invalid_move_params",
-        `El CUIT ${taxId} no pertenece a la fuente "${fromSource}"`
+        `CUIT ${taxId} does not belong to source "${fromSource}"`
       )
     }
 
     if (dryRun) {
       return this.nodeSummary("move-source", toSource, false, {
-        message: `Preview: se movería el CUIT ${taxId} de "${fromSource}" a "${toSource}".`,
+        message: `Preview: CUIT ${taxId} would be moved from "${fromSource}" to "${toSource}"`,
         dryRun: true,
         removedSourceName: fromSource,
       })
@@ -435,7 +435,7 @@ export class SourceAdminService {
       await this.repository.moveSourceOnNode(taxId, fromSource, toSource)
 
       const summary = this.nodeSummary("move-source", toSource, false, {
-        message: `Se movió el CUIT ${taxId} de "${fromSource}" a "${toSource}".`,
+        message: `Moved CUIT ${taxId} from "${fromSource}" to "${toSource}"`,
         dryRun: false,
         removedSourceName: fromSource,
       })
