@@ -73,6 +73,31 @@ export const Queries = {
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName`,
 
+  /**
+   * Free-text search over business names across the whole graph.
+   *
+   * Deliberately not restricted to inMyBase: someone searching by name is
+   * usually looking for a company they have not loaded yet, and those live
+   * outside the base. `inMyBase` comes back so the caller can label them.
+   *
+   * A CONTAINS scan is a full label scan. At the current graph size that is
+   * cheap, and the LIMIT bounds the payload; if the graph grows enough for
+   * this to hurt, the fix is a full-text index on businessName.
+   */
+  SEARCH_NODES_BY_NAME: `
+    MATCH (c:CUIT)
+    WHERE c.businessName IS NOT NULL
+      AND toLower(c.businessName) CONTAINS toLower($query)
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.sources       AS sources,
+           c.inMyBase      AS inMyBase,
+           count(DISTINCT related) AS relationshipCount
+    ORDER BY c.businessName
+    LIMIT $limit
+  `,
+
   FIND_BIRTHDAY_CANDIDATES: `
     MATCH (c:CUIT {isKnown: true})
     WHERE c.birthday IS NOT NULL AND c.birthday <> ""

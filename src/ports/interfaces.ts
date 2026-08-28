@@ -20,6 +20,7 @@ import type {
   LoadableRow,
   LoadableNodeAttributes,
   BirthdayResult,
+  NameSearchResult,
   LoadableNodeCategory,
   SourceInfo
 } from "@domain/entities.js"
@@ -52,6 +53,12 @@ export interface IGraphRepository {
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findToKnowNodes(): Promise<CuitNodeSummary[]>
   findAllMyNodes(): Promise <CuitNodeSummary[]>
+
+  /**
+   * Finds nodes whose business name contains `query`, case-insensitively,
+   * across the entire graph. `limit` caps the result set.
+   */
+  searchNodesByName(query: string, limit: number): Promise<NameSearchResult[]>
 
   /**
    * Lists every source registered in the graph, with its category

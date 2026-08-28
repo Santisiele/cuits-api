@@ -17,6 +17,7 @@ import type {
   LoadableNodeAttributes,
   LoadableNodeCategory,
   BirthdayResult,
+  NameSearchResult,
   SourceInfo,
 } from "@domain/entities.js"
 
@@ -125,6 +126,25 @@ export class Neo4jRepository implements IGraphRepository {
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: [],
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  async searchNodesByName(query: string, limit: number): Promise<NameSearchResult[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.SEARCH_NODES_BY_NAME, {
+        query,
+        limit: this.batchParam(limit),
+      })
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId")),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: (record.get("sources") as string[] | null) ?? [],
+        inMyBase: record.get("inMyBase") === true,
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
       }))
     } finally {
       await session.close()

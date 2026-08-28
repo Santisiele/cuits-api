@@ -1,6 +1,6 @@
 import type { ISource } from "@ports/interfaces.js"
 import type { IGraphRepository } from "@ports/interfaces.js"
-import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo } from "@domain/entities.js"
+import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 
 /**
@@ -86,6 +86,13 @@ export class Neo4jSource implements ISource {
 
   validRelationshipCodes(): number[] {
     return this.repository.validRelationshipCodes()
+  }
+
+  /**
+   * Searches the whole graph by business name. Delegates to the repository.
+   */
+  searchNodesByName(query: string, limit: number): Promise<NameSearchResult[]> {
+    return this.repository.searchNodesByName(query, limit)
   }
 
   findCompanyNodes(): Promise<CuitNodeSummary[]> {

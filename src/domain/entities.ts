@@ -60,6 +60,22 @@ export interface CuitNodeSummary {
   relatedSources: string[]
 }
 
+/**
+ * A node matched by a free-text search over its business name.
+ *
+ * Covers the whole graph, not just the base: the point of searching by name is
+ * to find a company whose CUIT you don't know, and those are frequently nodes
+ * discovered through enrichment rather than loaded from a source. `inMyBase`
+ * lets the caller tell the two apart.
+ */
+export interface NameSearchResult {
+  taxId: string
+  businessName: string
+  sources: string[]
+  inMyBase: boolean
+  relationshipCount: number
+}
+
 export interface BirthdayResult {
   taxId: string
   businessName: string
