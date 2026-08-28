@@ -3,7 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify"
 import cuitRoutes from "@routes/cuit"
 import type { ISource } from "@ports/interfaces"
 import type { SearchResult } from "@domain/entities"
-import { schemas } from "@schemas"
+import { schemas } from "@schemas.js"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

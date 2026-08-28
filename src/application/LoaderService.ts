@@ -10,7 +10,7 @@ import type {
   NodeLoadOutcome,
   RowLoadOutcome,
 } from "@domain/entities.js"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

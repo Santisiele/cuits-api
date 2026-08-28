@@ -1,5 +1,5 @@
 import "dotenv/config"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 import { NosisEnricher } from "@infrastructure/nosis/NosisEnricher.js"

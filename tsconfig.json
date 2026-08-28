@@ -25,9 +25,9 @@
       "@routes/*":          ["routes/*"],
       "@scrapers/*":        ["scrapers/*"],
       "@scripts/*":         ["scripts/*"],
-      "@config*":           ["config.ts"],
-      "@schemas*":          ["schemas.ts"],
-      "@logger*":           ["logger.ts"],
+      "@config.js":         ["config.ts"],
+      "@schemas.js":        ["schemas.ts"],
+      "@logger.js":         ["logger.ts"],
       "@auth/*":            ["auth/*"],
       "@middleware/*":      ["middleware/*"]
     }

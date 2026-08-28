@@ -20,7 +20,7 @@ import "dotenv/config"
 import XLSX from "xlsx"
 import path from "path"
 import { fileURLToPath } from "url"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 import { NosisScraper } from "@scrapers/nosis.js"
 import type { NosisRelation } from "@scrapers/nosis.js"
 

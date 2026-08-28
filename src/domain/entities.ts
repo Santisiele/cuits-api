@@ -60,6 +60,22 @@ export interface CuitNodeSummary {
   relatedSources: string[]
 }
 
+/**
+ * A node matched by a free-text search over its business name.
+ *
+ * Covers the whole graph, not just the base: the point of searching by name is
+ * to find a company whose CUIT you don't know, and those are frequently nodes
+ * discovered through enrichment rather than loaded from a source. `inMyBase`
+ * lets the caller tell the two apart.
+ */
+export interface NameSearchResult {
+  taxId: string
+  businessName: string
+  sources: string[]
+  inMyBase: boolean
+  relationshipCount: number
+}
+
 export interface BirthdayResult {
   taxId: string
   businessName: string
@@ -121,6 +137,63 @@ export interface GraphRelationship {
 }
 
 export type LoadableNodeCategory = "known" | "to_know"
+
+/**
+ * A source registered in the graph as a first-class entity.
+ * Sources are shared across many CuitNodes via the [:HAS_SOURCE]
+ * relationship. The array `CuitNode.sources` is kept in sync as a
+ * denormalised cache of the source names, but the Source node is
+ * the source of truth for category and any future metadata.
+ */
+export interface SourceInfo {
+  name: string
+  category: LoadableNodeCategory
+  nodeCount: number
+}
+
+/**
+ * Administrative operations that can be performed over sources.
+ */
+export type SourceAdminOperation =
+  | "rename"
+  | "merge"
+  | "delete"
+  | "add-source"
+  | "move-source"
+
+/**
+ * Standardised summary returned by every source admin operation.
+ * Callers use this to display feedback and to log the effect.
+ *
+ * `affectedNodeCount` is the count measured BEFORE executing, so a dry
+ * run and its real counterpart report the same figure.
+ */
+export interface OperationSummary {
+  operation: SourceAdminOperation
+  affectedNodeCount: number
+  removedNodeCount: number
+  updatedNodeCount: number
+  createdSourceName?: string
+  removedSourceName?: string
+  dryRun: boolean
+  message: string
+}
+
+/**
+ * Reason a source admin operation was rejected before execution.
+ * Handlers map these to HTTP status codes:
+ *   - "source_not_found"     → 404
+ *   - "name_conflict"        → 409
+ *   - "category_mismatch"    → 409
+ *   - "node_not_found"       → 404
+ *   - "invalid_move_params"  → 400
+ */
+export type SourceAdminRejection =
+  | "source_not_found"
+  | "name_conflict"
+  | "category_mismatch"
+  | "node_not_found"
+  | "invalid_move_params"
 
 export interface LoadableNode {
   document: string

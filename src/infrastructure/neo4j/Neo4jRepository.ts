@@ -1,4 +1,4 @@
-import type { Session } from "neo4j-driver"
+import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
@@ -17,6 +17,8 @@ import type {
   LoadableNodeAttributes,
   LoadableNodeCategory,
   BirthdayResult,
+  NameSearchResult,
+  SourceInfo,
 } from "@domain/entities.js"
 
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
@@ -112,6 +114,43 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  async findAllMyNodes(): Promise<CuitNodeSummary[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_ALL_MY_NODES)
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
+        relatedSources: [],
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  async searchNodesByName(query: string, limit: number): Promise<NameSearchResult[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.SEARCH_NODES_BY_NAME, {
+        query,
+        limit: this.batchParam(limit),
+      })
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId")),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: (record.get("sources") as string[] | null) ?? [],
+        inMyBase: record.get("inMyBase") === true,
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Birthdays ────────────────────────────────────────────────────────────
 
   async findBirthdaysBetween(
@@ -155,6 +194,289 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
+  // ─── Sources ──────────────────────────────────────────────────────────────
+
+  /**
+   * Lists every (:Source) node with its category and attached CUIT count.
+   *
+   * The category is stored as "known" | "toKnow" in the graph and mapped
+   * back to the domain's `LoadableNodeCategory` ("known" | "to_know") here,
+   * so callers never see the graph-level spelling.
+   */
+  async findSources(): Promise<SourceInfo[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_SOURCES)
+      return result.records.map((record) => ({
+        name: String(record.get("name") ?? ""),
+        category:
+          String(record.get("category") ?? "known") === "toKnow"
+            ? ("to_know" as const)
+            : ("known" as const),
+        nodeCount: Number(record.get("nodeCount") ?? 0),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Source administration ────────────────────────────────────────────────
+
+  /**
+   * Batched queries take their LIMIT as a parameter, and the driver packs a
+   * plain JS number as a Float, which Cypher refuses as a LIMIT. Wrapping in
+   * neo4j.int() is what makes the batch size land as an integer.
+   */
+  private batchParam(batchSize: number): unknown {
+    return neo4j.int(batchSize)
+  }
+
+  async countCuitsForSource(sourceName: string): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_CUITS_FOR_SOURCE, { sourceName })
+      return Number(result.records[0]?.get("affectedNodeCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async checkSourceExists(sourceName: string): Promise<boolean> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_SOURCE_EXISTS, { sourceName })
+      return Boolean(result.records[0]?.get("sourceExists") ?? false)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findCuitIdsForSource(sourceName: string): Promise<string[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_CUIT_IDS_FOR_SOURCE, { sourceName })
+      return result.records.map((record) => String(record.get("id")))
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Rename ───────────────────────────────────────────────────────────────
+
+  async checkRenameEligibility(
+    oldName: string,
+    newName: string
+  ): Promise<{ sourceExists: boolean; newNameExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_RENAME_ELIGIBILITY, { oldName, newName })
+      const record = result.records[0]
+      return {
+        sourceExists: Boolean(record?.get("sourceExists") ?? false),
+        newNameExists: Boolean(record?.get("newNameExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async renameSourceNode(oldName: string, newName: string): Promise<string> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.RENAME_SOURCE_NODE, { oldName, newName })
+      return String(result.records[0]?.get("category") ?? "known")
+    } finally {
+      await session.close()
+    }
+  }
+
+  async updateSourcesArrayForRenameBatch(
+    oldName: string,
+    newName: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.UPDATE_SOURCES_ARRAY_FOR_RENAME_BATCH, {
+        oldName,
+        newName,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Merge ────────────────────────────────────────────────────────────────
+
+  async checkMergeEligibility(
+    sourceToKeep: string,
+    sourceToDrop: string
+  ): Promise<{
+    keepExists: boolean
+    dropExists: boolean
+    keepCategory: string | null
+    dropCategory: string | null
+  }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_MERGE_ELIGIBILITY, {
+        sourceToKeep,
+        sourceToDrop,
+      })
+      const record = result.records[0]
+      const keepCategory = record?.get("keepCategory") ?? null
+      const dropCategory = record?.get("dropCategory") ?? null
+      return {
+        keepExists: Boolean(record?.get("keepExists") ?? false),
+        dropExists: Boolean(record?.get("dropExists") ?? false),
+        keepCategory: keepCategory === null ? null : String(keepCategory),
+        dropCategory: dropCategory === null ? null : String(dropCategory),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async mergeSourceRelationshipsBatch(
+    sourceToKeep: string,
+    sourceToDrop: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.MERGE_SOURCE_RELATIONSHIPS_BATCH, {
+        sourceToKeep,
+        sourceToDrop,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async finalizeSourceMerge(sourceToDrop: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.DELETE_SOURCE_NODE_AFTER_MERGE, { sourceToDrop })
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Delete ───────────────────────────────────────────────────────────────
+
+  async deleteSourceRelationshipsBatch(
+    sourceName: string,
+    batchSize: number
+  ): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.DELETE_SOURCE_RELATIONSHIPS_BATCH, {
+        sourceName,
+        batchSize: this.batchParam(batchSize),
+      })
+      return Number(result.records[0]?.get("batchProcessed") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteSourceNode(sourceName: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.DELETE_SOURCE_NODE, { sourceName })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async countOrphansForSource(sourceName: string): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_ORPHANS_FOR_SOURCE, { sourceName })
+      return Number(result.records[0]?.get("orphanCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteOrphanedNodesBatch(taxIds: string[]): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.DELETE_ORPHANED_NODES_BATCH, { ids: taxIds })
+      return Number(result.records[0]?.get("removedCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Node level ───────────────────────────────────────────────────────────
+
+  async checkAddEligibility(
+    taxId: string,
+    sourceName: string
+  ): Promise<{ nodeExists: boolean; sourceExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_ADD_ELIGIBILITY, { taxId, sourceName })
+      const record = result.records[0]
+      return {
+        nodeExists: Boolean(record?.get("nodeExists") ?? false),
+        sourceExists: Boolean(record?.get("sourceExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async addSourceToNode(taxId: string, sourceName: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.ADD_SOURCE_TO_NODE, { taxId, sourceName })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async checkMoveEligibility(
+    taxId: string,
+    fromSource: string,
+    toSource: string
+  ): Promise<{ nodeExists: boolean; fromExists: boolean; toExists: boolean }> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CHECK_MOVE_ELIGIBILITY, {
+        taxId,
+        fromSource,
+        toSource,
+      })
+      const record = result.records[0]
+      return {
+        nodeExists: Boolean(record?.get("nodeExists") ?? false),
+        fromExists: Boolean(record?.get("fromExists") ?? false),
+        toExists: Boolean(record?.get("toExists") ?? false),
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async moveSourceOnNode(
+    taxId: string,
+    fromSource: string,
+    toSource: string
+  ): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.MOVE_SOURCE_ON_NODE, { taxId, fromSource, toSource })
+    } finally {
+      await session.close()
+    }
+  }
+
   // ─── Ingestion ────────────────────────────────────────────────────────────
 
   /**
@@ -162,6 +484,10 @@ export class Neo4jRepository implements IGraphRepository {
    * implied by `category`. Existing values are preserved — a node already
    * marked isKnown won't lose that flag if re-loaded as to_know, and vice
    * versa. A node loaded for the first time gets exactly one flag set.
+   *
+   * Sources are written to both representations inside the same statement:
+   * the `c.sources` array (read cache) and the (:Source)<-[:HAS_SOURCE]-(c)
+   * relationship (source of truth).
    */
   async upsertBaseNode(
     taxId: string,
@@ -176,6 +502,13 @@ export class Neo4jRepository implements IGraphRepository {
         id: taxId,
         name: businessName,
         source,
+        /**
+         * Maps the loader's "known" | "to_know" onto the (:Source) node's
+         * "known" | "toKnow" property. The distinction is historical: the
+         * loader-facing type uses snake_case, while the graph model uses
+         * camelCase to match the frontend contract.
+         */
+        sourceCategory: category === "to_know" ? "toKnow" : "known",
         isKnown: category === "known",
         isToKnow: category === "to_know",
         phone: attributes.phone ?? null,

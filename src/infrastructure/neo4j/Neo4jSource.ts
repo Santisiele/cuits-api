@@ -1,6 +1,6 @@
 import type { ISource } from "@ports/interfaces.js"
 import type { IGraphRepository } from "@ports/interfaces.js"
-import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult } from "@domain/entities.js"
+import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 
 /**
@@ -60,6 +60,10 @@ export class Neo4jSource implements ISource {
     return this.repository.findToKnowNodes()
   }
 
+  findAllMyNodes(): Promise<CuitNodeSummary[]> {
+    return this.repository.findAllMyNodes()
+  }
+
   findNode(taxId: string): Promise<CuitNode | null> {
     return this.repository.findNode(taxId)
   }
@@ -84,8 +88,36 @@ export class Neo4jSource implements ISource {
     return this.repository.validRelationshipCodes()
   }
 
+  /**
+   * Searches the whole graph by business name. Delegates to the repository.
+   */
+  searchNodesByName(query: string, limit: number): Promise<NameSearchResult[]> {
+    return this.repository.searchNodesByName(query, limit)
+  }
+
   findCompanyNodes(): Promise<CuitNodeSummary[]> {
     return this.repository.findCompanyNodes()
+  }
+
+  /**
+   * Lists every source registered in the graph. Delegates to the
+   * repository's findSources method.
+   */
+  findSources(): Promise<SourceInfo[]> {
+    return this.repository.findSources()
+  }
+
+  /**
+   * Exposes the underlying port so SourceAdminService can be built over the
+   * same adapter instance.
+   *
+   * The admin service depends on IGraphRepository directly because it drives
+   * batching loops over a dozen primitives; funnelling those through
+   * pass-through methods here would add a layer with no behaviour of its own.
+   * The concrete adapter stays hidden — callers only ever see the port.
+   */
+  getRepository(): IGraphRepository {
+    return this.repository
   }
 
   /**
@@ -99,5 +131,5 @@ export class Neo4jSource implements ISource {
     toDay: number
   ): Promise<import("@domain/entities.js").BirthdayResult[]> {
     return this.repository.findBirthdaysBetween(fromMonth, fromDay, toMonth, toDay)
-  } 
+  }
 }

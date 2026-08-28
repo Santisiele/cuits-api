@@ -2,26 +2,27 @@ import "dotenv/config"
 import { logger } from "@logger.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
-import { NosisEnricher } from "@infrastructure/nosis/NosisEnricher.js"
-import { ConocidosLuchiLoader } from "@infrastructure/loaders/ConocidosLuchiLoader.js"
+import { DeudoresLoader } from "@infrastructure/loaders/DeudoresFinancieraLoader.js"
 import { LoaderService } from "@application/LoaderService.js"
 
 /**
- * Driving adapter (CLI) for the "Conocidos Luchi" source.
+ * Driving adapter (CLI) for the "Deudores por financiera" source.
  *
- * Wires the ConocidosLuchiLoader, NosisEnricher, and Neo4jRepository
- * together and delegates orchestration to the LoaderService.
+ * No enricher is passed to LoaderService → no Nosis calls, no throttling.
+ * Rows are pre-aggregated by debtor CUIT inside the loader, so the number
+ * of LoadableRows the service processes equals the number of unique
+ * debtors in the file, not the row count.
  *
  * Usage:
- *   pnpm tsx src/scripts/loadFromConocidosLuchi.ts <inputPath> [startRow] [count]
+ *   pnpm tsx src/scripts/loadFromDeudores.ts <inputPath> [startRow] [count]
  *
  * Example:
- *   pnpm tsx src/scripts/loadFromConocidosLuchi.ts ./sources/conocidos-luchi.xlsx 1 50
+ *   pnpm tsx src/scripts/loadFromDeudores.ts ./sources/toKnow/deudoresFinanciera.xlsx
  */
 async function main(): Promise<void> {
   const inputPath = process.argv[2]
   if (!inputPath) {
-    throw new Error("Usage: loadFromConocidosLuchi <inputPath> [startRow] [count]")
+    throw new Error("Usage: loadFromDeudores <inputPath> [startRow] [count]")
   }
 
   const startRow = Number(process.argv[3] ?? 1)
@@ -33,9 +34,8 @@ async function main(): Promise<void> {
   logger.info(`Input: ${inputPath}`)
 
   const repository = new Neo4jRepository()
-  const enricher = await NosisEnricher.create()
-  const loader = new ConocidosLuchiLoader(inputPath)
-  const service = new LoaderService(repository, enricher)
+  const loader = new DeudoresLoader(inputPath)
+  const service = new LoaderService(repository, null)
 
   try {
     await service.run(loader, startRow, count)

@@ -2,7 +2,7 @@ import axios from "axios"
 import { wrapper } from "axios-cookiejar-support"
 import { nosisLogin } from "@scrapers/nosisAuth.js"
 import { getRelationshipTypeName } from "@scrapers/nosisRelationshipTypes.js"
-import { logger } from "@logger"
+import { logger } from "@logger.js"
 
 const DELAY_MS = 1000       // 1 second between requests
 const MAX_RETRIES = 3       // max retry attempts on failure

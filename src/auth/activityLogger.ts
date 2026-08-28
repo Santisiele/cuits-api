@@ -1,6 +1,7 @@
 import pino from "pino"
 import path from "path"
 import fs from "fs"
+import type { OperationSummary } from "@domain/entities.js"
 
 /**
  * Resolves LOG_ROUTE into an absolute directory path.
@@ -70,6 +71,17 @@ export function logCuitSearch(username: string, taxId: string, found: boolean): 
     taxId,
     found,
     message: `${username} buscó el CUIT ${taxId} — ${found ? "encontrado" : "no encontrado"}`,
+  })
+}
+
+/** Logs a search by business name. */
+export function logNameSearch(username: string, query: string, resultCount: number): void {
+  activityLogger.info({
+    event: "name_search",
+    username,
+    query,
+    resultCount,
+    message: `${username} buscó por nombre "${query}" — ${resultCount} resultados`,
   })
 }
 
@@ -207,4 +219,94 @@ export function logToKnowViewed(username: string, nodeCount: number): void {
     message: `${username} consultó objetivos (${nodeCount} nodos)`,
   })
 }
- 
+
+/** Logs the combined "all mine" nodes list being viewed. */
+export function logAllMyNodesViewed(username: string, nodeCount: number): void {
+  activityLogger.info({
+    event: "all_my_nodes_viewed",
+    username,
+    nodeCount,
+    message: `${username} consultó todos sus nodos (${nodeCount} nodos)`,
+  })
+}
+
+/**
+ * Logs the creation of a new source entity in the graph.
+ * Used by the migration script (called once per created source) and
+ * by future admin endpoints whenever a source name that didn't exist
+ * before shows up.
+ */
+export function logSourceCreated(
+  username: string,
+  sourceName: string,
+  category: string,
+): void {
+  activityLogger.info({
+    event: "source_created",
+    username,
+    sourceName,
+    category,
+    message: `${username} registró la fuente "${sourceName}" (${category})`,
+  })
+}
+
+// ─── Source admin operations ─────────────────────────────────────────────────
+
+/**
+ * Structured log emitted BEFORE every destructive source operation.
+ *
+ * Initiated and completed events are deliberately separate: if the process
+ * dies mid-operation, the orphaned "initiated" line is what tells you which
+ * operation was in flight and roughly how much it was about to touch.
+ *
+ * The affected node list is intentionally NOT logged — on a source with
+ * thousands of CUITs it would dwarf the log. Granular reconstruction relies
+ * on the Aura snapshot instead.
+ */
+export function logSourceOperationInitiated(payload: {
+  event: string
+  username: string
+  sourceName: string
+  operationParams: Record<string, unknown>
+  affectedNodeCount: number
+}): void {
+  activityLogger.info({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} inició "${payload.event}" sobre "${payload.sourceName}" (~${payload.affectedNodeCount} CUITs)`,
+  })
+}
+
+/** Structured log emitted after a destructive source operation succeeds. */
+export function logSourceOperationCompleted(payload: {
+  event: string
+  username: string
+  sourceName: string
+  finalSummary: OperationSummary
+  durationMs: number
+}): void {
+  activityLogger.info({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} completó "${payload.event}" sobre "${payload.sourceName}" en ${payload.durationMs}ms`,
+  })
+}
+
+/**
+ * Structured log emitted when a destructive source operation throws.
+ * `partialProgress` carries whatever the service managed to finish before
+ * failing, which is what makes a half-applied batch recoverable by hand.
+ */
+export function logSourceOperationFailed(payload: {
+  event: string
+  username: string
+  sourceName: string
+  error: string
+  partialProgress?: Record<string, unknown>
+}): void {
+  activityLogger.error({
+    ...payload,
+    timestamp: new Date().toISOString(),
+    message: `${payload.username} falló "${payload.event}" sobre "${payload.sourceName}": ${payload.error}`,
+  })
+}
