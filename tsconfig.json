@@ -14,6 +14,13 @@
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
     "skipLibCheck": true,
+    /**
+     * The root config is for typechecking only. Without this, a bare `tsc -b`
+     * emits .js and .d.ts next to every source file, and vitest then picks up
+     * the generated test copies and runs everything twice. Emitting is the
+     * build config's job, which overrides this and writes to dist/.
+     */
+    "noEmit": true,
     "ignoreDeprecations": "5.0",
     "baseUrl": "./src",
     "paths": {
