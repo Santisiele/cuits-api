@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
+import { extractActivityMonths } from "@domain/activityMonths.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
 import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logNameSearch } from "@auth/activityLogger.js"
 
@@ -345,6 +346,13 @@ export default async function graphRoutes(server: FastifyInstance) {
               loadedAt: { type: "string" },
               inMyBase: { type: "boolean" },
               sources: { type: "array", items: { type: "string" } },
+              activityMonths: {
+                type: "array",
+                items: { type: "string" },
+                description:
+                  "Months the node has operations in, as yyyy-mm, most recent " +
+                  "first. Empty for sources that do not record operations.",
+              },
             },
           },
           404: { $ref: "NotFoundResponse" },
@@ -366,7 +374,12 @@ export default async function graphRoutes(server: FastifyInstance) {
           })
         }
         logNodeViewed(request.username, taxId, node.businessName, node.entryDate, node.exitDate, node.loadedAt)
-        return node
+        /**
+         * Derived rather than stored: the months live inside the operations
+         * payload, which is far larger than this list and of no use to the
+         * client on its own.
+         */
+        return { ...node, activityMonths: extractActivityMonths(node.customFields) }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })
