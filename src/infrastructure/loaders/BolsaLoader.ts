@@ -68,10 +68,50 @@ function excelSerialToDdMmYyyy(serial: number): string {
   return `${day}/${month}/${year}`
 }
 
+/** Month numbers by Spanish name, as the "Mes" column spells them. */
+const MONTH_NUMBERS: Record<string, string> = {
+  enero: "01",
+  febrero: "02",
+  marzo: "03",
+  abril: "04",
+  mayo: "05",
+  junio: "06",
+  julio: "07",
+  agosto: "08",
+  septiembre: "09",
+  setiembre: "09",
+  octubre: "10",
+  noviembre: "11",
+  diciembre: "12",
+}
+
+/**
+ * Turns the "MES AAAA" label the file writes — "ENERO 2026" — into the first
+ * day of that month, as dd/mm/yyyy.
+ *
+ * The day is invented, because the column names a period and not a day. The
+ * 1st is what "Deudores por financiera" already anchors its operations to, and
+ * picking the same day is what lets both sources share one month extraction
+ * downstream.
+ *
+ * Returns "" for anything that is not a month label.
+ */
+function monthLabelToDdMmYyyy(raw: string): string {
+  const match = /^([a-z]+)\s+(\d{4})$/i.exec(raw)
+  if (!match) return ""
+  const month = MONTH_NUMBERS[match[1]!.toLowerCase()]
+  if (!month) return ""
+  return `01/${month}/${match[2]}`
+}
+
 /**
  * Normalises whatever comes in a date cell into dd/mm/yyyy. Returns ""
  * for unparseable input — the row still loads, the date field just
  * carries an empty string in the resulting operation.
+ *
+ * Excel serials stay accepted even though the current file no longer carries
+ * them: older Bolsa files dated each operation instead of naming its month,
+ * and reloading one of those has to keep working.
  */
 function normaliseDate(raw: unknown): string {
   if (raw == null || raw === "") return ""
@@ -79,6 +119,9 @@ function normaliseDate(raw: unknown): string {
 
   const s = String(raw).trim()
   if (!s) return ""
+
+  const fromMonthLabel = monthLabelToDdMmYyyy(s)
+  if (fromMonthLabel) return fromMonthLabel
 
   const ddmm = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(s)
   if (ddmm) {
@@ -124,7 +167,7 @@ function buildAttributes(
  * Source loader for the "Bolsa" xlsx file.
  *
  * File format (positional — read by column index, not header):
- *   - Column A: FEC.SUB.           → operations[i].date          (normalised)
+ *   - Column A: Mes                → operations[i].date          (normalised)
  *   - Column B: MONTO              → operations[i].amount        (verbatim)
  *   - Column C: CUIT RESPONSABLE   → operations[i].responsibleTaxId
  *   - Column D: NOMBRE RESPONSABLE → operations[i].responsibleName

@@ -2,10 +2,10 @@
  * Derives the months a node appeared in, from the operations a loader stored
  * on it.
  *
- * Loaders that carry per-period operations (currently "Deudores por
- * financiera") serialise them as a JSON string under `customFields.operations`,
+ * Loaders that carry per-period operations ("Deudores por financiera" and
+ * "Bolsa") serialise them as a JSON string under `customFields.operations`,
  * each with a `date` anchored to the first of its period — "01/05/2026" means
- * the May 2026 file. Reading which months a debtor shows up in therefore means
+ * the May 2026 file. Reading which months a node shows up in therefore means
  * parsing that list, and this is where that happens.
  */
 
