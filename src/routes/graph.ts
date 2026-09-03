@@ -22,6 +22,19 @@ function parseDayMonth(raw: string): { day: number; month: number } | null {
 }
 
 /**
+ * Reads the publication date the "Empresas concursadas" loader leaves on the
+ * node as a customField.
+ *
+ * Returns null for anything else — a node from another source, or a row whose
+ * date cell the loader could not read. The response schema serialises that as
+ * an empty string, the same as every other nullable field here.
+ */
+function readPublicationDate(customFields: Record<string, unknown>): string | null {
+  const value = customFields["publicationDate"]
+  return typeof value === "string" && value.length > 0 ? value : null
+}
+
+/**
  * Graph-based routes for Neo4j queries.
  */
 export default async function graphRoutes(server: FastifyInstance) {
@@ -353,6 +366,12 @@ export default async function graphRoutes(server: FastifyInstance) {
                   "Months the node has operations in, as yyyy-mm, most recent " +
                   "first. Empty for sources that do not record operations.",
               },
+              publicationDate: {
+                type: "string",
+                description:
+                  "Date the company was published in the boletín oficial, as " +
+                  "dd/mm/yyyy. Empty for sources that do not record it.",
+              },
             },
           },
           404: { $ref: "NotFoundResponse" },
@@ -378,8 +397,16 @@ export default async function graphRoutes(server: FastifyInstance) {
          * Derived rather than stored: the months live inside the operations
          * payload, which is far larger than this list and of no use to the
          * client on its own.
+         *
+         * The publication date is lifted out of customFields for a different
+         * reason: the response schema only serialises the fields it declares,
+         * so anything left inside the bag never reaches the client.
          */
-        return { ...node, activityMonths: extractActivityMonths(node.customFields) }
+        return {
+          ...node,
+          activityMonths: extractActivityMonths(node.customFields),
+          publicationDate: readPublicationDate(node.customFields),
+        }
       } catch (error) {
         request.log.error(error)
         return reply.code(500).send({ message: "Graph database unavailable" })
