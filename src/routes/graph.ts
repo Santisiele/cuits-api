@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { extractActivityMonths } from "@domain/activityMonths.js"
 import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
-import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logNameSearch } from "@auth/activityLogger.js"
+import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logCrossingViewed, logNameSearch } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
 
@@ -621,6 +621,72 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const nodes = await neo4jSource.findCompanyNodes()
         logCompaniesViewed(request.username, nodes.length)
+        return { nodes }
+      } catch (error) {
+        request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  // ─── GET /graph/crossing ──────────────────────────────────────────────────
+
+  server.get<{
+    Querystring: { sources: string[] }
+  }>(
+    "/graph/crossing",
+    {
+      schema: {
+        summary: "Get nodes belonging to every given source at once",
+        description:
+          "Intersection of two or more sources. A company (tax ID starting " +
+          "with 30 or 33) also counts as belonging to a source when it is " +
+          "directly related to a node that has it, as long as at least one of " +
+          "the requested sources is its own. `indirectSources` names the ones " +
+          "it only reaches by relation. Repeat the parameter to pass several: " +
+          "?sources=A&sources=B",
+        querystring: {
+          type: "object",
+          required: ["sources"],
+          properties: {
+            sources: {
+              type: "array",
+              items: { type: "string" },
+              minItems: 2,
+              description: "Source names to cross. At least two.",
+            },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              nodes: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    relationshipCount: { type: "number" },
+                    indirectSources: { type: "array", items: { type: "string" } },
+                  },
+                },
+              },
+            },
+          },
+          400: { $ref: "BadResponse" },
+          401: { $ref: "UnauthorizedResponse" },
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { sources } = request.query
+      try {
+        const nodes = await neo4jSource.findCrossingNodes(sources)
+        logCrossingViewed(request.username, sources, nodes.length)
         return { nodes }
       } catch (error) {
         request.log.error(error)

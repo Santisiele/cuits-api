@@ -11,6 +11,7 @@ import type {
   CuitNode,
   CuitNodeUpdate,
   CuitNodeSummary,
+  CrossingNode,
   PathSegment,
   SearchResult,
   AddRelationshipResult,
@@ -48,6 +49,12 @@ export interface IGraphRepository {
   findNode(taxId: string): Promise<CuitNode | null>
   findMyBaseNodes(): Promise<CuitNodeSummary[]>
   findCompanyNodes(): Promise<CuitNodeSummary[]>
+
+  /**
+   * Nodes belonging to every source in `sources` at once, counting companies
+   * that reach a source through a directly related node.
+   */
+  findCrossingNodes(sources: string[]): Promise<CrossingNode[]>
   findPathsToBase(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>

@@ -220,6 +220,17 @@ export function logToKnowViewed(username: string, nodeCount: number): void {
   })
 }
 
+/** Logs a crossing-over query, naming the sources that were crossed. */
+export function logCrossingViewed(username: string, sources: string[], nodeCount: number): void {
+  activityLogger.info({
+    event: "crossing_viewed",
+    username,
+    sources,
+    nodeCount,
+    message: `${username} cruzó ${sources.join(" × ")} (${nodeCount} CUITs)`,
+  })
+}
+
 /** Logs the combined "all mine" nodes list being viewed. */
 export function logAllMyNodesViewed(username: string, nodeCount: number): void {
   activityLogger.info({

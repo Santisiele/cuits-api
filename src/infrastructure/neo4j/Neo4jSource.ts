@@ -1,6 +1,6 @@
 import type { ISource } from "@ports/interfaces.js"
 import type { IGraphRepository } from "@ports/interfaces.js"
-import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
+import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, CrossingNode, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 
 /**
@@ -97,6 +97,14 @@ export class Neo4jSource implements ISource {
 
   findCompanyNodes(): Promise<CuitNodeSummary[]> {
     return this.repository.findCompanyNodes()
+  }
+
+  /**
+   * Nodes belonging to every source in `sources` at once. Delegates to the
+   * repository, which is where the two ways of belonging are defined.
+   */
+  findCrossingNodes(sources: string[]): Promise<CrossingNode[]> {
+    return this.repository.findCrossingNodes(sources)
   }
 
   /**

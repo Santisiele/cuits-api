@@ -264,6 +264,53 @@ export const Queries = {
     ORDER BY relationshipCount DESC
   `,
 
+  // ─── Crossing over ─────────────────────────────────────────────────────────
+
+  /**
+   * Nodes that belong to every source in `$sources` at once, where a company
+   * may belong to a source through a neighbour instead of through its own
+   * `sources` list.
+   *
+   * Two ways of belonging:
+   *   - directly, the source is in the node's own `sources`
+   *   - by relation, the node is a company (30/33) with a direct neighbour
+   *     that has the source. Only companies qualify this way, because the
+   *     point of the view is to find companies reachable through the people
+   *     already loaded — "Residentes Senior Home" holds no company of its own,
+   *     so crossing it against anything used to return nothing at all.
+   *
+   * At least one selected source has to be direct (`ANY`). Without that, a
+   * company sitting between two unrelated sources but loaded from neither
+   * would show up, which is a much weaker claim than the view makes.
+   *
+   * `indirectSources` names which of the selected sources the node only
+   * reaches by relation, so the caller can mark those rows. An empty list
+   * means the node is a plain member of all of them.
+   *
+   * `coalesce` guards the nodes discovered through enrichment: they carry no
+   * `sources` property at all, and `x IN null` is null, not false.
+   */
+  FIND_CROSSING_NODES: `
+    MATCH (c:CUIT)
+    WHERE ANY(src IN $sources WHERE src IN coalesce(c.sources, []))
+      AND ALL(src IN $sources WHERE
+            src IN coalesce(c.sources, [])
+            OR ((c.id STARTS WITH '30' OR c.id STARTS WITH '33')
+                AND EXISTS {
+                  MATCH (c)-[:RELATED_TO]-(p:CUIT)
+                  WHERE src IN coalesce(p.sources, [])
+                }))
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.sources       AS sources,
+           c.isKnown       AS isKnown,
+           c.isToKnow      AS isToKnow,
+           count(DISTINCT related) AS relationshipCount,
+           [src IN $sources WHERE NOT src IN coalesce(c.sources, [])] AS indirectSources
+    ORDER BY c.businessName
+  `,
+
   // ─── Sources ───────────────────────────────────────────────────────────────
 
   /**

@@ -7,6 +7,7 @@ import type {
   CuitNode,
   CuitNodeUpdate,
   CuitNodeSummary,
+  CrossingNode,
   PathSegment,
   PathHop,
   SearchResult,
@@ -737,6 +738,30 @@ export class Neo4jRepository implements IGraphRepository {
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: this.normalizeSources(record.get("relatedSources")),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  /**
+   * Nodes belonging to every source in `sources` at once. Callers pass at
+   * least two — one source alone is not a crossing, it is that source's
+   * member list, which the other views already show.
+   */
+  async findCrossingNodes(sources: string[]): Promise<CrossingNode[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_CROSSING_NODES, { sources })
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
+        relatedSources: [],
+        indirectSources: this.normalizeSources(record.get("indirectSources")),
       }))
     } finally {
       await session.close()

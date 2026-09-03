@@ -61,6 +61,20 @@ export interface CuitNodeSummary {
 }
 
 /**
+ * A node in the crossing-over view: it belongs to every requested source,
+ * counting the ones it only reaches through a directly related node.
+ */
+export interface CrossingNode extends CuitNodeSummary {
+  /**
+   * The requested sources this node does NOT carry itself, and therefore
+   * belongs to only through a neighbour. Empty for a plain member of all of
+   * them, which is what the view returned before companies-by-relation
+   * existed.
+   */
+  indirectSources: string[]
+}
+
+/**
  * A node matched by a free-text search over its business name.
  *
  * Covers the whole graph, not just the base: the point of searching by name is
