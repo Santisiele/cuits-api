@@ -531,6 +531,7 @@ export class Neo4jRepository implements IGraphRepository {
         entryDate: attributes.entryDate ?? null,
         exitDate: attributes.exitDate ?? null,
         loadedAt: attributes.loadedAt ?? null,
+        levelOfTrust: null,
         customFields: attributes.customFields ?? {},
       })
     } finally {
