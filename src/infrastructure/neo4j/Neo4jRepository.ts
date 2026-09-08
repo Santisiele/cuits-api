@@ -512,16 +512,15 @@ export class Neo4jRepository implements IGraphRepository {
   ): Promise<void> {
     const session = this.session()
     try {
+      const customFields = await this.withMergedOperations(
+        session,
+        taxId,
+        attributes.customFields ?? {}
+      )
       await session.run(Queries.MERGE_BASE_NODE, {
         id: taxId,
         name: businessName,
         source,
-        /**
-         * Maps the loader's "known" | "to_know" onto the (:Source) node's
-         * "known" | "toKnow" property. The distinction is historical: the
-         * loader-facing type uses snake_case, while the graph model uses
-         * camelCase to match the frontend contract.
-         */
         sourceCategory: category === "to_know" ? "toKnow" : "known",
         isKnown: category === "known",
         isToKnow: category === "to_know",
@@ -532,11 +531,47 @@ export class Neo4jRepository implements IGraphRepository {
         exitDate: attributes.exitDate ?? null,
         loadedAt: attributes.loadedAt ?? null,
         levelOfTrust: null,
-        customFields: attributes.customFields ?? {},
+        customFields,
       })
     } finally {
       await session.close()
     }
+  }
+
+  private async withMergedOperations(
+    session: Session,
+    taxId: string,
+    customFields: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const incoming = customFields["operations"]
+    if (typeof incoming !== "string") return customFields
+
+    const result = await session.run(Queries.FIND_NODE_OPERATIONS, { taxId })
+    const stored = result.records[0]?.get("operations")
+    if (typeof stored !== "string" || stored.length === 0) return customFields
+
+    const parse = (raw: string): unknown[] => {
+      try {
+        const parsed: unknown = JSON.parse(raw)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        return []
+      }
+    }
+
+    const storedOperations = parse(stored)
+    if (storedOperations.length === 0) return customFields
+
+    const seen = new Set<string>()
+    const merged: unknown[] = []
+    for (const operation of [...storedOperations, ...parse(incoming)]) {
+      const key = JSON.stringify(operation)
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(operation)
+    }
+
+    return { ...customFields, operations: JSON.stringify(merged) }
   }
 
   async upsertEnrichmentNode(taxId: string, businessName: string): Promise<void> {

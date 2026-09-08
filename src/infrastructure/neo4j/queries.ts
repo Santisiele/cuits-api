@@ -31,6 +31,11 @@ export const Queries = {
    * caller sending only a phone number must not wipe a trust level it never
    * knew about. Sending 0 still clears it — 0 is this project's "no value".
    */
+  FIND_NODE_OPERATIONS: `
+    MATCH (c:CUIT {id: $taxId})
+    RETURN c.operations AS operations
+  `,
+
   UPDATE_NODE: `
     MATCH (c:CUIT {id: $taxId})
     SET c.phone        = $phone,
