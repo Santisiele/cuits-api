@@ -20,11 +20,23 @@ export const Queries = {
     RETURN c
   `,
 
+  /**
+   * Updates the editable fields of a node.
+   *
+   * The first three are assigned straight from their parameter, so omitting
+   * one clears it. That suits the edit form, which always submits every field
+   * it shows.
+   *
+   * `levelOfTrust` is COALESCEd instead, because it is not on that form: a
+   * caller sending only a phone number must not wipe a trust level it never
+   * knew about. Sending 0 still clears it — 0 is this project's "no value".
+   */
   UPDATE_NODE: `
     MATCH (c:CUIT {id: $taxId})
-    SET c.phone    = $phone,
-        c.email    = $email,
-        c.birthday = $birthday
+    SET c.phone        = $phone,
+        c.email        = $email,
+        c.birthday     = $birthday,
+        c.levelOfTrust = COALESCE($levelOfTrust, c.levelOfTrust)
     RETURN c
   `,
 
@@ -41,6 +53,7 @@ export const Queries = {
            c.sources       AS sources,
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName
   `,
@@ -58,6 +71,7 @@ export const Queries = {
            c.sources       AS sources,
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName
   `,
@@ -70,6 +84,7 @@ export const Queries = {
            c.sources       AS sources,
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName`,
 
@@ -93,6 +108,7 @@ export const Queries = {
            c.businessName  AS businessName,
            c.sources       AS sources,
            c.inMyBase      AS inMyBase,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName
     LIMIT $limit
@@ -106,6 +122,7 @@ export const Queries = {
            c.businessName  AS businessName,
            c.birthday      AS birthday,
            c.sources       AS sources,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount
   `,
 
@@ -211,6 +228,7 @@ export const Queries = {
         c.entryDate    = COALESCE($entryDate, c.entryDate),
         c.exitDate     = COALESCE($exitDate,  c.exitDate),
         c.loadedAt     = COALESCE($loadedAt,  c.loadedAt),
+        c.levelOfTrust = COALESCE($levelOfTrust,  c.levelOfTrust),
         c.sources      = CASE
           WHEN c.sources IS NULL THEN [$source]
           WHEN $source IN c.sources THEN c.sources
@@ -259,6 +277,7 @@ export const Queries = {
            c.sources       AS sources,
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
+           c.levelOfTrust  AS levelOfTrust,
            relationshipCount,
            [s IN rawSources WHERE s IS NOT NULL] AS relatedSources
     ORDER BY relationshipCount DESC
@@ -306,6 +325,7 @@ export const Queries = {
            c.sources       AS sources,
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
+           c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount,
            [src IN $sources WHERE NOT src IN coalesce(c.sources, [])] AS indirectSources
     ORDER BY c.businessName

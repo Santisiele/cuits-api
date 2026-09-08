@@ -72,6 +72,7 @@ export class Neo4jRepository implements IGraphRepository {
         phone: "phone" in fields ? fields.phone : null,
         email: "email" in fields ? fields.email : null,
         birthday: "birthday" in fields ? fields.birthday : null,
+        levelOfTrust: "levelOfTrust" in fields ? fields.levelOfTrust : null,
       })
       return result.records.length > 0 ? "updated" : "not_found"
     } finally {
@@ -90,6 +91,7 @@ export class Neo4jRepository implements IGraphRepository {
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
         relatedSources: [],
       }))
     } finally {
@@ -108,6 +110,7 @@ export class Neo4jRepository implements IGraphRepository {
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
         relatedSources: [],
       }))
     } finally {
@@ -126,6 +129,7 @@ export class Neo4jRepository implements IGraphRepository {
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
         relatedSources: [],
       }))
     } finally {
@@ -146,6 +150,7 @@ export class Neo4jRepository implements IGraphRepository {
         sources: (record.get("sources") as string[] | null) ?? [],
         inMyBase: record.get("inMyBase") === true,
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
     } finally {
       await session.close()
@@ -169,6 +174,7 @@ export class Neo4jRepository implements IGraphRepository {
         birthday: String(record.get("birthday") ?? ""),
         sources: this.normalizeSources(record.get("sources")),
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
 
       const inRange = (m: number, d: number): boolean => {
@@ -738,6 +744,7 @@ export class Neo4jRepository implements IGraphRepository {
         isKnown: Boolean(record.get("isKnown") ?? false),
         isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: this.normalizeSources(record.get("relatedSources")),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
     } finally {
       await session.close()
@@ -762,6 +769,7 @@ export class Neo4jRepository implements IGraphRepository {
         isToKnow: Boolean(record.get("isToKnow") ?? false),
         relatedSources: [],
         indirectSources: this.normalizeSources(record.get("indirectSources")),
+        levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
     } finally {
       await session.close()
@@ -804,7 +812,7 @@ export class Neo4jRepository implements IGraphRepository {
       "id", "businessName", "phone", "email", "birthday",
       "entryDate", "exitDate", "loadedAt",
       "isKnown", "isToKnow", "inMyBase",
-      "sources", "source",
+      "sources", "source", "levelOfTrust"
     ])
 
     const customFields: Record<string, unknown> = {}
@@ -823,6 +831,7 @@ export class Neo4jRepository implements IGraphRepository {
       entryDate: props["entryDate"] != null ? String(props["entryDate"]) : null,
       exitDate: props["exitDate"] != null ? String(props["exitDate"]) : null,
       loadedAt: props["loadedAt"] != null ? String(props["loadedAt"]) : null,
+      levelOfTrust: props["levelOfTrust"] != null ? Number(props["levelOfTrust"]) : 0,
       isKnown,
       isToKnow,
       inMyBase: isKnown || isToKnow,

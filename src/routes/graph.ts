@@ -366,6 +366,12 @@ export default async function graphRoutes(server: FastifyInstance) {
                   "Months the node has operations in, as yyyy-mm, most recent " +
                   "first. Empty for sources that do not record operations.",
               },
+              levelOfTrust: {
+                type: "number",
+                description:
+                  "Trust level assigned to this CUIT. 0 means no value was " +
+                  "ever assigned, not zero trust.",
+              },
               publicationDate: {
                 type: "string",
                 description:
@@ -418,7 +424,7 @@ export default async function graphRoutes(server: FastifyInstance) {
 
   server.patch<{
     Params: { taxId: string }
-    Body: { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string }
+    Body: { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number }
   }>(
     "/graph/node/:taxId",
     {
@@ -434,6 +440,12 @@ export default async function graphRoutes(server: FastifyInstance) {
             entryDate: { type: "string" },
             exitDate: { type: "string" },
             loadedAt: { type: "string" },
+            levelOfTrust: {
+              type: "number",
+              description:
+                "Omitting this leaves the stored value alone, unlike the " +
+                "fields above. Send 0 to clear it.",
+            },
           },
         },
         response: {
@@ -446,11 +458,11 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { taxId } = request.params
-      const { phone, email, birthday, entryDate, exitDate, loadedAt } = request.body
+      const { phone, email, birthday, entryDate, exitDate, loadedAt, levelOfTrust } = request.body
       try {
         const fields = Object.fromEntries(
-          Object.entries({ phone, email, birthday }).filter(([, v]) => v !== undefined)
-        ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string }
+          Object.entries({ phone, email, birthday, levelOfTrust }).filter(([, v]) => v !== undefined)
+        ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number }
         const result = await neo4jSource.updateNode(taxId, fields)
         if (result === "not_found") {
           return reply.code(404).send({
@@ -562,6 +574,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     businessName: { type: "string" },
                     sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                   },
                 },
               },
@@ -606,6 +619,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     businessName: { type: "string" },
                     sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                     relatedSources: { type: "array", items: { type: "string" } },
                   },
                 },
@@ -670,6 +684,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     businessName: { type: "string" },
                     sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                     indirectSources: { type: "array", items: { type: "string" } },
                   },
                 },
@@ -731,6 +746,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     sources: { type: "array", items: { type: "string" } },
                     inMyBase: { type: "boolean" },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                   },
                 },
               },
@@ -808,6 +824,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     birthday: { type: "string" },
                     sources: { type: "array", items: { type: "string" } },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                   },
                 },
               },
@@ -877,6 +894,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     isKnown: { type: "boolean" },
                     isToKnow: { type: "boolean" },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                   },
                 },
               },
@@ -926,6 +944,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     isKnown: { type: "boolean" },
                     isToKnow: { type: "boolean" },
                     relationshipCount: { type: "number" },
+                    levelOfTrust: { type: "number" },
                   },
                 },
               },

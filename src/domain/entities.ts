@@ -34,6 +34,20 @@ export interface CuitNode {
   inMyBase: boolean
   sources: string[]
   /**
+   * Trust level assigned to this CUIT.
+   *
+   * **0 means no value**, not "zero trust" — the property is simply absent on
+   * the node, which is how every node starts, since no loader writes it. That
+   * is why this is a plain `number` and never null: the absent case already
+   * has a representation, and a second one would only invite readers to check
+   * for the wrong one.
+   *
+   * Nothing validates the scale — not the graph, not this type. Whatever
+   * writes the value decides what it means and every reader has to agree, so
+   * document the range here the day it starts being written.
+   */
+  levelOfTrust: number
+  /**
    * Loader-specific extra fields, e.g. `{ publicationDate: "12/03/2024" }`.
    * Keys come from each loader's own contract — there is no global enum.
    */
@@ -44,6 +58,11 @@ export interface CuitNodeUpdate {
   phone?: string
   email?: string
   birthday?: string
+  /**
+   * Omitting this leaves the stored value alone, unlike the fields above,
+   * which clear when omitted. See the note on `UPDATE_NODE`.
+   */
+  levelOfTrust?: number
 }
 
 export interface CuitNodeSummary {
@@ -53,6 +72,8 @@ export interface CuitNodeSummary {
   relationshipCount: number
   isKnown: boolean
   isToKnow: boolean
+  /** Trust level for this CUIT. See `CuitNode.levelOfTrust`. */
+  levelOfTrust: number
   /**
    * Sources of inMyBase nodes that this node is directly related to.
    * Only populated by `findCompanyNodes` — empty array otherwise.
@@ -87,6 +108,8 @@ export interface NameSearchResult {
   businessName: string
   sources: string[]
   inMyBase: boolean
+  /** Trust level for this CUIT. See `CuitNode.levelOfTrust`. */
+  levelOfTrust: number
   relationshipCount: number
 }
 
@@ -96,6 +119,8 @@ export interface BirthdayResult {
   /** Stored as dd/mm/yyyy. */
   birthday: string
   sources: string[]
+  /** Trust level for this CUIT. See `CuitNode.levelOfTrust`. */
+  levelOfTrust: number
   relationshipCount: number
 }
 
