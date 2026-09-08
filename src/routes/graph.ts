@@ -391,7 +391,7 @@ export default async function graphRoutes(server: FastifyInstance) {
       try {
         const node = await neo4jSource.findNode(taxId)
         if (!node) {
-          logNodeViewed(request.username, taxId, null, null, null, null)
+          logNodeViewed(request.username, taxId, null, null, null, null, false)
           return reply.code(404).send({
             cuit: taxId,
             found: false,
@@ -973,7 +973,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     async (request, reply) => {
       try {
         const nodes = await neo4jSource.findAllMyNodes(request.query.source ?? null)
-        logAllMyNodesViewed(request.username, nodes.length)
+        logAllMyNodesViewed(request.username, request.query.source ?? null, nodes.length)
         return { nodes }
       } catch (error) {
         request.log.error(error)

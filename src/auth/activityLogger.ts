@@ -37,28 +37,28 @@ const activityLogger = pino(
   pino.destination({ dest: LOG_FILE, sync: true })
 )
 
-activityLogger.info({ event: "startup", message: "Logger iniciado" })
+activityLogger.info({ event: "startup", message: "Logger started" })
 
 // ─── Log helpers ──────────────────────────────────────────────────────────────
 
 /** Logs a successful login. */
 export function logLogin(username: string, ip: string): void {
-  activityLogger.info({ event: "login", username, ip, message: `${username} inició sesión` })
+  activityLogger.info({ event: "login", username, ip, message: `${username} logged in` })
 }
 
 /** Logs a failed login attempt. */
 export function logLoginFailed(username: string, ip: string, reason: string): void {
-  activityLogger.warn({ event: "login_failed", username, ip, reason, message: `Intento de login fallido para "${username}"` })
+  activityLogger.warn({ event: "login_failed", username, ip, reason, message: `Failed login attempt for "${username}"` })
 }
 
 /** Logs a logout. */
 export function logLogout(username: string, ip: string): void {
-  activityLogger.info({ event: "logout", username, ip, message: `${username} cerró sesión` })
+  activityLogger.info({ event: "logout", username, ip, message: `${username} logged out` })
 }
 
 /** Logs an unauthorized access attempt. */
 export function logUnauthorized(ip: string, url: string, reason: string): void {
-  activityLogger.warn({ event: "unauthorized", ip, url, reason, message: `Acceso no autorizado a ${url}` })
+  activityLogger.warn({ event: "unauthorized", ip, url, reason, message: `Unauthorized access to ${url}` })
 }
 
 // ─── Semantic action logs ─────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ export function logCuitSearch(username: string, taxId: string, found: boolean): 
     username,
     taxId,
     found,
-    message: `${username} buscó el CUIT ${taxId} — ${found ? "encontrado" : "no encontrado"}`,
+    message: `${username} searched CUIT ${taxId} — ${found ? "found" : "not found"}`,
   })
 }
 
@@ -81,7 +81,7 @@ export function logNameSearch(username: string, query: string, resultCount: numb
     username,
     query,
     resultCount,
-    message: `${username} buscó por nombre "${query}" — ${resultCount} resultados`,
+    message: `${username} searched by name "${query}" — ${resultCount} results`,
   })
 }
 
@@ -93,7 +93,7 @@ export function logPathSearch(username: string, from: string, to: string, found:
     from,
     to,
     found,
-    message: `${username} buscó camino entre ${from} y ${to} — ${found ? "encontrado" : "no encontrado"}`,
+    message: `${username} searched for a path between ${from} and ${to} — ${found ? "found" : "not found"}`,
   })
 }
 
@@ -105,7 +105,7 @@ export function logRelationshipAdded(username: string, fromTaxId: string, toTaxI
     fromTaxId,
     toTaxId,
     relationshipType,
-    message: `${username} agregó relación ${relationshipType} entre ${fromTaxId} y ${toTaxId}`,
+    message: `${username} added relationship ${relationshipType} between ${fromTaxId} and ${toTaxId}`,
   })
 }
 
@@ -117,18 +117,25 @@ export function logRelationshipDeleted(username: string, fromTaxId: string, toTa
     fromTaxId,
     toTaxId,
     relationshipType,
-    message: `${username} eliminó relación ${relationshipType} entre ${fromTaxId} y ${toTaxId}`,
+    message: `${username} deleted relationship ${relationshipType} between ${fromTaxId} and ${toTaxId}`,
   })
 }
 
-/** Logs a node being viewed. */
+/**
+ * Logs a node lookup, whether or not the node was there.
+ *
+ * The route calls this on the 404 path too, with every field null. Saying
+ * "viewed CUIT X" for a CUIT that does not exist made the log claim something
+ * that never happened, so a miss now reads as a miss.
+ */
 export function logNodeViewed(
   username: string,
   taxId: string,
   businessName: string | null,
   entryDate: string | null,
   exitDate: string | null,
-  loadedAt: string | null
+  loadedAt: string | null,
+  found = true
 ): void {
   activityLogger.info({
     event: "node_viewed",
@@ -138,12 +145,14 @@ export function logNodeViewed(
     entryDate,
     exitDate,
     loadedAt,
-    message:
-      `${username} consultó el nodo ${taxId}` +
-      (businessName ? ` (${businessName})` : "") +
-      (entryDate ? ` | alta: ${entryDate}` : "") +
-      (exitDate ? ` | baja: ${exitDate}` : "") +
-      (loadedAt ? ` | cargado: ${loadedAt}` : "")
+    found,
+    message: found
+      ? `${username} viewed CUIT ${taxId}` +
+        (businessName ? ` (${businessName})` : "") +
+        (entryDate ? ` | entry: ${entryDate}` : "") +
+        (exitDate ? ` | exit: ${exitDate}` : "") +
+        (loadedAt ? ` | loaded: ${loadedAt}` : "")
+      : `${username} looked up CUIT ${taxId} — not found`,
   })
 }
 
@@ -155,7 +164,7 @@ export function logNodeRelationshipsViewed(username: string, taxId: string, maxD
     taxId,
     maxDepth,
     resultCount,
-    message: `${username} consultó relaciones de ${taxId} — profundidad ${maxDepth}, ${resultCount} resultados`,
+    message: `${username} viewed relationships of ${taxId} — depth ${maxDepth}, ${resultCount} results`,
   })
 }
 
@@ -165,7 +174,7 @@ export function logMyBaseViewed(username: string, nodeCount: number): void {
     event: "my_base_viewed",
     username,
     nodeCount,
-    message: `${username} consultó su base (${nodeCount} nodos)`,
+    message: `${username} viewed their base (${nodeCount} CUITs)`,
   })
 }
 
@@ -175,7 +184,7 @@ export function logCompaniesViewed(username: string, nodeCount: number): void {
     event: "companies_viewed",
     username,
     nodeCount,
-    message: `${username} consultó empresas a buscar (${nodeCount} empresas)`,
+    message: `${username} viewed companies to look into (${nodeCount} companies)`,
   })
 }
 
@@ -185,7 +194,7 @@ export function logNodeUpdated(username: string, taxId: string): void {
     event: "node_updated",
     username,
     taxId,
-    message: `${username} editó el nodo ${taxId}`,
+    message: `${username} edited CUIT ${taxId}`,
   })
 }
 
@@ -206,7 +215,7 @@ export function logBirthdaysViewed(
     from,
     to,
     resultCount,
-    message: `${username} consultó cumpleaños entre ${from} y ${to} — ${resultCount} resultados`,
+    message: `${username} viewed birthdays between ${from} and ${to} — ${resultCount} results`,
   })
 }
 
@@ -216,7 +225,7 @@ export function logToKnowViewed(username: string, nodeCount: number): void {
     event: "to_know_viewed",
     username,
     nodeCount,
-    message: `${username} consultó objetivos (${nodeCount} nodos)`,
+    message: `${username} viewed targets (${nodeCount} CUITs)`,
   })
 }
 
@@ -227,17 +236,29 @@ export function logCrossingViewed(username: string, sources: string[], nodeCount
     username,
     sources,
     nodeCount,
-    message: `${username} cruzó ${sources.join(" × ")} (${nodeCount} CUITs)`,
+    message: `${username} crossed ${sources.join(" × ")} (${nodeCount} CUITs)`,
   })
 }
 
-/** Logs the combined "all mine" nodes list being viewed. */
-export function logAllMyNodesViewed(username: string, nodeCount: number): void {
+/**
+ * Logs the full base being viewed, naming the source it was narrowed to.
+ *
+ * The source is what makes this line worth reading: the endpoint answers one
+ * source at a time now, so a log saying only how many CUITs came back cannot
+ * tell a look at Poseidon from a look at Bolsa.
+ *
+ * Null is still possible — the endpoint keeps answering the whole union when
+ * asked without a source — and reads differently on purpose.
+ */
+export function logAllMyNodesViewed(username: string, source: string | null, nodeCount: number): void {
   activityLogger.info({
     event: "all_my_nodes_viewed",
     username,
+    source,
     nodeCount,
-    message: `${username} consultó todos sus nodos (${nodeCount} nodos)`,
+    message: source
+      ? `${username} viewed the full base for "${source}" (${nodeCount} CUITs)`
+      : `${username} viewed the full base, every source (${nodeCount} CUITs)`,
   })
 }
 
@@ -257,7 +278,7 @@ export function logSourceCreated(
     username,
     sourceName,
     category,
-    message: `${username} registró la fuente "${sourceName}" (${category})`,
+    message: `${username} registered source "${sourceName}" (${category})`,
   })
 }
 
@@ -284,7 +305,7 @@ export function logSourceOperationInitiated(payload: {
   activityLogger.info({
     ...payload,
     timestamp: new Date().toISOString(),
-    message: `${payload.username} inició "${payload.event}" sobre "${payload.sourceName}" (~${payload.affectedNodeCount} CUITs)`,
+    message: `${payload.username} started "${payload.event}" on "${payload.sourceName}" (~${payload.affectedNodeCount} CUITs)`,
   })
 }
 
@@ -299,7 +320,7 @@ export function logSourceOperationCompleted(payload: {
   activityLogger.info({
     ...payload,
     timestamp: new Date().toISOString(),
-    message: `${payload.username} completó "${payload.event}" sobre "${payload.sourceName}" en ${payload.durationMs}ms`,
+    message: `${payload.username} finished "${payload.event}" on "${payload.sourceName}" in ${payload.durationMs}ms`,
   })
 }
 
@@ -318,6 +339,6 @@ export function logSourceOperationFailed(payload: {
   activityLogger.error({
     ...payload,
     timestamp: new Date().toISOString(),
-    message: `${payload.username} falló "${payload.event}" sobre "${payload.sourceName}": ${payload.error}`,
+    message: `${payload.username} failed "${payload.event}" on "${payload.sourceName}": ${payload.error}`,
   })
 }
