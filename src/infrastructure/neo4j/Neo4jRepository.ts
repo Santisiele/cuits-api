@@ -118,10 +118,15 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  async findAllMyNodes(): Promise<CuitNodeSummary[]> {
+  /**
+   * The union of both groups. Pass a source name to get only its nodes —
+   * the "Base completa" view shows nothing until one is picked, so fetching
+   * all 27k rows to then drop most of them was work nobody asked for.
+   */
+  async findAllMyNodes(source: string | null = null): Promise<CuitNodeSummary[]> {
     const session = this.session()
     try {
-      const result = await session.run(Queries.FIND_ALL_MY_NODES)
+      const result = await session.run(Queries.FIND_ALL_MY_NODES, { source })
       return result.records.map((record) => ({
         taxId: String(record.get("taxId") ?? ""),
         businessName: String(record.get("businessName") ?? ""),

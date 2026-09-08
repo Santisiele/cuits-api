@@ -924,11 +924,26 @@ export default async function graphRoutes(server: FastifyInstance) {
    * conocidos (isKnown) and por conocer (isToKnow) groups. Nodes that are
    * both appear once.
    */
-  server.get(
+  server.get<{
+    Querystring: { source?: string }
+  }>(
     "/graph/base-full",
     {
       schema: {
         summary: "Get all my nodes (union of isKnown and isToKnow)",
+        description:
+          "Pass ?source=<name> to get only the nodes carrying that source. " +
+          "Without it the whole union comes back, which is tens of thousands " +
+          "of rows.",
+        querystring: {
+          type: "object",
+          properties: {
+            source: {
+              type: "string",
+              description: "Narrow the result to one source name.",
+            },
+          },
+        },
         response: {
           200: {
             type: "object",
@@ -957,7 +972,7 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const nodes = await neo4jSource.findAllMyNodes()
+        const nodes = await neo4jSource.findAllMyNodes(request.query.source ?? null)
         logAllMyNodesViewed(request.username, nodes.length)
         return { nodes }
       } catch (error) {

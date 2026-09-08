@@ -59,7 +59,7 @@ export interface IGraphRepository {
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findToKnowNodes(): Promise<CuitNodeSummary[]>
-  findAllMyNodes(): Promise <CuitNodeSummary[]>
+  findAllMyNodes(source?: string | null): Promise<CuitNodeSummary[]>
 
   /**
    * Finds nodes whose business name contains `query`, case-insensitively,

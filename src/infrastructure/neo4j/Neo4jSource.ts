@@ -60,8 +60,8 @@ export class Neo4jSource implements ISource {
     return this.repository.findToKnowNodes()
   }
 
-  findAllMyNodes(): Promise<CuitNodeSummary[]> {
-    return this.repository.findAllMyNodes()
+  findAllMyNodes(source: string | null = null): Promise<CuitNodeSummary[]> {
+    return this.repository.findAllMyNodes(source)
   }
 
   findNode(taxId: string): Promise<CuitNode | null> {

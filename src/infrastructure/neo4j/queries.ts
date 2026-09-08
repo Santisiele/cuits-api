@@ -76,8 +76,16 @@ export const Queries = {
     ORDER BY c.businessName
   `,
 
+  /**
+   * The union of both groups, optionally narrowed to one source.
+   *
+   * `$source` is null when the caller wants everything. The filter reads the
+   * cached `sources` array rather than walking [:HAS_SOURCE], to keep the same
+   * semantics the callers had while they were filtering that array themselves.
+   */
   FIND_ALL_MY_NODES: `
     MATCH (c:CUIT {inMyBase: true})
+    WHERE $source IS NULL OR $source IN coalesce(c.sources, [])
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
     RETURN c.id            AS taxId,
            c.businessName  AS businessName,
