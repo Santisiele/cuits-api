@@ -12,6 +12,8 @@ import type {
   CuitNodeUpdate,
   CuitNodeSummary,
   CrossingNode,
+  TrustLevelInfo,
+  TrustLevelColor,
   PathSegment,
   SearchResult,
   AddRelationshipResult,
@@ -55,6 +57,13 @@ export interface IGraphRepository {
    * that reach a source through a directly related node.
    */
   findCrossingNodes(sources: string[]): Promise<CrossingNode[]>
+  findTrustLevels(): Promise<TrustLevelInfo[]>
+  findTrustLevel(value: number): Promise<TrustLevelInfo | null>
+  findTrustLevelValueByLabel(label: string): Promise<number | null>
+  countCuitsForTrustLevel(value: number): Promise<number>
+  createTrustLevel(label: string, color: TrustLevelColor): Promise<number>
+  updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null): Promise<void>
+  deleteTrustLevel(value: number): Promise<number>
   findPathsToBase(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>
   findAllRelationships(taxId: string, maxDepth: number): Promise<SearchResult[] | null>

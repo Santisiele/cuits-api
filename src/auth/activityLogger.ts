@@ -1,7 +1,7 @@
 import pino from "pino"
 import path from "path"
 import fs from "fs"
-import type { OperationSummary } from "@domain/entities.js"
+import type { OperationSummary, TrustLevelOperationSummary } from "@domain/entities.js"
 
 /**
  * Resolves LOG_ROUTE into an absolute directory path.
@@ -340,5 +340,27 @@ export function logSourceOperationFailed(payload: {
     ...payload,
     timestamp: new Date().toISOString(),
     message: `${payload.username} failed "${payload.event}" on "${payload.sourceName}": ${payload.error}`,
+  })
+}
+
+/** Logs the trust level list being viewed. */
+export function logTrustLevelsViewed(username: string, levelCount: number): void {
+  activityLogger.info({
+    event: "trust_levels_viewed",
+    username,
+    levelCount,
+    message: `${username} viewed the trust levels (${levelCount} levels)`,
+  })
+}
+
+/** Logs a trust level being created, renamed, recoloured or deleted. */
+export function logTrustLevelOperation(username: string, summary: TrustLevelOperationSummary): void {
+  activityLogger.info({
+    event: summary.operation.replace("-", "_"),
+    username,
+    value: summary.value,
+    label: summary.label,
+    affectedNodeCount: summary.affectedNodeCount,
+    message: `${username}: ${summary.message}`,
   })
 }

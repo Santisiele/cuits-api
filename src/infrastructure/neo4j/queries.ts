@@ -608,4 +608,63 @@ export const Queries = {
         c.inMyBase = size(categories) > 0
     RETURN c.id AS taxId
   `,
+  FIND_TRUST_LEVELS: `
+    MATCH (t:TrustLevel)
+    OPTIONAL MATCH (c:CUIT {levelOfTrust: t.value})
+    RETURN t.value AS value,
+           t.label AS label,
+           t.color AS color,
+           count(c) AS nodeCount
+    ORDER BY t.value
+  `,
+
+  FIND_TRUST_LEVEL: `
+    MATCH (t:TrustLevel {value: $value})
+    RETURN t.value AS value, t.label AS label, t.color AS color
+  `,
+
+  FIND_TRUST_LEVEL_BY_LABEL: `
+    MATCH (t:TrustLevel)
+    WHERE toLower(t.label) = toLower($label)
+    RETURN t.value AS value
+  `,
+
+  NEXT_TRUST_LEVEL_VALUE: `
+    MATCH (t:TrustLevel)
+    RETURN coalesce(max(t.value), 0) + 1 AS value
+  `,
+
+  CREATE_TRUST_LEVEL: `
+    CREATE (t:TrustLevel {value: $value, label: $label, color: $color})
+    RETURN t.value AS value
+  `,
+
+  UPDATE_TRUST_LEVEL: `
+    MATCH (t:TrustLevel {value: $value})
+    SET t.label = coalesce($label, t.label),
+        t.color = coalesce($color, t.color)
+    RETURN t.label AS label
+  `,
+
+  COUNT_CUITS_FOR_TRUST_LEVEL: `
+    MATCH (c:CUIT {levelOfTrust: $value})
+    RETURN count(c) AS affectedNodeCount
+  `,
+
+  CLEAR_TRUST_LEVEL_FROM_NODES: `
+    MATCH (c:CUIT {levelOfTrust: $value})
+    WITH c LIMIT $batchSize
+    SET c.levelOfTrust = 0
+    RETURN count(c) AS batchProcessed
+  `,
+
+  DELETE_TRUST_LEVEL_NODE: `
+    MATCH (t:TrustLevel {value: $value})
+    DETACH DELETE t
+  `,
+
+  CREATE_TRUST_LEVEL_CONSTRAINT: `
+    CREATE CONSTRAINT trust_level_value_unique IF NOT EXISTS
+    FOR (t:TrustLevel) REQUIRE t.value IS UNIQUE
+  `,
 } as const

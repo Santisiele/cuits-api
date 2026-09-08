@@ -8,6 +8,8 @@ import type {
   CuitNodeUpdate,
   CuitNodeSummary,
   CrossingNode,
+  TrustLevelInfo,
+  TrustLevelColor,
   PathSegment,
   PathHop,
   SearchResult,
@@ -776,6 +778,103 @@ export class Neo4jRepository implements IGraphRepository {
         indirectSources: this.normalizeSources(record.get("indirectSources")),
         levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  // ─── Trust levels ─────────────────────────────────────────────────────────
+
+  async findTrustLevels(): Promise<TrustLevelInfo[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_TRUST_LEVELS)
+      return result.records.map((record) => ({
+        value: Number(record.get("value")),
+        label: String(record.get("label") ?? ""),
+        color: String(record.get("color") ?? "slate") as TrustLevelColor,
+        nodeCount: Number(record.get("nodeCount") ?? 0),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findTrustLevel(value: number): Promise<TrustLevelInfo | null> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_TRUST_LEVEL, { value: neo4j.int(value) })
+      const record = result.records[0]
+      if (!record) return null
+      return {
+        value: Number(record.get("value")),
+        label: String(record.get("label") ?? ""),
+        color: String(record.get("color") ?? "slate") as TrustLevelColor,
+        nodeCount: 0,
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findTrustLevelValueByLabel(label: string): Promise<number | null> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_TRUST_LEVEL_BY_LABEL, { label })
+      const record = result.records[0]
+      return record ? Number(record.get("value")) : null
+    } finally {
+      await session.close()
+    }
+  }
+
+  async countCuitsForTrustLevel(value: number): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_CUITS_FOR_TRUST_LEVEL, { value: neo4j.int(value) })
+      return Number(result.records[0]?.get("affectedNodeCount") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async createTrustLevel(label: string, color: TrustLevelColor): Promise<number> {
+    const session = this.session()
+    try {
+      await session.run(Queries.CREATE_TRUST_LEVEL_CONSTRAINT)
+      const next = await session.run(Queries.NEXT_TRUST_LEVEL_VALUE)
+      const value = Number(next.records[0]?.get("value") ?? 1)
+      await session.run(Queries.CREATE_TRUST_LEVEL, { value: neo4j.int(value), label, color })
+      return value
+    } finally {
+      await session.close()
+    }
+  }
+
+  async updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.UPDATE_TRUST_LEVEL, { value: neo4j.int(value), label, color })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async deleteTrustLevel(value: number): Promise<number> {
+    const session = this.session()
+    try {
+      let cleared = 0
+      for (;;) {
+        const result = await session.run(Queries.CLEAR_TRUST_LEVEL_FROM_NODES, {
+          value: neo4j.int(value),
+          batchSize: this.batchParam(500),
+        })
+        const processed = Number(result.records[0]?.get("batchProcessed") ?? 0)
+        cleared += processed
+        if (processed === 0) break
+      }
+      await session.run(Queries.DELETE_TRUST_LEVEL_NODE, { value: neo4j.int(value) })
+      return cleared
     } finally {
       await session.close()
     }

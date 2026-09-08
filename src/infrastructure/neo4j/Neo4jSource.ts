@@ -1,6 +1,6 @@
 import type { ISource } from "@ports/interfaces.js"
 import type { IGraphRepository } from "@ports/interfaces.js"
-import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, CrossingNode, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
+import type { SearchResult, CuitNode, CuitNodeUpdate, CuitNodeSummary, CrossingNode, TrustLevelInfo, TrustLevelColor, PathSegment, AddRelationshipResult, DeleteRelationshipResult, UpdateNodeResult, SourceInfo, NameSearchResult } from "@domain/entities.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 
 /**
@@ -111,6 +111,10 @@ export class Neo4jSource implements ISource {
    * Lists every source registered in the graph. Delegates to the
    * repository's findSources method.
    */
+  findTrustLevels(): Promise<TrustLevelInfo[]> {
+    return this.repository.findTrustLevels()
+  }
+
   findSources(): Promise<SourceInfo[]> {
     return this.repository.findSources()
   }

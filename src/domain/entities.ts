@@ -300,3 +300,49 @@ export interface RowLoadOutcome {
   nodes: NodeLoadOutcome[]
   overall: "all_loaded" | "partial" | "none"
 }
+// ═══════════════════════════════════════════════════════════════════════════
+//  Trust levels
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const TRUST_LEVEL_COLORS = [
+  "red",
+  "orange",
+  "amber",
+  "green",
+  "teal",
+  "blue",
+  "violet",
+  "pink",
+  "slate",
+] as const
+
+export type TrustLevelColor = (typeof TRUST_LEVEL_COLORS)[number]
+
+export function isTrustLevelColor(value: unknown): value is TrustLevelColor {
+  return typeof value === "string" && (TRUST_LEVEL_COLORS as readonly string[]).includes(value)
+}
+
+export interface TrustLevelInfo {
+  value: number
+  label: string
+  color: TrustLevelColor
+  nodeCount: number
+}
+
+export type TrustLevelOperation = "create-level" | "update-level" | "delete-level"
+
+export interface TrustLevelOperationSummary {
+  operation: TrustLevelOperation
+  value: number
+  label: string
+  affectedNodeCount: number
+  dryRun: boolean
+  message: string
+}
+
+export type TrustLevelRejection =
+  | "level_not_found"
+  | "label_conflict"
+  | "invalid_color"
+  | "invalid_label"
+  | "reserved_level"
