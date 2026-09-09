@@ -892,7 +892,12 @@ export class Neo4jRepository implements IGraphRepository {
   async updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null, description: string | null): Promise<void> {
     const session = this.session()
     try {
-      await session.run(Queries.UPDATE_TRUST_LEVEL, { value: neo4j.int(value), label, color, description })
+      await session.run(Queries.UPDATE_TRUST_LEVEL, {
+        value: neo4j.int(value),
+        label: label ?? null,
+        color: color ?? null,
+        description: description ?? null,
+      })
     } finally {
       await session.close()
     }

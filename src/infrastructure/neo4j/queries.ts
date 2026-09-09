@@ -648,7 +648,7 @@ export const Queries = {
   UPDATE_TRUST_LEVEL: `
     MATCH (t:TrustLevel {value: $value})
     SET t.label = coalesce($label, t.label),
-        t.color = coalesce($color, t.color)
+        t.color = coalesce($color, t.color),
         t.description = coalesce($description, t.description)
     RETURN t.label AS label
   `,
