@@ -158,7 +158,7 @@ export class TrustLevelAdminService {
   private async requireLevel(value: number): Promise<TrustLevelInfo> {
     const existing = await this.repository.findTrustLevel(value)
     if (!existing) {
-      throw new TrustLevelAdminError("level_not_found", `Level ${value} does not exist`)
+      throw new TrustLevelAdminError("level_not_found", "That trust level does not exist")
     }
     return existing
   }
@@ -166,7 +166,7 @@ export class TrustLevelAdminService {
   private async rejectLabelConflict(label: string, allowedValue: number | null): Promise<void> {
     const taken = await this.repository.findTrustLevelValueByLabel(label)
     if (taken !== null && taken !== allowedValue) {
-      throw new TrustLevelAdminError("label_conflict", `The label "${label}" is already in use`)
+      throw new TrustLevelAdminError("label_conflict", "Another level already uses that name")
     }
   }
 }
