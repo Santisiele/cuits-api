@@ -81,6 +81,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
                     value: { type: "number" },
                     label: { type: "string" },
                     color: { type: "string" },
+                    description: { type: "string" },
                     nodeCount: { type: "number" },
                   },
                 },
@@ -107,7 +108,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
 
   server.post<{
     Querystring: { dryRun?: string }
-    Body: { label: string; color: string; password?: string }
+    Body: { label: string; color: string; password?: string, description: string | null }
   }>(
     "/trust-levels",
     {
@@ -121,6 +122,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
             label: { type: "string" },
             color: { type: "string" },
             password: { type: "string" },
+            description: { type: "string" },
           },
         },
         response: {
@@ -133,13 +135,13 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const { label, color, password } = request.body
+      const { label, color, password, description } = request.body
       const dryRun = request.query.dryRun === "true"
 
       if (!dryRun && !(await requirePassword(request.username, password, reply))) return
 
       try {
-        const summary = await adminService.createLevel(label, color, dryRun)
+        const summary = await adminService.createLevel(label, color, dryRun, description)
         if (!dryRun) logTrustLevelOperation(request.username, summary)
         return summary
       } catch (err) {
@@ -153,7 +155,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
   server.patch<{
     Params: { value: string }
     Querystring: { dryRun?: string }
-    Body: { label?: string; color?: string; password?: string }
+    Body: { label?: string; color?: string; password?: string, description: string | null }
   }>(
     "/trust-levels/:value",
     {
@@ -167,6 +169,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
             label: { type: "string" },
             color: { type: "string" },
             password: { type: "string" },
+            description: { type: "string" },
           },
         },
         response: {
@@ -181,7 +184,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const value = Number(request.params.value)
-      const { label, color, password } = request.body
+      const { label, color, password, description } = request.body
       const dryRun = request.query.dryRun === "true"
 
       if (!Number.isInteger(value)) {
@@ -190,7 +193,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
       if (!dryRun && !(await requirePassword(request.username, password, reply))) return
 
       try {
-        const summary = await adminService.updateLevel(value, label, color, dryRun)
+        const summary = await adminService.updateLevel(value, label, color, dryRun, description)
         if (!dryRun) logTrustLevelOperation(request.username, summary)
         return summary
       } catch (err) {

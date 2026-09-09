@@ -26,7 +26,8 @@ export class TrustLevelAdminService {
   async createLevel(
     rawLabel: string,
     color: string,
-    dryRun: boolean
+    dryRun: boolean,
+    description: string | null
   ): Promise<TrustLevelOperationSummary> {
     const label = this.validateLabel(rawLabel)
     this.validateColor(color)
@@ -43,7 +44,7 @@ export class TrustLevelAdminService {
       }
     }
 
-    const value = await this.repository.createTrustLevel(label, color as TrustLevelColor)
+    const value = await this.repository.createTrustLevel(label, color as TrustLevelColor, description)
     return {
       operation: "create-level",
       value,
@@ -58,7 +59,8 @@ export class TrustLevelAdminService {
     value: number,
     rawLabel: string | undefined,
     color: string | undefined,
-    dryRun: boolean
+    dryRun: boolean,
+    description: string | null
   ): Promise<TrustLevelOperationSummary> {
     this.rejectReserved(value)
     const existing = await this.requireLevel(value)
@@ -84,7 +86,8 @@ export class TrustLevelAdminService {
     await this.repository.updateTrustLevel(
       value,
       label,
-      color === undefined ? null : (color as TrustLevelColor)
+      color === undefined ? null : (color as TrustLevelColor),
+      description
     )
     return {
       operation: "update-level",

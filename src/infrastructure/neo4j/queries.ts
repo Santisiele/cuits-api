@@ -619,13 +619,14 @@ export const Queries = {
     RETURN t.value AS value,
            t.label AS label,
            t.color AS color,
-           count(c) AS nodeCount
+           count(c) AS nodeCount,
+           t.description AS description
     ORDER BY t.value
   `,
 
   FIND_TRUST_LEVEL: `
     MATCH (t:TrustLevel {value: $value})
-    RETURN t.value AS value, t.label AS label, t.color AS color
+    RETURN t.value AS value, t.label AS label, t.color AS color, t.description AS description
   `,
 
   FIND_TRUST_LEVEL_BY_LABEL: `
@@ -640,7 +641,7 @@ export const Queries = {
   `,
 
   CREATE_TRUST_LEVEL: `
-    CREATE (t:TrustLevel {value: $value, label: $label, color: $color})
+    CREATE (t:TrustLevel {value: $value, label: $label, color: $color, description: $description})
     RETURN t.value AS value
   `,
 
@@ -648,6 +649,7 @@ export const Queries = {
     MATCH (t:TrustLevel {value: $value})
     SET t.label = coalesce($label, t.label),
         t.color = coalesce($color, t.color)
+        t.description = coalesce($description, t.description)
     RETURN t.label AS label
   `,
 

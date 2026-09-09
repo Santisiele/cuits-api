@@ -830,6 +830,7 @@ export class Neo4jRepository implements IGraphRepository {
         label: String(record.get("label") ?? ""),
         color: String(record.get("color") ?? "slate") as TrustLevelColor,
         nodeCount: Number(record.get("nodeCount") ?? 0),
+        description: String(record.get("description") ?? "")
       }))
     } finally {
       await session.close()
@@ -847,6 +848,7 @@ export class Neo4jRepository implements IGraphRepository {
         label: String(record.get("label") ?? ""),
         color: String(record.get("color") ?? "slate") as TrustLevelColor,
         nodeCount: 0,
+        description: String(record.get("description") ?? "")
       }
     } finally {
       await session.close()
@@ -874,23 +876,23 @@ export class Neo4jRepository implements IGraphRepository {
     }
   }
 
-  async createTrustLevel(label: string, color: TrustLevelColor): Promise<number> {
+  async createTrustLevel(label: string, color: TrustLevelColor, description: string | null): Promise<number> {
     const session = this.session()
     try {
       await session.run(Queries.CREATE_TRUST_LEVEL_CONSTRAINT)
       const next = await session.run(Queries.NEXT_TRUST_LEVEL_VALUE)
       const value = Number(next.records[0]?.get("value") ?? 1)
-      await session.run(Queries.CREATE_TRUST_LEVEL, { value: neo4j.int(value), label, color })
+      await session.run(Queries.CREATE_TRUST_LEVEL, { value: neo4j.int(value), label, color, description: description ?? "" })
       return value
     } finally {
       await session.close()
     }
   }
 
-  async updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null): Promise<void> {
+  async updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null, description: string | null): Promise<void> {
     const session = this.session()
     try {
-      await session.run(Queries.UPDATE_TRUST_LEVEL, { value: neo4j.int(value), label, color })
+      await session.run(Queries.UPDATE_TRUST_LEVEL, { value: neo4j.int(value), label, color, description })
     } finally {
       await session.close()
     }

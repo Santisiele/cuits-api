@@ -61,8 +61,8 @@ export interface IGraphRepository {
   findTrustLevel(value: number): Promise<TrustLevelInfo | null>
   findTrustLevelValueByLabel(label: string): Promise<number | null>
   countCuitsForTrustLevel(value: number): Promise<number>
-  createTrustLevel(label: string, color: TrustLevelColor): Promise<number>
-  updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null): Promise<void>
+  createTrustLevel(label: string, color: TrustLevelColor, description: string | null): Promise<number>
+  updateTrustLevel(value: number, label: string | null, color: TrustLevelColor | null, description: string | null): Promise<void>
   deleteTrustLevel(value: number): Promise<number>
   findPathsToBase(taxId: string, maxDepth: number): Promise<SearchResult[] | null>
   findShortestPath(fromTaxId: string, toTaxId: string, maxDepth: number): Promise<PathSegment[] | null>

@@ -327,6 +327,7 @@ export interface TrustLevelInfo {
   label: string
   color: TrustLevelColor
   nodeCount: number
+  description: string
 }
 
 export type TrustLevelOperation = "create-level" | "update-level" | "delete-level"
