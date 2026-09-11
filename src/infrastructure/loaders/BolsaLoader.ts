@@ -180,7 +180,7 @@ function buildAttributes(
  * the full list of operations that CUIT appeared in.
  *
  * Persistence model: operations are serialised as a JSON string under
- * `customFields.operations`. Neo4j doesn't accept arrays of objects as
+ * `customFields.bolsaOperations`. Neo4j doesn't accept arrays of objects as
  * properties, so JSON is the cleanest way to keep the list on the node.
  * The frontend does `JSON.parse` to render.
  *
@@ -273,7 +273,7 @@ export class BolsaLoader implements ISourceLoader {
     const results: LoadableRow[] = []
     for (const [beneficiaryCuit, bucket] of buckets) {
       const customFields: Record<string, unknown> = {
-        operations: JSON.stringify(bucket.operations),
+        bolsaOperations: JSON.stringify(bucket.operations),
       }
 
       const mainNode: LoadableNode = {

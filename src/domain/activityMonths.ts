@@ -28,8 +28,8 @@ const DATE_PATTERN = /^\d{1,2}\/(\d{2})\/(\d{4})$/
  *
  * @param customFields - The node's loader-specific fields, as stored.
  */
-export function extractActivityMonths(customFields: Record<string, unknown>): string[] {
-  const raw = customFields["operations"]
+export function extractActivityMonths(customFields: Record<string, unknown>, key: string): string[] {
+  const raw = customFields[key]
   if (typeof raw !== "string" || raw.length === 0) return []
 
   let operations: unknown

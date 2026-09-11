@@ -33,7 +33,7 @@ export const Queries = {
    */
   FIND_NODE_OPERATIONS: `
     MATCH (c:CUIT {id: $taxId})
-    RETURN c.operations AS operations
+    RETURN c.bolsaOperations AS bolsaOperations, c.financieraOperations AS financieraOperations
   `,
 
   UPDATE_NODE: `

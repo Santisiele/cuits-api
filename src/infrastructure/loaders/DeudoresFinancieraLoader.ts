@@ -111,7 +111,7 @@ function buildAttributes(
  * full list of operations that CUIT appeared in.
  *
  * Same persistence and reload semantics as BolsaLoader — operations are
- * serialised as a JSON string under `customFields.operations`, and
+ * serialised as a JSON string under `customFields.financieraOperations`, and
  * re-running the loader against an updated Excel replaces the whole
  * operations list per debtor.
  *
@@ -196,7 +196,7 @@ export class DeudoresLoader implements ISourceLoader {
     const results: LoadableRow[] = []
     for (const [debtorCuit, bucket] of buckets) {
       const customFields: Record<string, unknown> = {
-        operations: JSON.stringify(bucket.operations),
+        financieraOperations: JSON.stringify(bucket.operations),
       }
 
       const mainNode: LoadableNode = {

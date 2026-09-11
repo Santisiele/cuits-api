@@ -359,12 +359,15 @@ export default async function graphRoutes(server: FastifyInstance) {
               loadedAt: { type: "string" },
               inMyBase: { type: "boolean" },
               sources: { type: "array", items: { type: "string" } },
-              activityMonths: {
+              bolsaMonths: {
                 type: "array",
                 items: { type: "string" },
-                description:
-                  "Months the node has operations in, as yyyy-mm, most recent " +
-                  "first. Empty for sources that do not record operations.",
+                description: "Months with Bolsa operations, as yyyy-mm, most recent first.",
+              },
+              financieraMonths: {
+                type: "array",
+                items: { type: "string" },
+                description: "Months with Deudores por financiera operations, as yyyy-mm, most recent first.",
               },
               levelOfTrust: {
                 type: "number",
@@ -410,7 +413,8 @@ export default async function graphRoutes(server: FastifyInstance) {
          */
         return {
           ...node,
-          activityMonths: extractActivityMonths(node.customFields),
+          bolsaMonths: extractActivityMonths(node.customFields, "bolsaOperations"),
+          financieraMonths: extractActivityMonths(node.customFields, "financieraOperations"),
           publicationDate: readPublicationDate(node.customFields),
         }
       } catch (error) {

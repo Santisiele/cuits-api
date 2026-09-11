@@ -24,6 +24,8 @@ import type {
   SourceInfo,
 } from "@domain/entities.js"
 
+const OPERATION_KEYS = ["bolsaOperations", "financieraOperations"] as const
+
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
 
 interface Neo4jSegment {
@@ -543,14 +545,15 @@ export class Neo4jRepository implements IGraphRepository {
     taxId: string,
     customFields: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
-    const incoming = customFields["operations"]
-    if (typeof incoming !== "string") return customFields
+    const keys = OPERATION_KEYS.filter((key) => typeof customFields[key] === "string")
+    if (keys.length === 0) return customFields
 
     const result = await session.run(Queries.FIND_NODE_OPERATIONS, { taxId })
-    const stored = result.records[0]?.get("operations")
-    if (typeof stored !== "string" || stored.length === 0) return customFields
+    const record = result.records[0]
+    if (!record) return customFields
 
-    const parse = (raw: string): unknown[] => {
+    const parse = (raw: unknown): unknown[] => {
+      if (typeof raw !== "string" || raw.length === 0) return []
       try {
         const parsed: unknown = JSON.parse(raw)
         return Array.isArray(parsed) ? parsed : []
@@ -559,19 +562,23 @@ export class Neo4jRepository implements IGraphRepository {
       }
     }
 
-    const storedOperations = parse(stored)
-    if (storedOperations.length === 0) return customFields
+    const merged = { ...customFields }
+    for (const key of keys) {
+      const stored = parse(record.get(key))
+      if (stored.length === 0) continue
 
-    const seen = new Set<string>()
-    const merged: unknown[] = []
-    for (const operation of [...storedOperations, ...parse(incoming)]) {
-      const key = JSON.stringify(operation)
-      if (seen.has(key)) continue
-      seen.add(key)
-      merged.push(operation)
+      const seen = new Set<string>()
+      const union: unknown[] = []
+      for (const operation of [...stored, ...parse(customFields[key])]) {
+        const fingerprint = JSON.stringify(operation)
+        if (seen.has(fingerprint)) continue
+        seen.add(fingerprint)
+        union.push(operation)
+      }
+      merged[key] = JSON.stringify(union)
     }
 
-    return { ...customFields, operations: JSON.stringify(merged) }
+    return merged
   }
 
   async upsertEnrichmentNode(taxId: string, businessName: string): Promise<void> {
