@@ -41,7 +41,8 @@ export const Queries = {
     SET c.phone        = $phone,
         c.email        = $email,
         c.birthday     = $birthday,
-        c.levelOfTrust = COALESCE($levelOfTrust, c.levelOfTrust)
+        c.levelOfTrust = COALESCE($levelOfTrust, c.levelOfTrust),
+        c.trustReason  = COALESCE($trustReason, c.trustReason)
     RETURN c
   `,
 

@@ -47,6 +47,7 @@ export interface CuitNode {
    * document the range here the day it starts being written.
    */
   levelOfTrust: number
+  trustReason: string
   /**
    * Loader-specific extra fields, e.g. `{ publicationDate: "12/03/2024" }`.
    * Keys come from each loader's own contract — there is no global enum.
@@ -63,6 +64,7 @@ export interface CuitNodeUpdate {
    * which clear when omitted. See the note on `UPDATE_NODE`.
    */
   levelOfTrust?: number
+  trustReason?: string
 }
 
 export interface CuitNodeSummary {

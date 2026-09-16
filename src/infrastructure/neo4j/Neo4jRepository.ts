@@ -77,6 +77,7 @@ export class Neo4jRepository implements IGraphRepository {
         email: "email" in fields ? fields.email : null,
         birthday: "birthday" in fields ? fields.birthday : null,
         levelOfTrust: "levelOfTrust" in fields ? fields.levelOfTrust : null,
+        trustReason: "trustReason" in fields ? fields.trustReason : null,
       })
       return result.records.length > 0 ? "updated" : "not_found"
     } finally {
@@ -966,7 +967,7 @@ export class Neo4jRepository implements IGraphRepository {
       "id", "businessName", "phone", "email", "birthday",
       "entryDate", "exitDate", "loadedAt",
       "isKnown", "isToKnow", "inMyBase",
-      "sources", "source", "levelOfTrust"
+      "sources", "source", "levelOfTrust", "trustReason"
     ])
 
     const customFields: Record<string, unknown> = {}
@@ -986,6 +987,7 @@ export class Neo4jRepository implements IGraphRepository {
       exitDate: props["exitDate"] != null ? String(props["exitDate"]) : null,
       loadedAt: props["loadedAt"] != null ? String(props["loadedAt"]) : null,
       levelOfTrust: props["levelOfTrust"] != null ? Number(props["levelOfTrust"]) : 0,
+      trustReason: props["trustReason"] != null ? String(props["trustReason"]) : "",
       isKnown,
       isToKnow,
       inMyBase: isKnown || isToKnow,

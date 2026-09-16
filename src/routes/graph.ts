@@ -375,6 +375,12 @@ export default async function graphRoutes(server: FastifyInstance) {
                   "Trust level assigned to this CUIT. 0 means no value was " +
                   "ever assigned, not zero trust.",
               },
+              trustReason: {
+                type: "string",
+                description:
+                  "Why this CUIT was put in that level. Required whenever the " +
+                  "level is not 0, empty otherwise.",
+              },
               publicationDate: {
                 type: "string",
                 description:
@@ -428,7 +434,7 @@ export default async function graphRoutes(server: FastifyInstance) {
 
   server.patch<{
     Params: { taxId: string }
-    Body: { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number }
+    Body: { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number, trustReason?: string }
   }>(
     "/graph/node/:taxId",
     {
@@ -450,6 +456,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                 "Omitting this leaves the stored value alone, unlike the " +
                 "fields above. Send 0 to clear it.",
             },
+            trustReason: { type: "string" },
           },
         },
         response: {
@@ -462,11 +469,18 @@ export default async function graphRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { taxId } = request.params
-      const { phone, email, birthday, entryDate, exitDate, loadedAt, levelOfTrust } = request.body
+      const { phone, email, birthday, entryDate, exitDate, loadedAt, levelOfTrust, trustReason } = request.body
+      if (levelOfTrust !== undefined && levelOfTrust !== 0 && !trustReason?.trim()) {
+        return reply
+          .code(400)
+          .send({ message: "A reason is required when a trust level is assigned" })
+      }
+
       try {
+        const reason = levelOfTrust === 0 ? "" : trustReason
         const fields = Object.fromEntries(
-          Object.entries({ phone, email, birthday, levelOfTrust }).filter(([, v]) => v !== undefined)
-        ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number }
+          Object.entries({ phone, email, birthday, levelOfTrust, trustReason: reason }).filter(([, v]) => v !== undefined)
+        ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number, trustReason?: string }
         const result = await neo4jSource.updateNode(taxId, fields)
         if (result === "not_found") {
           return reply.code(404).send({
