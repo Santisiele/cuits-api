@@ -3,6 +3,7 @@ node_modules/*
 docs/*
 .env
 data/users.json
+data/scrapeBirthdays.json
 logs/
 output/*
 # Build output
