@@ -26,7 +26,8 @@
     "migrate:sources": "tsx src/scripts/migrateSourcesToNodes.ts",
     "scrape:xlsx": "tsx src/scripts/scrapeToXlsx.ts",
     "create:user": "tsx src/scripts/createUser.ts",
-    "migrate:splitOperations": "tsx src/scripts/splitOperationsBySource.ts"
+    "migrate:splitOperations": "tsx src/scripts/splitOperationsBySource.ts",
+    "sac:test": "tsx src/scripts/testSacBirthday.ts"
   },
   "keywords": [],
   "author": "",
