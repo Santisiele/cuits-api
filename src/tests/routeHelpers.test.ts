@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers"
+import { parseMaxDepth, rangeEndsBeforeItStarts, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers"
 
 describe("parseMaxDepth", () => {
   describe("default behavior", () => {
@@ -64,5 +64,39 @@ describe("parseMaxDepth", () => {
     it("MAX_ALLOWED_DEPTH is 10", () => {
       expect(MAX_ALLOWED_DEPTH).toBe(10)
     })
+  })
+})
+
+describe("rangeEndsBeforeItStarts", () => {
+  it("rejects an end date before the start date in the same year", () => {
+    expect(rangeEndsBeforeItStarts("20/12/2026", "05/01/2026")).toBe(true)
+  })
+
+  it("accepts a range that wraps into the next year", () => {
+    expect(rangeEndsBeforeItStarts("20/12/2026", "05/01/2027")).toBe(false)
+  })
+
+  it("accepts a plain forward range", () => {
+    expect(rangeEndsBeforeItStarts("01/03/2026", "31/03/2026")).toBe(false)
+  })
+
+  it("accepts the same day on both ends", () => {
+    expect(rangeEndsBeforeItStarts("17/09/2026", "17/09/2026")).toBe(false)
+  })
+
+  it("accepts dashes as separators", () => {
+    expect(rangeEndsBeforeItStarts("20-12-2026", "05-01-2026")).toBe(true)
+  })
+
+  it("does not judge a range whose start omits the year", () => {
+    expect(rangeEndsBeforeItStarts("20/12", "05/01/2026")).toBe(false)
+  })
+
+  it("does not judge a range whose end omits the year", () => {
+    expect(rangeEndsBeforeItStarts("20/12/2026", "05/01")).toBe(false)
+  })
+
+  it("does not judge an unparseable range", () => {
+    expect(rangeEndsBeforeItStarts("hola", "chau")).toBe(false)
   })
 })

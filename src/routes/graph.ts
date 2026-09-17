@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { extractActivityMonths } from "@domain/activityMonths.js"
-import { parseMaxDepth, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
+import { parseMaxDepth, rangeEndsBeforeItStarts, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
 import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logCrossingViewed, logNameSearch } from "@auth/activityLogger.js"
 
 const neo4jSource = new Neo4jSource()
@@ -817,8 +817,10 @@ export default async function graphRoutes(server: FastifyInstance) {
         summary: "List inMyBase nodes whose birthday falls in a date range",
         description:
           "Both endpoints (from and to) are inclusive and use dd/mm/yyyy. " +
-          "Year is ignored — only month and day are matched. The range can " +
-          "wrap around the year boundary (e.g. from=20/12 to=05/01).",
+          "Year is ignored for matching — only month and day are compared. " +
+          "The range can wrap around the year boundary (e.g. from=20/12 " +
+          "to=05/01). When both dates carry a year, the year is still used " +
+          "to reject a range whose end falls before its start.",
         querystring: {
           type: "object",
           required: ["from", "to"],
@@ -864,6 +866,12 @@ export default async function graphRoutes(server: FastifyInstance) {
       if (!from || !to) {
         return reply.code(400).send({
           message: "Invalid date format. Use dd/mm/yyyy (year optional).",
+        })
+      }
+
+      if (rangeEndsBeforeItStarts(fromRaw, toRaw)) {
+        return reply.code(400).send({
+          message: "The end date cannot be earlier than the start date.",
         })
       }
 
