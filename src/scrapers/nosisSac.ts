@@ -1,12 +1,9 @@
 import axios from "axios"
 import { wrapper } from "axios-cookiejar-support"
 import { nosisLogin } from "@scrapers/nosisAuth.js"
+import { extractVerificationToken, extractViIdentifier, extractBirthday } from "@scrapers/nosisSacParsing.js"
 
 const NRO_GRUPO_VR = "99001"
-
-const TOKEN_PATTERN = /name="__RequestVerificationToken"[^>]*value="([^"]+)"/i
-const VI_IDENTIFIER_PATTERN = /data-identificador="([^"]+)"\s+data-prefijo="VI"/i
-const BIRTHDAY_PATTERN = /F\.\s*nacimiento:\s*<\/td>\s*<td>\s*(\d{1,2}\/\d{1,2}\/\d{4})/i
 
 export interface SacIdentity {
   taxId: string
@@ -71,7 +68,7 @@ export class SacScraper {
     if (consultar.data?.ConsultaOk !== true) return null
     const claveConsulta = String(consultar.data?.ClaveConsulta ?? "")
     const index = String(consultar.data?.ContenidoHtml ?? "")
-    const identifier = VI_IDENTIFIER_PATTERN.exec(index)?.[1]
+    const identifier = extractViIdentifier(index)
     if (!claveConsulta || !identifier) return null
 
     const block = await this.client.post(
@@ -85,8 +82,7 @@ export class SacScraper {
 
     if (block.data?.ConsultaOk !== true) return null
     const html = String(block.data?.ContenidoHtml ?? "")
-    const raw = BIRTHDAY_PATTERN.exec(html)?.[1]
-    return raw ? normaliseDate(raw) : null
+    return extractBirthday(html)
   }
 
   private async refreshToken(documento: string, denominacion = ""): Promise<void> {
@@ -100,15 +96,9 @@ export class SacScraper {
       headers: { Accept: "text/html", "X-Requested-With": "" },
       responseType: "text",
     })
-    const found = TOKEN_PATTERN.exec(String(page.data))?.[1]
+    const found = extractVerificationToken(String(page.data))
     if (found) this.token = found
     this.client.defaults.headers.common["Referer"] =
       `${this.baseUrl}/net/resultado?${params.toString()}`
   }
-}
-
-function normaliseDate(raw: string): string {
-  const [day, month, year] = raw.split("/")
-  if (!day || !month || !year) return raw
-  return `${day.padStart(2, "0")}/${month.padStart(2, "0")}/${year}`
 }
