@@ -332,6 +332,12 @@ export interface TrustLevelInfo {
   description: string
 }
 
+export interface FinancieraLender {
+  entityName: string
+  operationCount: number
+  totalLoan: number
+}
+
 export interface BirthdayCandidate {
   taxId: string
   businessName: string

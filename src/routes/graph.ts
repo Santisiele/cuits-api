@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { extractActivityMonths } from "@domain/activityMonths.js"
+import { summariseLenders } from "@domain/financieraLenders.js"
 import { parseMaxDepth, rangeEndsBeforeItStarts, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers.js"
 import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDeleted, logNodeUpdated, logNodeViewed, logNodeRelationshipsViewed, logMyBaseViewed, logCompaniesViewed, logBirthdaysViewed, logToKnowViewed, logAllMyNodesViewed, logCrossingViewed, logNameSearch } from "@auth/activityLogger.js"
 
@@ -369,6 +370,20 @@ export default async function graphRoutes(server: FastifyInstance) {
                 items: { type: "string" },
                 description: "Months with Deudores por financiera operations, as yyyy-mm, most recent first.",
               },
+              financieraLenders: {
+                type: "array",
+                description:
+                  "Each lender this CUIT borrowed from in Deudores por financiera, with how many " +
+                  "operations and the sum of their loans, largest total first.",
+                items: {
+                  type: "object",
+                  properties: {
+                    entityName: { type: "string" },
+                    operationCount: { type: "number" },
+                    totalLoan: { type: "number" },
+                  },
+                },
+              },
               levelOfTrust: {
                 type: "number",
                 description:
@@ -421,6 +436,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           ...node,
           bolsaMonths: extractActivityMonths(node.customFields, "bolsaOperations"),
           financieraMonths: extractActivityMonths(node.customFields, "financieraOperations"),
+          financieraLenders: summariseLenders(node.customFields),
           publicationDate: readPublicationDate(node.customFields),
         }
       } catch (error) {
