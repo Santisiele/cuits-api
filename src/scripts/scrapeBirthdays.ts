@@ -5,8 +5,17 @@ import path from "path"
 import { logger } from "@logger.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { SacScraper } from "@scrapers/nosisSac.js"
+import {
+  DAILY_LIMIT,
+  budgetFor,
+  currentDay,
+  markConsultation,
+  markMiss,
+  restoreState,
+  skipList,
+  type ScrapeState,
+} from "@helpers/birthdaySweep.js"
 
-const DAILY_LIMIT = 100
 const MIN_DELAY_MS = 30_000
 const MAX_DELAY_MS = 90_000
 const MAX_CONSECUTIVE_FAILURES = 3
@@ -44,39 +53,15 @@ const UPDATE_QUERY = `
   RETURN c.id AS taxId
 `
 
-interface ScrapeState {
-  day: string
-  consultedToday: number
-  misses: Record<string, string>
-}
-
 interface Candidate {
   taxId: string
   businessName: string
   priority: number
 }
 
-function currentDay(): string {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, "0")
-  const day = String(now.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
 function readState(): ScrapeState {
-  const empty: ScrapeState = { day: currentDay(), consultedToday: 0, misses: {} }
-  if (!fs.existsSync(STATE_PATH)) return empty
-
-  const parsed = JSON.parse(fs.readFileSync(STATE_PATH, "utf8")) as Partial<ScrapeState>
-  if (parsed.day !== currentDay()) {
-    return { day: currentDay(), consultedToday: 0, misses: parsed.misses ?? {} }
-  }
-  return {
-    day: parsed.day,
-    consultedToday: parsed.consultedToday ?? 0,
-    misses: parsed.misses ?? {},
-  }
+  const raw = fs.existsSync(STATE_PATH) ? fs.readFileSync(STATE_PATH, "utf8") : null
+  return restoreState(raw, currentDay())
 }
 
 function writeState(state: ScrapeState): void {
@@ -100,8 +85,7 @@ async function main(): Promise<void> {
   }
 
   const state = readState()
-  const quotaLeft = DAILY_LIMIT - state.consultedToday
-  const budget = Math.min(requested, quotaLeft)
+  const budget = budgetFor(requested, state)
 
   logger.info(`Day ${state.day}: ${state.consultedToday}/${DAILY_LIMIT} consultations already spent`)
 
@@ -119,7 +103,7 @@ async function main(): Promise<void> {
     pending = Number(pendingResult.records[0]?.get("pending") ?? 0)
 
     const result = await session.run(CANDIDATES_QUERY, {
-      skip: Object.keys(state.misses),
+      skip: skipList(state),
       limit: neo4j.int(budget),
     })
     candidates = result.records.map((record) => ({
@@ -133,7 +117,7 @@ async function main(): Promise<void> {
     throw error
   }
 
-  logger.info(`${pending} known people still without a birthday, ${Object.keys(state.misses).length} already tried and skipped`)
+  logger.info(`${pending} known people still without a birthday, ${skipList(state).length} already tried and skipped`)
   logger.info(`Budget for this run: ${budget}`)
 
   if (candidates.length === 0) {
@@ -180,7 +164,7 @@ async function main(): Promise<void> {
         const identity = await scraper.searchDocument(candidate.taxId)
         if (!identity) {
           unresolved++
-          state.misses[candidate.taxId] = state.day
+          markMiss(state, candidate.taxId)
           persist()
           logger.warn(`${label} ✗ not found in SAC`)
           consecutiveFailures = 0
@@ -189,12 +173,12 @@ async function main(): Promise<void> {
         }
 
         const birthday = await scraper.fetchBirthday(identity.taxId, identity.businessName)
-        state.consultedToday++
+        markConsultation(state)
         persist()
 
         if (!birthday) {
           missing++
-          state.misses[candidate.taxId] = state.day
+          markMiss(state, candidate.taxId)
           persist()
           logger.warn(`${label} ✗ no birth date in the Verificación de Identidad block`)
         } else {
@@ -204,7 +188,7 @@ async function main(): Promise<void> {
         }
         consecutiveFailures = 0
       } catch (error) {
-        state.consultedToday++
+        markConsultation(state)
         persist()
         consecutiveFailures++
         logger.error(`${label} ✗ ${error instanceof Error ? error.message : String(error)}`)
