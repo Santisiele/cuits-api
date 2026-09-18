@@ -10,6 +10,7 @@ import type {
   CrossingNode,
   TrustLevelInfo,
   TrustLevelColor,
+  TrustLevelMember,
   PathSegment,
   PathHop,
   SearchResult,
@@ -858,6 +859,24 @@ export class Neo4jRepository implements IGraphRepository {
         nodeCount: 0,
         description: String(record.get("description") ?? "")
       }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findTrustLevelMembers(value: number): Promise<TrustLevelMember[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_TRUST_LEVEL_MEMBERS, { value: neo4j.int(value) })
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId") ?? ""),
+        businessName: String(record.get("businessName") ?? ""),
+        sources: this.normalizeSources(record.get("sources")),
+        relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        isKnown: Boolean(record.get("isKnown") ?? false),
+        isToKnow: Boolean(record.get("isToKnow") ?? false),
+        trustReason: String(record.get("trustReason") ?? ""),
+      }))
     } finally {
       await session.close()
     }

@@ -14,6 +14,11 @@ export function parseMaxDepth(value?: string): number | null {
   return parsed
 }
 
+export function parseLevel(raw: string | undefined): number | null {
+  if (raw === undefined || !/^\d+$/.test(raw.trim())) return null
+  return Number(raw.trim())
+}
+
 export function rangeEndsBeforeItStarts(from: string, to: string): boolean {
   const start = toUtcTimestamp(from)
   const end = toUtcTimestamp(to)

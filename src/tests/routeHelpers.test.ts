@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { parseMaxDepth, rangeEndsBeforeItStarts, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers"
+import { parseMaxDepth, parseLevel, rangeEndsBeforeItStarts, DEFAULT_MAX_DEPTH, MAX_ALLOWED_DEPTH } from "@helpers/routeHelpers"
 
 describe("parseMaxDepth", () => {
   describe("default behavior", () => {
@@ -98,5 +98,39 @@ describe("rangeEndsBeforeItStarts", () => {
 
   it("does not judge an unparseable range", () => {
     expect(rangeEndsBeforeItStarts("hola", "chau")).toBe(false)
+  })
+})
+
+describe("parseLevel", () => {
+  it("reads a whole number", () => {
+    expect(parseLevel("3")).toBe(3)
+  })
+
+  it("reads zero, leaving the reserved check to the service", () => {
+    expect(parseLevel("0")).toBe(0)
+  })
+
+  it("tolerates surrounding spaces", () => {
+    expect(parseLevel(" 4 ")).toBe(4)
+  })
+
+  it("refuses a missing value", () => {
+    expect(parseLevel(undefined)).toBeNull()
+  })
+
+  it("refuses an empty string rather than reading it as zero", () => {
+    expect(parseLevel("")).toBeNull()
+  })
+
+  it("refuses a decimal", () => {
+    expect(parseLevel("2.5")).toBeNull()
+  })
+
+  it("refuses a negative number", () => {
+    expect(parseLevel("-1")).toBeNull()
+  })
+
+  it("refuses text", () => {
+    expect(parseLevel("alto")).toBeNull()
   })
 })

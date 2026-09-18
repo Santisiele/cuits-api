@@ -2,7 +2,8 @@ import type { FastifyInstance, FastifyReply } from "fastify"
 import { TrustLevelAdminService, TrustLevelAdminError } from "@application/TrustLevelAdminService.js"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { verifyUserPassword, PasswordVerificationError } from "@auth/passwordVerifier.js"
-import { logTrustLevelsViewed, logTrustLevelOperation } from "@auth/activityLogger.js"
+import { logTrustLevelsViewed, logTrustLevelMembersViewed, logTrustLevelOperation } from "@auth/activityLogger.js"
+import { parseLevel } from "@helpers/routeHelpers.js"
 import { TRUST_LEVEL_COLORS } from "@domain/entities.js"
 import type { TrustLevelRejection } from "@domain/entities.js"
 
@@ -101,6 +102,80 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
         return { levels, colors: TRUST_LEVEL_COLORS }
       } catch (error) {
         request.log.error(error)
+        return reply.code(500).send({ message: "Graph database unavailable" })
+      }
+    }
+  )
+
+  server.get<{
+    Querystring: { level?: string }
+  }>(
+    "/trust-levels/nodes",
+    {
+      schema: {
+        summary: "List the CUITs at one trust level",
+        description:
+          "Filters by the level passed in `level`. Returns the level itself so " +
+          "the caller can title the list, and each CUIT with the reason it was " +
+          "given that level. Level 0 is refused: it stands for having no level.",
+        querystring: {
+          type: "object",
+          required: ["level"],
+          properties: {
+            level: { type: "string", description: "Trust level value, a whole number above 0" },
+          },
+        },
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              level: {
+                type: "object",
+                properties: {
+                  value: { type: "number" },
+                  label: { type: "string" },
+                  color: { type: "string" },
+                  description: { type: "string" },
+                  nodeCount: { type: "number" },
+                },
+              },
+              members: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    relationshipCount: { type: "number" },
+                    isKnown: { type: "boolean" },
+                    isToKnow: { type: "boolean" },
+                    trustReason: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          400: conflictSchema,
+          401: { $ref: "UnauthorizedResponse" },
+          404: conflictSchema,
+          500: { $ref: "ServerErrorResponse" },
+        },
+      },
+    },
+    async (request, reply) => {
+      const value = parseLevel(request.query.level)
+      if (value === null) {
+        return reply.code(400).send({ message: "The level must be a whole number" })
+      }
+
+      try {
+        const result = await adminService.listMembers(value)
+        logTrustLevelMembersViewed(request.username, value, result.members.length)
+        return result
+      } catch (err) {
+        if (err instanceof TrustLevelAdminError) return handleTrustLevelError(err, reply)
+        request.log.error(err)
         return reply.code(500).send({ message: "Graph database unavailable" })
       }
     }

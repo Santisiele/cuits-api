@@ -14,6 +14,7 @@ import type {
   CrossingNode,
   TrustLevelInfo,
   TrustLevelColor,
+  TrustLevelMember,
   PathSegment,
   SearchResult,
   AddRelationshipResult,
@@ -59,6 +60,7 @@ export interface IGraphRepository {
   findCrossingNodes(sources: string[]): Promise<CrossingNode[]>
   findTrustLevels(): Promise<TrustLevelInfo[]>
   findTrustLevel(value: number): Promise<TrustLevelInfo | null>
+  findTrustLevelMembers(value: number): Promise<TrustLevelMember[]>
   findTrustLevelValueByLabel(label: string): Promise<number | null>
   countCuitsForTrustLevel(value: number): Promise<number>
   createTrustLevel(label: string, color: TrustLevelColor, description: string | null): Promise<number>

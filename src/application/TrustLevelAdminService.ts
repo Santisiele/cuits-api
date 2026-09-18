@@ -2,6 +2,7 @@ import type { IGraphRepository } from "@ports/interfaces.js"
 import type {
   TrustLevelColor,
   TrustLevelInfo,
+  TrustLevelMembers,
   TrustLevelOperationSummary,
   TrustLevelRejection,
 } from "@domain/entities.js"
@@ -21,6 +22,18 @@ export class TrustLevelAdminService {
 
   listLevels(): Promise<TrustLevelInfo[]> {
     return this.repository.findTrustLevels()
+  }
+
+  async listMembers(value: number): Promise<TrustLevelMembers> {
+    if (value === 0) {
+      throw new TrustLevelAdminError(
+        "reserved_level",
+        "There is no list for level 0, which stands for having no level"
+      )
+    }
+    const level = await this.requireLevel(value)
+    const members = await this.repository.findTrustLevelMembers(value)
+    return { level: { ...level, nodeCount: members.length }, members }
   }
 
   async createLevel(

@@ -654,6 +654,19 @@ export const Queries = {
     RETURN t.label AS label
   `,
 
+  FIND_TRUST_LEVEL_MEMBERS: `
+    MATCH (c:CUIT {levelOfTrust: $value})
+    OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)
+    RETURN c.id            AS taxId,
+           c.businessName  AS businessName,
+           c.sources       AS sources,
+           c.isKnown       AS isKnown,
+           c.isToKnow      AS isToKnow,
+           c.trustReason   AS trustReason,
+           count(DISTINCT related) AS relationshipCount
+    ORDER BY c.businessName
+  `,
+
   COUNT_CUITS_FOR_TRUST_LEVEL: `
     MATCH (c:CUIT {levelOfTrust: $value})
     RETURN count(c) AS affectedNodeCount

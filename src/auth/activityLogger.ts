@@ -353,6 +353,16 @@ export function logTrustLevelsViewed(username: string, levelCount: number): void
   })
 }
 
+export function logTrustLevelMembersViewed(username: string, value: number, memberCount: number): void {
+  activityLogger.info({
+    event: "trust_level_members_viewed",
+    username,
+    value,
+    memberCount,
+    message: `${username} viewed the CUITs at trust level ${value} (${memberCount} CUITs)`,
+  })
+}
+
 /** Logs a trust level being created, renamed, recoloured or deleted. */
 export function logTrustLevelOperation(username: string, summary: TrustLevelOperationSummary): void {
   activityLogger.info({
