@@ -332,6 +332,17 @@ export interface TrustLevelInfo {
   description: string
 }
 
+export interface BirthdayCandidate {
+  taxId: string
+  businessName: string
+  priority: number
+}
+
+export interface BirthdayIdentity {
+  taxId: string
+  businessName: string
+}
+
 export interface TrustLevelMember {
   taxId: string
   businessName: string

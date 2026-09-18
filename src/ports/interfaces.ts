@@ -24,6 +24,8 @@ import type {
   LoadableRow,
   LoadableNodeAttributes,
   BirthdayResult,
+  BirthdayCandidate,
+  BirthdayIdentity,
   NameSearchResult,
   LoadableNodeCategory,
   SourceInfo
@@ -263,6 +265,17 @@ export interface IGraphRepository {
  * Upstream enrichment provider that resolves a document into a CUIT and
  * fetches its relationship graph.
  */
+export interface IBirthdaySweepRepository {
+  countPeopleWithoutBirthday(): Promise<number>
+  findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]>
+  setBirthday(taxId: string, birthday: string): Promise<void>
+}
+
+export interface IBirthdayProvider {
+  searchDocument(document: string): Promise<BirthdayIdentity | null>
+  fetchBirthday(taxId: string, businessName: string): Promise<string | null>
+}
+
 export interface IEnricher {
   resolveDocument(document: string): Promise<{ taxId: string; businessName: string } | null>
   fetchRelationshipGraph(

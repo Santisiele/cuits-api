@@ -2,15 +2,14 @@ import axios from "axios"
 import { wrapper } from "axios-cookiejar-support"
 import { nosisLogin } from "@scrapers/nosisAuth.js"
 import { extractVerificationToken, extractViIdentifier, extractBirthday } from "@scrapers/nosisSacParsing.js"
+import type { IBirthdayProvider } from "@ports/interfaces.js"
+import type { BirthdayIdentity } from "@domain/entities.js"
 
 const NRO_GRUPO_VR = "99001"
 
-export interface SacIdentity {
-  taxId: string
-  businessName: string
-}
+export type SacIdentity = BirthdayIdentity
 
-export class SacScraper {
+export class SacScraper implements IBirthdayProvider {
   private constructor(
     private readonly client: ReturnType<typeof axios.create>,
     private readonly baseUrl: string,

@@ -654,6 +654,37 @@ export const Queries = {
     RETURN t.label AS label
   `,
 
+  COUNT_PEOPLE_WITHOUT_BIRTHDAY: `
+    MATCH (c:CUIT {isKnown: true})
+    WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'
+      AND (c.birthday IS NULL OR trim(c.birthday) = '')
+    RETURN count(c) AS pending
+  `,
+
+  FIND_BIRTHDAY_CANDIDATES_FOR_SWEEP: `
+    MATCH (c:CUIT {isKnown: true})
+    WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'
+      AND (c.birthday IS NULL OR trim(c.birthday) = '')
+      AND NOT c.id IN $skip
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(s:Source)
+    WITH c, collect(s.name) AS sources
+    WITH c, sources,
+         CASE
+           WHEN 'Residentes Senior Home' IN sources THEN 0
+           WHEN 'Responsables Senior Home' IN sources THEN 1
+           ELSE 2
+         END AS priority
+    RETURN c.id AS taxId, c.businessName AS businessName, priority
+    ORDER BY priority, taxId
+    LIMIT $limit
+  `,
+
+  SET_BIRTHDAY: `
+    MATCH (c:CUIT {id: $taxId})
+    SET c.birthday = $birthday
+    RETURN c.id AS taxId
+  `,
+
   FIND_TRUST_LEVEL_MEMBERS: `
     MATCH (c:CUIT {levelOfTrust: $value})
     OPTIONAL MATCH (c)-[:RELATED_TO]-(related:CUIT)

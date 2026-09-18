@@ -2,7 +2,7 @@ import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
-import type { IGraphRepository } from "@ports/interfaces.js"
+import type { IBirthdaySweepRepository, IGraphRepository } from "@ports/interfaces.js"
 import type {
   CuitNode,
   CuitNodeUpdate,
@@ -11,6 +11,7 @@ import type {
   TrustLevelInfo,
   TrustLevelColor,
   TrustLevelMember,
+  BirthdayCandidate,
   PathSegment,
   PathHop,
   SearchResult,
@@ -51,7 +52,7 @@ interface Neo4jSegment {
  *  - The Cypher query uses additive logic: a flag is only flipped TRUE if
  *    explicitly requested, so existing flags are preserved.
  */
-export class Neo4jRepository implements IGraphRepository {
+export class Neo4jRepository implements IGraphRepository, IBirthdaySweepRepository {
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -859,6 +860,42 @@ export class Neo4jRepository implements IGraphRepository {
         nodeCount: 0,
         description: String(record.get("description") ?? "")
       }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async countPeopleWithoutBirthday(): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_PEOPLE_WITHOUT_BIRTHDAY)
+      return Number(result.records[0]?.get("pending") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_BIRTHDAY_CANDIDATES_FOR_SWEEP, {
+        skip,
+        limit: this.batchParam(limit),
+      })
+      return result.records.map((record) => ({
+        taxId: String(record.get("taxId")),
+        businessName: String(record.get("businessName") ?? ""),
+        priority: Number(record.get("priority")),
+      }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  async setBirthday(taxId: string, birthday: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.SET_BIRTHDAY, { taxId, birthday })
     } finally {
       await session.close()
     }
