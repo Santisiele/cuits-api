@@ -177,6 +177,20 @@ describe("BirthdaySweepService", () => {
       expect(events[0]).toMatchObject({ kind: "failed", message: "timeout" })
     })
 
+    it("charges a consultation once when saving the birthday fails", async () => {
+      repo.setBirthday.mockRejectedValueOnce(new Error("Aura down"))
+      const provider = makeProvider({ "20111111119": "30/07/2004" })
+      await service.sweep(provider, [candidate("20111111119")], state, makeHooks().hooks)
+      expect(state.consultedToday).toBe(1)
+    })
+
+    it("reports a failed save as a failure", async () => {
+      repo.setBirthday.mockRejectedValueOnce(new Error("Aura down"))
+      const { hooks, events } = makeHooks()
+      await service.sweep(makeProvider({ "20111111119": "30/07/2004" }), [candidate("20111111119")], state, hooks)
+      expect(events[0]).toMatchObject({ kind: "failed", message: "Aura down" })
+    })
+
     it("moves on to the next candidate", async () => {
       const provider = makeProvider({ "20111111119": new Error("timeout"), "20222222228": "01/01/1950" })
       await service.sweep(provider, [candidate("20111111119"), candidate("20222222228")], state, makeHooks().hooks)

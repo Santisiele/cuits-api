@@ -54,6 +54,7 @@ export class BirthdaySweepService {
 
     for (const [index, candidate] of candidates.entries()) {
       const at: Position = { candidate, position: index + 1, total }
+      let charged = false
 
       try {
         tally.searches++
@@ -67,6 +68,7 @@ export class BirthdaySweepService {
         } else {
           const birthday = await provider.fetchBirthday(identity.taxId, identity.businessName)
           markConsultation(state)
+          charged = true
           hooks.persist(state)
 
           if (!birthday) {
@@ -82,7 +84,7 @@ export class BirthdaySweepService {
         }
         consecutiveFailures = 0
       } catch (error) {
-        markConsultation(state)
+        if (!charged) markConsultation(state)
         hooks.persist(state)
         consecutiveFailures++
         hooks.report({ kind: "failed", message: error instanceof Error ? error.message : String(error), ...at })
