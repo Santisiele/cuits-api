@@ -8,3 +8,4 @@ logs/
 output/*
 # Build output
 dist
+coverage/
