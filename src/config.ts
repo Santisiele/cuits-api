@@ -14,6 +14,12 @@ export const config = {
     user: process.env["NOSIS_USER"] ?? "",
     password: process.env["NOSIS_PASSWORD"] ?? "",
   },
+  backup: {
+    resendApiKey: process.env["RESEND_API_KEY"] ?? "",
+    from: process.env["BACKUP_EMAIL_FROM"] ?? "",
+    to: process.env["BACKUP_EMAIL_TO"] ?? "",
+    passphrase: process.env["BACKUP_PASSPHRASE"] ?? "",
+  },
   auth: {
     /** Secret used to sign JWTs. Must be a long random string in production. */
     jwtSecret: process.env["JWT_SECRET"] ?? "change-this-secret-in-production",

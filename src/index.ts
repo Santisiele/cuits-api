@@ -13,6 +13,10 @@ import { schemas } from "@schemas.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 import { KeepAliveService, type KeepAliveEvent } from "@application/KeepAliveService.js"
+import { BackupService, type BackupEvent } from "@application/BackupService.js"
+import { ResendMailer } from "@infrastructure/mail/ResendMailer.js"
+import { packBackup } from "@helpers/backupArchive.js"
+import { config } from "@config.js"
 import { authMiddleware } from "@middleware/authMiddleware.js"
 import type { FastifyInstance } from "fastify"
 
@@ -107,6 +111,26 @@ process.on("SIGTERM", shutdown)
 
 const targetPort = parseInt(process.env["PORT"] ?? "3000")
 
+function logBackup(event: BackupEvent): void {
+  if (event.kind === "sent") console.log(`Backup emailed: ${event.filename} (${event.bytes} bytes, ${event.summary})`)
+  else if (event.kind === "waiting") console.log(`Backup not due yet, last one ${event.lastRunAt}`)
+  else server.log.error(`Backup failed: ${event.message}`)
+}
+
+function startBackups(): void {
+  const { resendApiKey, from, to, passphrase } = config.backup
+  if (!resendApiKey || !from || !to || !passphrase) {
+    console.log("Backups off: set RESEND_API_KEY, BACKUP_EMAIL_FROM, BACKUP_EMAIL_TO and BACKUP_PASSPHRASE")
+    return
+  }
+  const service = new BackupService(
+    new Neo4jRepository(),
+    new ResendMailer(resendApiKey, from, to),
+    (json) => packBackup(json, passphrase)
+  )
+  service.start({ report: logBackup })
+}
+
 function logKeepAlive(event: KeepAliveEvent): void {
   if (event.kind === "pulsed") console.log(`Aura keep-alive at ${event.pingedAt}`)
   else server.log.error(`Aura keep-alive failed: ${event.message}`)
@@ -117,6 +141,7 @@ try {
   console.log(`Server running at http://localhost:${targetPort}`)
   console.log(`Docs available at http://localhost:${targetPort}/docs`)
   new KeepAliveService(new Neo4jRepository()).start({ report: logKeepAlive })
+  startBackups()
 } catch (err) {
   server.log.error(err)
   await Neo4jDriver.close()

@@ -8,6 +8,11 @@
  */
 
 import type {
+  GraphBackup,
+  BackupNode,
+  BackupRelationship,
+} from "@domain/backup.js"
+import type {
   CuitNode,
   CuitNodeUpdate,
   CuitNodeSummary,
@@ -269,6 +274,20 @@ export interface IBirthdaySweepRepository {
   countPeopleWithoutBirthday(): Promise<number>
   findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]>
   setBirthday(taxId: string, birthday: string): Promise<void>
+}
+
+export interface IBackupRepository {
+  exportGraph(exportedAt: string): Promise<GraphBackup>
+  countAllNodes(): Promise<number>
+  restoreNodeBatch(labels: string[], nodes: BackupNode[]): Promise<number>
+  restoreRelationshipBatch(type: string, relationships: BackupRelationship[]): Promise<number>
+  clearBackupKeys(): Promise<number>
+  lastBackupAt(): Promise<string | null>
+  recordBackup(lastRunAt: string): Promise<void>
+}
+
+export interface IBackupMailer {
+  send(message: { subject: string; body: string; filename: string; content: Buffer }): Promise<void>
 }
 
 export interface IKeepAliveRepository {

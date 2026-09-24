@@ -2,7 +2,20 @@ import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
-import type { IBirthdaySweepRepository, IGraphRepository, IKeepAliveRepository } from "@ports/interfaces.js"
+import type {
+  IBackupRepository,
+  IBirthdaySweepRepository,
+  IGraphRepository,
+  IKeepAliveRepository,
+} from "@ports/interfaces.js"
+import {
+  intSentinel,
+  isIntSentinel,
+  isSafeGraphName,
+  type BackupNode,
+  type BackupRelationship,
+  type GraphBackup,
+} from "@domain/backup.js"
 import type {
   CuitNode,
   CuitNodeUpdate,
@@ -29,6 +42,7 @@ import type {
 const OPERATION_KEYS = ["bolsaOperations", "financieraOperations"] as const
 
 const KEEP_ALIVE_ID = "aura"
+const BACKUP_ID = "weekly"
 
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
 
@@ -54,7 +68,29 @@ interface Neo4jSegment {
  *  - The Cypher query uses additive logic: a flag is only flipped TRUE if
  *    explicitly requested, so existing flags are preserved.
  */
-export class Neo4jRepository implements IGraphRepository, IBirthdaySweepRepository, IKeepAliveRepository {
+function toPlainValue(value: unknown): unknown {
+  if (neo4j.isInt(value)) return intSentinel(value.toString())
+  if (Array.isArray(value)) return value.map(toPlainValue)
+  return value
+}
+
+function toPlainProperties(properties: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, toPlainValue(value)]))
+}
+
+function toGraphValue(value: unknown): unknown {
+  if (isIntSentinel(value)) return neo4j.int(value.$int)
+  if (Array.isArray(value)) return value.map(toGraphValue)
+  return value
+}
+
+function toGraphProperties(properties: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, toGraphValue(value)]))
+}
+
+export class Neo4jRepository
+  implements IGraphRepository, IBirthdaySweepRepository, IKeepAliveRepository, IBackupRepository
+{
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -861,6 +897,119 @@ export class Neo4jRepository implements IGraphRepository, IBirthdaySweepReposito
         color: String(record.get("color") ?? "slate") as TrustLevelColor,
         nodeCount: 0,
         description: String(record.get("description") ?? "")
+      }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async exportGraph(exportedAt: string): Promise<GraphBackup> {
+    const session = this.session()
+    try {
+      const nodeResult = await session.run(Queries.EXPORT_NODES)
+      const nodes: BackupNode[] = nodeResult.records.map((record) => ({
+        key: String(record.get("key")),
+        labels: record.get("labels") as string[],
+        properties: toPlainProperties(record.get("properties") as Record<string, unknown>),
+      }))
+
+      const relationshipResult = await session.run(Queries.EXPORT_RELATIONSHIPS)
+      const relationships: BackupRelationship[] = relationshipResult.records.map((record) => ({
+        from: String(record.get("from")),
+        to: String(record.get("to")),
+        type: String(record.get("type")),
+        properties: toPlainProperties(record.get("properties") as Record<string, unknown>),
+      }))
+
+      return { exportedAt, nodes, relationships }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async lastBackupAt(): Promise<string | null> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_LAST_BACKUP, { id: BACKUP_ID })
+      const value = result.records[0]?.get("lastRunAt")
+      return typeof value === "string" ? value : null
+    } finally {
+      await session.close()
+    }
+  }
+
+  async recordBackup(lastRunAt: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.RECORD_BACKUP, { id: BACKUP_ID, lastRunAt })
+    } finally {
+      await session.close()
+    }
+  }
+
+  async countAllNodes(): Promise<number> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.COUNT_ALL_NODES)
+      return Number(result.records[0]?.get("total") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async restoreNodeBatch(labels: string[], nodes: BackupNode[]): Promise<number> {
+    for (const label of labels) {
+      if (!isSafeGraphName(label)) throw new Error(`Refusing to restore an unsafe label: ${label}`)
+    }
+    const session = this.session()
+    try {
+      const result = await session.run(
+        `UNWIND $nodes AS node
+         CREATE (n:${labels.join(":")})
+         SET n = node.properties, n.__backupKey = node.key
+         RETURN count(n) AS created`,
+        { nodes: nodes.map((node) => ({ key: node.key, properties: toGraphProperties(node.properties) })) }
+      )
+      return Number(result.records[0]?.get("created") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async restoreRelationshipBatch(type: string, relationships: BackupRelationship[]): Promise<number> {
+    if (!isSafeGraphName(type)) throw new Error(`Refusing to restore an unsafe relationship type: ${type}`)
+    const session = this.session()
+    try {
+      const result = await session.run(
+        `UNWIND $relationships AS rel
+         MATCH (a {__backupKey: rel.from})
+         MATCH (b {__backupKey: rel.to})
+         CREATE (a)-[r:${type}]->(b)
+         SET r = rel.properties
+         RETURN count(r) AS created`,
+        {
+          relationships: relationships.map((relationship) => ({
+            from: relationship.from,
+            to: relationship.to,
+            properties: toGraphProperties(relationship.properties),
+          })),
+        }
+      )
+      return Number(result.records[0]?.get("created") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async clearBackupKeys(): Promise<number> {
+    const session = this.session()
+    try {
+      let cleared = 0
+      for (;;) {
+        const result = await session.run(Queries.CLEAR_BACKUP_KEYS, { batchSize: this.batchParam(5_000) })
+        const removed = Number(result.records[0]?.get("cleared") ?? 0)
+        cleared += removed
+        if (removed === 0) return cleared
       }
     } finally {
       await session.close()

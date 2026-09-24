@@ -654,6 +654,36 @@ export const Queries = {
     RETURN t.label AS label
   `,
 
+  EXPORT_NODES: `
+    MATCH (n)
+    RETURN elementId(n) AS key, labels(n) AS labels, properties(n) AS properties
+  `,
+
+  EXPORT_RELATIONSHIPS: `
+    MATCH (a)-[r]->(b)
+    RETURN elementId(a) AS from, elementId(b) AS to, type(r) AS type, properties(r) AS properties
+  `,
+
+  FIND_LAST_BACKUP: `
+    MATCH (b:Backup {id: $id}) RETURN b.lastRunAt AS lastRunAt
+  `,
+
+  RECORD_BACKUP: `
+    MERGE (b:Backup {id: $id})
+    SET b.lastRunAt = $lastRunAt
+  `,
+
+  COUNT_ALL_NODES: `
+    MATCH (n) RETURN count(n) AS total
+  `,
+
+  CLEAR_BACKUP_KEYS: `
+    MATCH (n) WHERE n.__backupKey IS NOT NULL
+    WITH n LIMIT $batchSize
+    REMOVE n.__backupKey
+    RETURN count(n) AS cleared
+  `,
+
   TOUCH_KEEP_ALIVE: `
     MERGE (k:KeepAlive {id: $id})
     SET k.pingedAt = $pingedAt

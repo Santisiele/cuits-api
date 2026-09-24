@@ -29,7 +29,8 @@
     "create:user": "tsx src/scripts/createUser.ts",
     "migrate:splitOperations": "tsx src/scripts/splitOperationsBySource.ts",
     "sac:test": "tsx src/scripts/testSacBirthday.ts",
-    "scrape:birthdays": "tsx src/scripts/scrapeBirthdays.ts"
+    "scrape:birthdays": "tsx src/scripts/scrapeBirthdays.ts",
+    "restore:backup": "tsx src/scripts/restoreBackup.ts"
   },
   "keywords": [],
   "author": "",
