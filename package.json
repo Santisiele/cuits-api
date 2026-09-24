@@ -30,6 +30,7 @@
     "migrate:splitOperations": "tsx src/scripts/splitOperationsBySource.ts",
     "sac:test": "tsx src/scripts/testSacBirthday.ts",
     "scrape:birthdays": "tsx src/scripts/scrapeBirthdays.ts",
+    "backup:open": "tsx src/scripts/openBackup.ts",
     "restore:backup": "tsx src/scripts/restoreBackup.ts"
   },
   "keywords": [],
