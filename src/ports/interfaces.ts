@@ -271,6 +271,10 @@ export interface IBirthdaySweepRepository {
   setBirthday(taxId: string, birthday: string): Promise<void>
 }
 
+export interface IKeepAliveRepository {
+  touch(pingedAt: string): Promise<void>
+}
+
 export interface IBirthdayProvider {
   searchDocument(document: string): Promise<BirthdayIdentity | null>
   fetchBirthday(taxId: string, businessName: string): Promise<string | null>

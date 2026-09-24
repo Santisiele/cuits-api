@@ -2,7 +2,7 @@ import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
-import type { IBirthdaySweepRepository, IGraphRepository } from "@ports/interfaces.js"
+import type { IBirthdaySweepRepository, IGraphRepository, IKeepAliveRepository } from "@ports/interfaces.js"
 import type {
   CuitNode,
   CuitNodeUpdate,
@@ -28,6 +28,8 @@ import type {
 
 const OPERATION_KEYS = ["bolsaOperations", "financieraOperations"] as const
 
+const KEEP_ALIVE_ID = "aura"
+
 // ─── Internal Neo4j segment type ─────────────────────────────────────────────
 
 interface Neo4jSegment {
@@ -52,7 +54,7 @@ interface Neo4jSegment {
  *  - The Cypher query uses additive logic: a flag is only flipped TRUE if
  *    explicitly requested, so existing flags are preserved.
  */
-export class Neo4jRepository implements IGraphRepository, IBirthdaySweepRepository {
+export class Neo4jRepository implements IGraphRepository, IBirthdaySweepRepository, IKeepAliveRepository {
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -860,6 +862,15 @@ export class Neo4jRepository implements IGraphRepository, IBirthdaySweepReposito
         nodeCount: 0,
         description: String(record.get("description") ?? "")
       }
+    } finally {
+      await session.close()
+    }
+  }
+
+  async touch(pingedAt: string): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.TOUCH_KEEP_ALIVE, { id: KEEP_ALIVE_ID, pingedAt })
     } finally {
       await session.close()
     }

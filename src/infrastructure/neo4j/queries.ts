@@ -654,6 +654,11 @@ export const Queries = {
     RETURN t.label AS label
   `,
 
+  TOUCH_KEEP_ALIVE: `
+    MERGE (k:KeepAlive {id: $id})
+    SET k.pingedAt = $pingedAt
+  `,
+
   COUNT_PEOPLE_WITHOUT_BIRTHDAY: `
     MATCH (c:CUIT {isKnown: true})
     WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'

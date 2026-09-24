@@ -11,6 +11,8 @@ import sourceAdminRoutes from "@routes/sources.js"
 import trustLevelRoutes from "@routes/trustLevels.js"
 import { schemas } from "@schemas.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
+import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
+import { KeepAliveService, type KeepAliveEvent } from "@application/KeepAliveService.js"
 import { authMiddleware } from "@middleware/authMiddleware.js"
 import type { FastifyInstance } from "fastify"
 
@@ -105,10 +107,16 @@ process.on("SIGTERM", shutdown)
 
 const targetPort = parseInt(process.env["PORT"] ?? "3000")
 
+function logKeepAlive(event: KeepAliveEvent): void {
+  if (event.kind === "pulsed") console.log(`Aura keep-alive at ${event.pingedAt}`)
+  else server.log.error(`Aura keep-alive failed: ${event.message}`)
+}
+
 try {
   await server.listen({ port: targetPort, host: "0.0.0.0" })
   console.log(`Server running at http://localhost:${targetPort}`)
   console.log(`Docs available at http://localhost:${targetPort}/docs`)
+  new KeepAliveService(new Neo4jRepository()).start({ report: logKeepAlive })
 } catch (err) {
   server.log.error(err)
   await Neo4jDriver.close()
