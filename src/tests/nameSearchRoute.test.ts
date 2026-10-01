@@ -17,7 +17,7 @@ vi.mock("@auth/activityLogger.js", () => ({
 const { default: graphRoutes } = await import("@routes/graph")
 
 describe("GET /graph/search-by-name", () => {
-  it("sends how many of the relationships are with the base", async () => {
+  it("sends how many of the relationships are with the known base", async () => {
     searchNodesByName.mockResolvedValue([
       {
         taxId: "20283668364",
@@ -26,7 +26,7 @@ describe("GET /graph/search-by-name", () => {
         inMyBase: false,
         levelOfTrust: 0,
         relationshipCount: 10,
-        baseRelationshipCount: 1,
+        knownRelationshipCount: 1,
       },
     ])
     const app = Fastify()
@@ -36,6 +36,6 @@ describe("GET /graph/search-by-name", () => {
     const response = await app.inject({ method: "GET", url: "/graph/search-by-name?q=cosarinsky" })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json().results[0]).toMatchObject({ relationshipCount: 10, baseRelationshipCount: 1 })
+    expect(response.json().results[0]).toMatchObject({ relationshipCount: 10, knownRelationshipCount: 1 })
   })
 })

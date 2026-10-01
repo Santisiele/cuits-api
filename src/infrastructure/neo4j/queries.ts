@@ -124,7 +124,7 @@ export const Queries = {
            c.inMyBase      AS inMyBase,
            c.levelOfTrust  AS levelOfTrust,
            count(DISTINCT related) AS relationshipCount,
-           count(DISTINCT CASE WHEN related.inMyBase = true THEN related END) AS baseRelationshipCount
+           count(DISTINCT CASE WHEN related.isKnown = true THEN related END) AS knownRelationshipCount
     ORDER BY c.businessName
     LIMIT $limit
   `,
