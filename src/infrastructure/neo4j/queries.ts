@@ -144,7 +144,9 @@ export const Queries = {
 
   FIND_PATHS_TO_BASE: (maxDepth: number) => `
     MATCH path = (c:CUIT {id: $taxId})-[:RELATED_TO*1..${maxDepth}]-(target:CUIT {inMyBase: true})
+    WHERE all(n IN nodes(path) WHERE single(m IN nodes(path) WHERE m = n))
     RETURN path
+    ORDER BY length(path)
     LIMIT 10
   `,
 
