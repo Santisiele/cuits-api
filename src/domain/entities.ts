@@ -113,6 +113,7 @@ export interface NameSearchResult {
   /** Trust level for this CUIT. See `CuitNode.levelOfTrust`. */
   levelOfTrust: number
   relationshipCount: number
+  baseRelationshipCount: number
 }
 
 export interface BirthdayResult {

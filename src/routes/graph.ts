@@ -780,6 +780,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     sources: { type: "array", items: { type: "string" } },
                     inMyBase: { type: "boolean" },
                     relationshipCount: { type: "number" },
+                    baseRelationshipCount: { type: "number" },
                     levelOfTrust: { type: "number" },
                   },
                 },

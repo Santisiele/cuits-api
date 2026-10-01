@@ -200,6 +200,7 @@ export class Neo4jRepository
         sources: (record.get("sources") as string[] | null) ?? [],
         inMyBase: record.get("inMyBase") === true,
         relationshipCount: Number(record.get("relationshipCount") ?? 0),
+        baseRelationshipCount: Number(record.get("baseRelationshipCount") ?? 0),
         levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
       }))
     } finally {
