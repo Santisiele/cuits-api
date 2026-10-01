@@ -93,11 +93,18 @@ export class NosisScraper {
     // Sending an 8-digit DNI without dots silently returns no results, so we
     // always format it before submitting.
     const documento = this.formatNosisDocumento(digits)
+    return this.search(documento, "")
+  }
 
+  async searchByName(denominacion: string): Promise<NosisSearchResult | null> {
+    return this.search("", denominacion)
+  }
+
+  private async search(documento: string, denominacion: string): Promise<NosisSearchResult | null> {
     const response = await withRetry(() =>
       this.client.post(
         "/net/verificacionidentidad/busqueda",
-        new URLSearchParams({ documento, denominacion: "", tope: "1" })
+        new URLSearchParams({ documento, denominacion, tope: "1" })
       )
     )
 

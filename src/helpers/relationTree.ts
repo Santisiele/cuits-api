@@ -57,3 +57,16 @@ export function levelRows(prefix: unknown[], flat: FlatNode[], depth: number): u
   return rows
 }
 
+const COMPANY_SUFFIX = /\b(s\.?\s?a\.?\s?s?|s\.?\s?r\.?\s?l|s\.?\s?a\.?\s?u|s\.?\s?a\.?\s?i\.?\s?c)\b\.?/i
+
+export function searchableNames(raw: string): string[] {
+  const name = raw.trim().replace(/\s+/g, " ")
+  const match = name.match(/^(.*?)\s*\((.*)\)\s*$/)
+  if (!match) return name ? [name] : []
+  const outside = match[1]!.trim()
+  const inside = match[2]!.trim()
+  const ordered = COMPANY_SUFFIX.test(inside) && !COMPANY_SUFFIX.test(outside)
+    ? [inside, outside]
+    : [outside, inside]
+  return [...new Set(ordered.filter(Boolean))]
+}

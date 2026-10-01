@@ -1,10 +1,28 @@
 import { describe, expect, it } from "vitest"
 import type { NosisRelation } from "@scrapers/nosis.js"
-import { buildFlatTree, levelRows, maxLevel } from "@helpers/relationTree.js"
+import { buildFlatTree, levelRows, maxLevel, searchableNames } from "@helpers/relationTree.js"
 
 function node(taxId: string, relations: NosisRelation[] = []): NosisRelation {
   return { taxId, businessName: `N${taxId.slice(-1)}`, relationshipType: "Socio", depth: 0, relations }
 }
+
+describe("searchableNames", () => {
+  it("keeps a plain name as is", () => {
+    expect(searchableNames("  ACROPOL   S.A. ")).toEqual(["ACROPOL S.A."])
+  })
+
+  it("tries the legal name in parentheses first", () => {
+    expect(searchableNames("ACOL FLEX (Acol-Flex S.R.L.)")).toEqual(["Acol-Flex S.R.L.", "ACOL FLEX"])
+  })
+
+  it("tries the outside name first when it is the legal one", () => {
+    expect(searchableNames("ARIAT S.R.L. (VEMS)")).toEqual(["ARIAT S.R.L.", "VEMS"])
+  })
+
+  it("returns nothing for a blank name", () => {
+    expect(searchableNames("   ")).toEqual([])
+  })
+})
 
 describe("buildFlatTree", () => {
   it("skips the searched root and keeps children under their parent", () => {
