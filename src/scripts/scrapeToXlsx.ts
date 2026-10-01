@@ -22,7 +22,14 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { logger } from "@logger.js"
 import { NosisScraper } from "@scrapers/nosis.js"
-import type { NosisRelation } from "@scrapers/nosis.js"
+import {
+  buildFlatTree,
+  formatCuit,
+  levelRows,
+  maxLevel,
+  normalizeCuit,
+  type FlatNode,
+} from "@helpers/relationTree.js"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,57 +40,6 @@ function randomDelay(minMs: number, maxMs: number): Promise<void> {
   const ms = Math.floor(Math.random() * (maxMs - minMs + 1)) + minMs
   logger.info(`  Waiting ${(ms / 1000).toFixed(1)}s before next scrape...`)
   return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-function normalizeCuit(raw: unknown): string | null {
-  if (raw == null) return null
-  const digits = String(raw).replace(/\D/g, "")
-  return digits.length === 11 ? digits : null
-}
-
-function formatCuit(taxId: string): string {
-  return `${taxId.slice(0, 2)}-${taxId.slice(2, 10)}-${taxId.slice(10)}`
-}
-
-// ─── Tree flattening ──────────────────────────────────────────────────────────
-
-interface FlatNode {
-  taxId: string
-  businessName: string
-  relationshipType: string
-  level: number
-}
-
-/**
- * Recursively traverses the NosisRelation tree in DFS pre-order.
- * Each child appears directly below its parent in the result array,
- * preserving the hierarchy so the output Excel is readable.
- */
-function flattenChildren(children: NosisRelation[], level: number, result: FlatNode[]): void {
-  for (const node of children) {
-    result.push({
-      taxId: node.taxId,
-      businessName: node.businessName,
-      relationshipType: node.relationshipType,
-      level,
-    })
-    if (node.relations.length > 0) {
-      flattenChildren(node.relations, level + 1, result)
-    }
-  }
-}
-
-function buildFlatTree(relations: NosisRelation[]): FlatNode[] {
-  const result: FlatNode[] = []
-  for (const root of relations) {
-    // root is the searched CUIT itself — skip it, traverse its children
-    flattenChildren(root.relations, 1, result)
-  }
-  return result
-}
-
-function renderNode(node: FlatNode): string {
-  return `${formatCuit(node.taxId)} - ${node.businessName} - ${node.relationshipType}`
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -143,7 +99,7 @@ async function scrapeToXlsx(
       const flat = buildFlatTree(relations)
       enriched.push({ original: row, flat })
 
-      const depth = flat.reduce((m, n) => Math.max(m, n.level), 0)
+      const depth = maxLevel(flat)
       if (depth > maxDepth) maxDepth = depth
       logger.info(`  → ${flat.length} related nodes (max depth ${depth})`)
     } catch (err) {
@@ -167,13 +123,7 @@ async function scrapeToXlsx(
     const taxId = normalizeCuit(original[cuitColIdx])
     if (taxId) formattedOriginal[cuitColIdx] = formatCuit(taxId)
 
-    outputRows.push([...formattedOriginal, ...new Array(maxDepth).fill("")])
-
-    for (const node of flat) {
-      const levelCells = new Array(maxDepth).fill("")
-      levelCells[node.level - 1] = renderNode(node)
-      outputRows.push([...formattedOriginal, ...levelCells])
-    }
+    outputRows.push(...levelRows(formattedOriginal, flat, maxDepth))
   }
 
   const outSheet = XLSX.utils.aoa_to_sheet(outputRows)
