@@ -40,6 +40,7 @@
   "license": "ISC",
   "packageManager": "pnpm@10.31.0",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
     "@fastify/cors": "^11.2.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
@@ -69,8 +70,8 @@
     "@vitest/coverage-v8": "^4.0.18",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
-    "tsx": "^4.21.0",
     "tsc-alias": "^1.9.2",
+    "tsx": "^4.21.0",
     "typedoc": "^0.28.17",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"

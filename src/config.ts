@@ -20,6 +20,9 @@ export const config = {
     to: process.env["BACKUP_EMAIL_TO"] ?? "",
     passphrase: process.env["BACKUP_PASSPHRASE"] ?? "",
   },
+  anthropic: {
+    apiKey: process.env["ANTHROPIC_API_KEY"] ?? "",
+  },
   auth: {
     /** Secret used to sign JWTs. Must be a long random string in production. */
     jwtSecret: process.env["JWT_SECRET"] ?? "change-this-secret-in-production",
