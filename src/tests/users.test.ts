@@ -3,6 +3,7 @@ import {
   canAdminister,
   hasCreator,
   isAssignableRole,
+  isCreator,
   isRole,
   isSameUser,
   isValidPassword,
@@ -50,6 +51,12 @@ describe("user rules", () => {
     expect(canAdminister("creator")).toBe(true)
     expect(canAdminister("admin")).toBe(true)
     expect(canAdminister("member")).toBe(false)
+  })
+
+  it("tells the creator apart from everyone else", () => {
+    expect(isCreator("creator")).toBe(true)
+    expect(isCreator("admin")).toBe(false)
+    expect(isCreator("member")).toBe(false)
   })
 
   it("accepts usernames of 3 to 32 letters, digits, dots, dashes and underscores", () => {
