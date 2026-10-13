@@ -14,6 +14,12 @@ import type {
 } from "@domain/backup.js"
 import type { Role, StoredUser } from "@domain/users.js"
 import type {
+  ResearchFindings,
+  ResearchSubject,
+  WebResearch,
+  WebResearchWithName,
+} from "@domain/webResearch.js"
+import type {
   CuitNode,
   CuitNodeUpdate,
   CuitNodeSummary,
@@ -336,4 +342,18 @@ export interface IUserRepository {
 export interface IPasswordHasher {
   hash(password: string): Promise<string>
   compare(password: string, hash: string): Promise<boolean>
+}
+
+export interface IWebResearcher {
+  research(subject: ResearchSubject): Promise<ResearchFindings>
+}
+
+export interface IWebResearchRepository {
+  findSubject(taxId: string): Promise<{ businessName: string; inMyBase: boolean } | null>
+  save(research: WebResearch): Promise<void>
+  listForCuit(taxId: string): Promise<WebResearch[]>
+  listRecent(limit: number): Promise<WebResearchWithName[]>
+  getMonthlyLimit(): Promise<number>
+  setMonthlyLimit(monthlyLimitUsd: number, updatedBy: string, updatedAt: string): Promise<void>
+  spendSince(since: string): Promise<{ totalUsd: number; count: number }>
 }
