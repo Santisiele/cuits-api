@@ -125,7 +125,7 @@ export class WebResearchService {
       sources,
       model,
       ...usage,
-      costUsd: this.researcher ? costFromUsage(usage, this.researcher.prices) : 0,
+      costUsd: costFromUsage(usage),
     }
   }
 }

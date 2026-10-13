@@ -2,9 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   EMPTY_USAGE,
   ResearcherError,
-  CLAUDE_RESEARCH_PRICES_USD,
-  GEMINI_RESEARCH_PRICES_USD,
-  chooseResearchProvider,
+  WEB_RESEARCH_PRICES_USD,
   addUsage,
   buildResearchRequest,
   costFromUsage,
@@ -19,26 +17,22 @@ import {
 
 describe("web research cost", () => {
   it("prices each part of the usage at list price", () => {
-    expect(costFromUsage({ inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, webSearches: 0 }, CLAUDE_RESEARCH_PRICES_USD)).toBe(4)
-    expect(costFromUsage({ inputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, webSearches: 0 }, CLAUDE_RESEARCH_PRICES_USD)).toBe(20)
-    expect(costFromUsage({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, webSearches: 0 }, CLAUDE_RESEARCH_PRICES_USD)).toBe(0.2)
-    expect(costFromUsage({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, webSearches: 1000 }, CLAUDE_RESEARCH_PRICES_USD)).toBe(10)
+    expect(costFromUsage({ inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 0, webSearches: 0 })).toBe(4)
+    expect(costFromUsage({ inputTokens: 0, outputTokens: 1_000_000, cacheReadTokens: 0, webSearches: 0 })).toBe(20)
+    expect(costFromUsage({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000, webSearches: 0 })).toBe(0.2)
+    expect(costFromUsage({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, webSearches: 1000 })).toBe(10)
   })
 
   it("adds the parts together", () => {
-    expect(costFromUsage({ inputTokens: 50_000, outputTokens: 4_000, cacheReadTokens: 10_000, webSearches: 6 }, CLAUDE_RESEARCH_PRICES_USD)).toBe(0.342)
+    expect(costFromUsage({ inputTokens: 50_000, outputTokens: 4_000, cacheReadTokens: 10_000, webSearches: 6 })).toBe(0.342)
   })
 
   it("costs nothing without usage", () => {
-    expect(costFromUsage(EMPTY_USAGE, CLAUDE_RESEARCH_PRICES_USD)).toBe(0)
+    expect(costFromUsage(EMPTY_USAGE)).toBe(0)
   })
 
-  it("prices Gemini with its own table", () => {
-    expect(costFromUsage({ inputTokens: 1_000_000, outputTokens: 1_000_000, cacheReadTokens: 1_000_000, webSearches: 1000 }, GEMINI_RESEARCH_PRICES_USD)).toBe(18.575)
-  })
-
-  it("keeps the Claude prices in one constant", () => {
-    expect(CLAUDE_RESEARCH_PRICES_USD).toEqual({
+  it("keeps the prices in one constant", () => {
+    expect(WEB_RESEARCH_PRICES_USD).toEqual({
       inputPerMillionTokens: 4,
       outputPerMillionTokens: 20,
       cacheReadPerMillionTokens: 0.2,
@@ -178,31 +172,5 @@ describe("researcher error", () => {
     expect(error.name).toBe("ResearcherError")
     expect(error.usage.webSearches).toBe(2)
     expect(error.model).toBe("claude-opus-5-5")
-  })
-})
-
-describe("chooseResearchProvider", () => {
-  const both = { claudeApiKey: "sk-ant", geminiApiKey: "AIza" }
-
-  it("uses the provider asked for when its key is there", () => {
-    expect(chooseResearchProvider({ ...both, provider: "claude" })).toBe("claude")
-    expect(chooseResearchProvider({ ...both, provider: " Gemini " })).toBe("gemini")
-  })
-
-  it("turns research off when the provider asked for has no key", () => {
-    expect(chooseResearchProvider({ provider: "claude", claudeApiKey: "", geminiApiKey: "AIza" })).toBeNull()
-  })
-
-  it("prefers Gemini when no provider is set", () => {
-    expect(chooseResearchProvider({ ...both, provider: "" })).toBe("gemini")
-    expect(chooseResearchProvider({ provider: "", claudeApiKey: "sk-ant", geminiApiKey: "" })).toBe("claude")
-  })
-
-  it("ignores an unknown provider name and falls back to the keys", () => {
-    expect(chooseResearchProvider({ ...both, provider: "openai" })).toBe("gemini")
-  })
-
-  it("turns research off without any key", () => {
-    expect(chooseResearchProvider({ provider: "", claudeApiKey: "", geminiApiKey: "" })).toBeNull()
   })
 })

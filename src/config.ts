@@ -23,12 +23,6 @@ export const config = {
   anthropic: {
     apiKey: process.env["ANTHROPIC_API_KEY"] ?? "",
   },
-  gemini: {
-    apiKey: process.env["GEMINI_API_KEY"] ?? "",
-  },
-  research: {
-    provider: process.env["RESEARCH_PROVIDER"] ?? "",
-  },
   auth: {
     /** Secret used to sign JWTs. Must be a long random string in production. */
     jwtSecret: process.env["JWT_SECRET"] ?? "change-this-secret-in-production",

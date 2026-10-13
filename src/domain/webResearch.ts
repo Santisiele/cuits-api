@@ -1,38 +1,9 @@
-export interface ResearchPrices {
-  inputPerMillionTokens: number
-  outputPerMillionTokens: number
-  cacheReadPerMillionTokens: number
-  perThousandWebSearches: number
-}
-
-export const CLAUDE_RESEARCH_PRICES_USD: ResearchPrices = {
+export const WEB_RESEARCH_PRICES_USD = {
   inputPerMillionTokens: 4,
   outputPerMillionTokens: 20,
   cacheReadPerMillionTokens: 0.2,
   perThousandWebSearches: 10,
-}
-
-export const GEMINI_RESEARCH_PRICES_USD: ResearchPrices = {
-  inputPerMillionTokens: 0.75,
-  outputPerMillionTokens: 3.75,
-  cacheReadPerMillionTokens: 0.075,
-  perThousandWebSearches: 14,
-}
-
-export type ResearchProvider = "claude" | "gemini"
-
-export function chooseResearchProvider(settings: {
-  provider: string
-  claudeApiKey: string
-  geminiApiKey: string
-}): ResearchProvider | null {
-  const keys: Record<ResearchProvider, string> = { claude: settings.claudeApiKey, gemini: settings.geminiApiKey }
-  const wanted = settings.provider.trim().toLowerCase()
-  if (wanted === "claude" || wanted === "gemini") return keys[wanted] ? wanted : null
-  if (keys.gemini) return "gemini"
-  if (keys.claude) return "claude"
-  return null
-}
+} as const
 
 export const DEFAULT_MONTHLY_LIMIT_USD = 20
 
@@ -130,7 +101,8 @@ export function roundUsd(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000
 }
 
-export function costFromUsage(usage: ResearchUsage, prices: ResearchPrices): number {
+export function costFromUsage(usage: ResearchUsage): number {
+  const prices = WEB_RESEARCH_PRICES_USD
   return roundUsd(
     (usage.inputTokens * prices.inputPerMillionTokens) / 1_000_000 +
       (usage.outputTokens * prices.outputPerMillionTokens) / 1_000_000 +

@@ -22,7 +22,6 @@ import type {
 } from "@domain/birthdayProgress.js"
 import type {
   ResearchFindings,
-  ResearchPrices,
   ResearchSubject,
   WebResearch,
   WebResearchWithName,
@@ -365,7 +364,6 @@ export interface IPasswordHasher {
 }
 
 export interface IWebResearcher {
-  readonly prices: ResearchPrices
   research(subject: ResearchSubject): Promise<ResearchFindings>
 }
 
