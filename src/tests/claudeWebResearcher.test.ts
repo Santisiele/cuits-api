@@ -77,7 +77,7 @@ describe("ClaudeWebResearcher", () => {
     expect(params.betas).toEqual(["server-side-fallback-2026-07-01"])
     expect(params.fallbacks).toBe("default")
     expect(params.tools).toEqual([
-      { type: "web_search_20260209", name: "web_search", max_uses: 8 },
+      { type: "web_search_20260209", name: "web_search", max_uses: 12 },
       { type: "web_fetch_20260209", name: "web_fetch" },
     ])
     expect(params.messages).toEqual([{ role: "user", content: 'Investigá a "ACME SA", CUIT 30712345678.' }])

@@ -19,7 +19,7 @@ const MAX_TOKENS = 16_000
 const MAX_CONTINUATIONS = 5
 
 const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
-  { type: "web_search_20260209", name: "web_search", max_uses: 8 },
+  { type: "web_search_20260209", name: "web_search", max_uses: 12 },
   { type: "web_fetch_20260209", name: "web_fetch" },
 ]
 
