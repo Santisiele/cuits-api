@@ -92,6 +92,12 @@ describe("admin-only routes", () => {
     expect(response.statusCode).not.toBe(403)
   })
 
+  it.each(ADMIN_ONLY)("$method $url lets the creator past the guard", async (call) => {
+    const app = await buildApp("creator")
+    const response = await app.inject({ method: call.method, url: call.url, payload: call.payload })
+    expect(response.statusCode).not.toBe(403)
+  })
+
   it("keeps reading open to members", async () => {
     const app = await buildApp("member")
     const response = await app.inject({ method: "GET", url: "/trust-levels" })

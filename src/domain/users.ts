@@ -1,6 +1,10 @@
-export const ROLES = ["admin", "member"] as const
+export const ROLES = ["creator", "admin", "member"] as const
 
 export type Role = (typeof ROLES)[number]
+
+export const ASSIGNABLE_ROLES = ["admin", "member"] as const
+
+export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number]
 
 export interface StoredUser {
   username: string
@@ -34,6 +38,14 @@ const USERNAME_PATTERN = /^[A-Za-z0-9._-]{3,32}$/
 
 export function isRole(value: unknown): value is Role {
   return typeof value === "string" && (ROLES as readonly string[]).includes(value)
+}
+
+export function isAssignableRole(value: unknown): value is AssignableRole {
+  return typeof value === "string" && (ASSIGNABLE_ROLES as readonly string[]).includes(value)
+}
+
+export function canAdminister(role: Role): boolean {
+  return role === "creator" || role === "admin"
 }
 
 export function isValidUsername(username: string): boolean {

@@ -134,6 +134,13 @@ describe("user routes", () => {
     expect(taken.json().error).toBe("username_taken")
   })
 
+  it("POST /users never creates a creator", async () => {
+    const app = await buildApp(ADMIN)
+    const response = await app.inject({ method: "POST", url: "/users", payload: { username: "flavia", password: "secret123", role: "creator" } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe("invalid_role")
+  })
+
   it("POST /users answers 400 for an invalid password", async () => {
     const app = await buildApp(ADMIN)
     const response = await app.inject({ method: "POST", url: "/users", payload: { username: "flavia", password: "short", role: "member" } })

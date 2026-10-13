@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
+  canAdminister,
+  isAssignableRole,
   isRole,
   isSameUser,
   isValidPassword,
@@ -27,11 +29,25 @@ async function rejection(promise: Promise<unknown>): Promise<string> {
 }
 
 describe("user rules", () => {
-  it("accepts only admin and member as roles", () => {
+  it("knows the creator, admin and member roles", () => {
+    expect(isRole("creator")).toBe(true)
     expect(isRole("admin")).toBe(true)
     expect(isRole("member")).toBe(true)
     expect(isRole("owner")).toBe(false)
     expect(isRole(undefined)).toBe(false)
+  })
+
+  it("assigns only admin and member, never creator", () => {
+    expect(isAssignableRole("admin")).toBe(true)
+    expect(isAssignableRole("member")).toBe(true)
+    expect(isAssignableRole("creator")).toBe(false)
+    expect(isAssignableRole(undefined)).toBe(false)
+  })
+
+  it("lets the creator and admins administer", () => {
+    expect(canAdminister("creator")).toBe(true)
+    expect(canAdminister("admin")).toBe(true)
+    expect(canAdminister("member")).toBe(false)
   })
 
   it("accepts usernames of 3 to 32 letters, digits, dots, dashes and underscores", () => {
@@ -81,6 +97,7 @@ describe("UserAdminService.create", () => {
     expect(await rejection(users.create("a b", "secret123", "member"))).toBe("invalid_username")
     expect(await rejection(users.create("luchi", "short", "member"))).toBe("invalid_password")
     expect(await rejection(users.create("luchi", "secret123", "owner"))).toBe("invalid_role")
+    expect(await rejection(users.create("luchi", "secret123", "creator"))).toBe("invalid_role")
   })
 })
 
@@ -130,6 +147,7 @@ describe("UserAdminService.update", () => {
     const users = service(new InMemoryUserRepository([storedUser()]))
     expect(await rejection(users.update("santi", "nadie", { role: "member" }))).toBe("user_not_found")
     expect(await rejection(users.update("santi", "santi", { role: "owner" }))).toBe("invalid_role")
+    expect(await rejection(users.update("santi", "santi", { role: "creator" }))).toBe("invalid_role")
     expect(await rejection(users.update("santi", "santi", { disabled: "yes" }))).toBe("invalid_disabled")
   })
 })

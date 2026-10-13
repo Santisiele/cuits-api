@@ -104,6 +104,16 @@ describe("research routes", () => {
     expect(logForbidden).toHaveBeenCalledTimes(5)
   })
 
+  it("lets the creator in", async () => {
+    const app = await buildApp("creator")
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/research/budget" }),
+      app.inject({ method: "GET", url: "/research/recent" }),
+      app.inject({ method: "GET", url: `/research/${TAX_ID}` }),
+    ])
+    for (const response of responses) expect(response.statusCode).toBe(200)
+  })
+
   it("POST /research/:taxId answers 201 with every field and logs it", async () => {
     const app = await buildApp("admin")
     const response = await app.inject({ method: "POST", url: `/research/${TAX_ID}` })

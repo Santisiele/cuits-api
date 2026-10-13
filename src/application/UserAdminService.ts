@@ -2,11 +2,12 @@ import type { IPasswordHasher, IUserRepository } from "@ports/interfaces.js"
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
-  isRole,
+  isAssignableRole,
   isSameUser,
   isValidPassword,
   isValidUsername,
   toPublicUser,
+  type AssignableRole,
   type PublicUser,
   type Role,
   type StoredUser,
@@ -46,7 +47,7 @@ export class UserAdminService {
       )
     }
     this.validatePassword(password)
-    if (!isRole(role)) throw new UserAdminError("invalid_role", "Role must be admin or member")
+    if (!isAssignableRole(role)) throw new UserAdminError("invalid_role", "Role must be admin or member")
 
     const user: StoredUser = {
       username: trimmed,
@@ -61,13 +62,13 @@ export class UserAdminService {
   }
 
   async update(actor: string, username: string, changes: UserChanges): Promise<PublicUser> {
-    if (changes.role !== undefined && !isRole(changes.role)) {
+    if (changes.role !== undefined && !isAssignableRole(changes.role)) {
       throw new UserAdminError("invalid_role", "Role must be admin or member")
     }
     if (changes.disabled !== undefined && typeof changes.disabled !== "boolean") {
       throw new UserAdminError("invalid_disabled", "disabled must be true or false")
     }
-    const role = changes.role as Role | undefined
+    const role = changes.role as AssignableRole | undefined
     const disabled = changes.disabled as boolean | undefined
 
     const existing = await this.requireUser(username)
