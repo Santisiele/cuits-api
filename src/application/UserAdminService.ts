@@ -2,7 +2,9 @@ import type { IPasswordHasher, IUserRepository } from "@ports/interfaces.js"
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
+  hasCreator,
   isAssignableRole,
+  isRole,
   isValidPassword,
   isValidUsername,
   toPublicUser,
@@ -39,6 +41,21 @@ export class UserAdminService {
   }
 
   async create(username: string, password: string, role: unknown): Promise<PublicUser> {
+    const trimmed = this.validateCredentials(username, password)
+    if (!isAssignableRole(role)) throw new UserAdminError("invalid_role", "Role must be admin or member")
+    return this.store(trimmed, password, role)
+  }
+
+  async createAnyRole(username: string, password: string, role: unknown): Promise<PublicUser> {
+    const trimmed = this.validateCredentials(username, password)
+    if (!isRole(role)) throw new UserAdminError("invalid_role", "Role must be creator, admin or member")
+    if (role === "creator" && hasCreator(await this.repository.findAll())) {
+      throw new UserAdminError("creator_exists", "There is already a creator")
+    }
+    return this.store(trimmed, password, role)
+  }
+
+  private validateCredentials(username: string, password: string): string {
     const trimmed = username.trim()
     if (!isValidUsername(trimmed)) {
       throw new UserAdminError(
@@ -47,8 +64,10 @@ export class UserAdminService {
       )
     }
     this.validatePassword(password)
-    if (!isAssignableRole(role)) throw new UserAdminError("invalid_role", "Role must be admin or member")
+    return trimmed
+  }
 
+  private async store(trimmed: string, password: string, role: Role): Promise<PublicUser> {
     const user: StoredUser = {
       username: trimmed,
       passwordHash: await this.hasher.hash(password),

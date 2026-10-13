@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   canAdminister,
+  hasCreator,
   isAssignableRole,
   isRole,
   isSameUser,
@@ -125,6 +126,39 @@ describe("who can change whom", () => {
   it("the creator and admins change a member", () => {
     expect(userChangeRejection("creator", "member")).toBeNull()
     expect(userChangeRejection("admin", "member")).toBeNull()
+  })
+})
+
+describe("UserAdminService.createAnyRole", () => {
+  it("creates the creator when there is none", async () => {
+    const repository = new InMemoryUserRepository([storedUser()])
+    const user = await service(repository).createAnyRole("sofi", "secret123", "creator")
+    expect(user.role).toBe("creator")
+    expect((await repository.findByUsername("sofi"))?.passwordHash).toBe("hashed:secret123")
+  })
+
+  it("refuses a second creator", async () => {
+    const repository = team()
+    expect(await rejection(service(repository).createAnyRole("otra", "secret123", "creator"))).toBe("creator_exists")
+    expect(await repository.findByUsername("otra")).toBeNull()
+  })
+
+  it("creates admins and members even with a creator around", async () => {
+    const users = service(team())
+    expect((await users.createAnyRole("flavia", "secret123", "admin")).role).toBe("admin")
+    expect((await users.createAnyRole("tomi", "secret123", "member")).role).toBe("member")
+  })
+
+  it("rejects an unknown role and bad credentials", async () => {
+    const users = service(new InMemoryUserRepository())
+    expect(await rejection(users.createAnyRole("flavia", "secret123", "owner"))).toBe("invalid_role")
+    expect(await rejection(users.createAnyRole("a b", "secret123", "member"))).toBe("invalid_username")
+    expect(await rejection(users.createAnyRole("flavia", "short", "member"))).toBe("invalid_password")
+  })
+
+  it("tells whether a creator exists", () => {
+    expect(hasCreator([storedUser()])).toBe(false)
+    expect(hasCreator([storedUser(), storedUser({ username: "sofi", role: "creator" })])).toBe(true)
   })
 })
 

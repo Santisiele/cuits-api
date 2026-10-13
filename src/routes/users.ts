@@ -18,6 +18,7 @@ const STATUS_BY_REASON: Record<UserRejection, number> = {
   user_not_found: 404,
   username_taken: 409,
   cannot_change_creator: 409,
+  creator_exists: 409,
 }
 
 function handleError(err: unknown, reply: FastifyReply) {

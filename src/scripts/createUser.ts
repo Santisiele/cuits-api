@@ -7,14 +7,14 @@ import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 const [username, password, role = "member"] = process.argv.slice(2)
 
 if (!username || !password) {
-  console.error("Usage: pnpm create:user <username> <password> [admin|member]")
+  console.error("Usage: pnpm create:user <username> <password> [creator|admin|member]")
   process.exit(1)
 }
 
 const service = new UserAdminService(new Neo4jUserRepository(), new BcryptPasswordHasher())
 
 try {
-  const user = await service.create(username, password, role)
+  const user = await service.createAnyRole(username, password, role)
   console.log(`User "${user.username}" created as ${user.role}`)
 } catch (err) {
   if (!(err instanceof UserAdminError)) throw err
