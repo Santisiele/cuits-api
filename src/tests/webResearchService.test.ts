@@ -197,3 +197,77 @@ describe("WebResearchService budget and history", () => {
     expect(recent[0]?.id).toBe("r54")
   })
 })
+
+describe("WebResearchService archive", () => {
+  const ID = "3f2b8c1e-9a4d-4c7b-8e1f-0a2b3c4d5e6f"
+
+  beforeEach(() => {
+    repository = new InMemoryWebResearchRepository()
+    researcher = new FakeResearcher()
+    service = build()
+  })
+
+  it("archives a research and returns it with who and when", async () => {
+    repository.saved.push(storedResearch({ id: ID }))
+
+    const archived = await service.archive(ID, "ana")
+
+    expect(archived).toEqual(storedResearch({ id: ID, archivedAt: NOW.toISOString(), archivedBy: "ana" }))
+    expect(repository.saved).toEqual([archived])
+  })
+
+  it("refuses to archive twice", async () => {
+    repository.saved.push(storedResearch({ id: ID, archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" }))
+
+    const error = await rejection(service.archive(ID, "ana"))
+
+    expect(error.reason).toBe("already_archived")
+    expect(repository.saved[0]?.archivedBy).toBe("santi")
+  })
+
+  it("answers research_not_found for an unknown or malformed id", async () => {
+    repository.saved.push(storedResearch({ id: "r1" }))
+    expect((await rejection(service.archive(ID, "ana"))).reason).toBe("research_not_found")
+    expect((await rejection(service.archive("r1", "ana"))).reason).toBe("research_not_found")
+    expect((await rejection(service.restore("../etc"))).reason).toBe("research_not_found")
+    expect(repository.saved[0]?.archivedAt).toBeNull()
+  })
+
+  it("restores an archived research", async () => {
+    repository.saved.push(storedResearch({ id: ID, archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" }))
+
+    const restored = await service.restore(ID)
+
+    expect(restored).toEqual(storedResearch({ id: ID }))
+    expect(repository.saved).toEqual([restored])
+    expect((await service.history(restored.taxId)).map((research) => research.id)).toEqual([ID])
+  })
+
+  it("refuses to restore a research that is not archived", async () => {
+    repository.saved.push(storedResearch({ id: ID }))
+    const error = await rejection(service.restore(ID))
+    expect(error.reason).toBe("not_archived")
+    expect(error.message).toBe("That web research is not archived")
+  })
+
+  it("lists every archived research, newest archived first, with the name", async () => {
+    repository.subjects.set(TAX_ID, { businessName: "ACME SA", inMyBase: true })
+    repository.saved.push(
+      storedResearch({ id: "first", archivedAt: "2026-10-01T12:00:00.000Z", archivedBy: "santi" }),
+      storedResearch({ id: "live" }),
+      storedResearch({ id: "second", archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "ana" })
+    )
+
+    const archived = await service.archived()
+
+    expect(archived.map((research) => research.id)).toEqual(["second", "first"])
+    expect(archived[0]).toEqual({ ...storedResearch({ id: "second", archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "ana" }), businessName: "ACME SA" })
+  })
+
+  it("asks the repository for at most 500 archived researches", async () => {
+    for (let i = 0; i < 505; i++) {
+      repository.saved.push(storedResearch({ id: `r${i}`, archivedAt: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(), archivedBy: "santi" }))
+    }
+    expect(await service.archived()).toHaveLength(500)
+  })
+})

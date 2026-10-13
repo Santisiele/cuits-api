@@ -3,12 +3,16 @@ import type { IWebResearcher, IWebResearchRepository } from "@ports/interfaces.j
 import {
   EMPTY_USAGE,
   ResearcherError,
+  archiveRejection,
   costFromUsage,
   isBudgetExhausted,
   isValidMonthlyLimit,
   isValidResearchCuit,
+  isValidResearchId,
+  restoreRejection,
   roundUsd,
   startOfMonthInBuenosAires,
+  type ArchiveRejection,
   type ResearchBudget,
   type ResearchUsage,
   type WebResearch,
@@ -29,6 +33,13 @@ export class WebResearchError extends Error {
 }
 
 const RECENT_LIMIT = 50
+const ARCHIVED_LIMIT = 500
+
+const ARCHIVE_MESSAGES: Record<ArchiveRejection, string> = {
+  research_not_found: "That web research does not exist",
+  already_archived: "That web research is already archived",
+  not_archived: "That web research is not archived",
+}
 
 export class WebResearchService {
   constructor(
@@ -81,6 +92,23 @@ export class WebResearchService {
     return this.repository.listRecent(RECENT_LIMIT)
   }
 
+  async archive(id: string, archivedBy: string): Promise<WebResearch> {
+    const research = await this.findForChange(id, archiveRejection)
+    const archivedAt = this.now().toISOString()
+    await this.repository.archive(id, archivedAt, archivedBy)
+    return { ...research, archivedAt, archivedBy }
+  }
+
+  async restore(id: string): Promise<WebResearch> {
+    const research = await this.findForChange(id, restoreRejection)
+    await this.repository.restore(id)
+    return { ...research, archivedAt: null, archivedBy: null }
+  }
+
+  archived(): Promise<WebResearchWithName[]> {
+    return this.repository.listArchived(ARCHIVED_LIMIT)
+  }
+
   async budget(): Promise<ResearchBudget> {
     const monthlyLimitUsd = await this.repository.getMonthlyLimit()
     const spend = await this.repository.spendSince(startOfMonthInBuenosAires(this.now()))
@@ -97,6 +125,17 @@ export class WebResearchService {
     }
     await this.repository.setMonthlyLimit(value, updatedBy, this.now().toISOString())
     return this.budget()
+  }
+
+  private async findForChange(
+    id: string,
+    rejection: (research: WebResearch) => ArchiveRejection | null
+  ): Promise<WebResearch> {
+    const research = isValidResearchId(id) ? await this.repository.findById(id) : null
+    if (!research) throw new WebResearchError("research_not_found", ARCHIVE_MESSAGES.research_not_found)
+    const reason = rejection(research)
+    if (reason) throw new WebResearchError(reason, ARCHIVE_MESSAGES[reason])
+    return research
   }
 
   private requireCuit(taxId: string): void {

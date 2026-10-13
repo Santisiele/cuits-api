@@ -9,6 +9,8 @@ export const DEFAULT_MONTHLY_LIMIT_USD = 20
 
 export type WebResearchStatus = "done" | "failed"
 
+export type ArchiveRejection = "research_not_found" | "already_archived" | "not_archived"
+
 export type WebResearchRejection =
   | "invalid_cuit"
   | "invalid_limit"
@@ -16,9 +18,7 @@ export type WebResearchRejection =
   | "budget_exhausted"
   | "research_failed"
   | "research_off"
-  | "research_not_found"
-  | "already_archived"
-  | "not_archived"
+  | ArchiveRejection
 
 export interface ResearchUsage {
   inputTokens: number
@@ -104,12 +104,12 @@ export function isValidResearchId(id: string): boolean {
   return RESEARCH_ID_PATTERN.test(id)
 }
 
-export function archiveRejection(research: { archivedAt: string | null } | null): WebResearchRejection | null {
+export function archiveRejection(research: { archivedAt: string | null } | null): ArchiveRejection | null {
   if (!research) return "research_not_found"
   return research.archivedAt === null ? null : "already_archived"
 }
 
-export function restoreRejection(research: { archivedAt: string | null } | null): WebResearchRejection | null {
+export function restoreRejection(research: { archivedAt: string | null } | null): ArchiveRejection | null {
   if (!research) return "research_not_found"
   return research.archivedAt === null ? "not_archived" : null
 }
