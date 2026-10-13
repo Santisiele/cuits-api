@@ -2,10 +2,12 @@ import type { FastifyInstance, FastifyReply } from "fastify"
 import { WebResearchService, WebResearchError } from "@application/WebResearchService.js"
 import { Neo4jWebResearchRepository } from "@infrastructure/neo4j/Neo4jWebResearchRepository.js"
 import { ClaudeWebResearcher } from "@infrastructure/anthropic/ClaudeWebResearcher.js"
+import { GeminiWebResearcher } from "@infrastructure/google/GeminiWebResearcher.js"
 import { requireAdmin } from "@middleware/requireAdmin.js"
 import { logResearchBudgetChanged, logWebResearch } from "@auth/activityLogger.js"
 import { config } from "@config.js"
-import type { WebResearchRejection } from "@domain/webResearch.js"
+import { chooseResearchProvider, type WebResearchRejection } from "@domain/webResearch.js"
+import type { IWebResearcher } from "@ports/interfaces.js"
 
 const STATUS_BY_REASON: Record<WebResearchRejection, number> = {
   invalid_cuit: 400,
@@ -60,12 +62,19 @@ const errorSchema = {
 
 const taxIdParams = { type: "object", properties: { taxId: { type: "string" } } } as const
 
+export function researcherFromConfig(): IWebResearcher | null {
+  const provider = chooseResearchProvider({
+    provider: config.research.provider,
+    claudeApiKey: config.anthropic.apiKey,
+    geminiApiKey: config.gemini.apiKey,
+  })
+  if (provider === "gemini") return GeminiWebResearcher.withApiKey(config.gemini.apiKey)
+  if (provider === "claude") return ClaudeWebResearcher.withApiKey(config.anthropic.apiKey)
+  return null
+}
+
 export default async function researchRoutes(server: FastifyInstance) {
-  const apiKey = config.anthropic.apiKey
-  const service = new WebResearchService(
-    new Neo4jWebResearchRepository(),
-    apiKey ? ClaudeWebResearcher.withApiKey(apiKey) : null
-  )
+  const service = new WebResearchService(new Neo4jWebResearchRepository(), researcherFromConfig())
 
   server.get(
     "/research/budget",

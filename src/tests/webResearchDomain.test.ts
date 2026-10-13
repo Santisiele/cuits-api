@@ -4,6 +4,7 @@ import {
   ResearcherError,
   CLAUDE_RESEARCH_PRICES_USD,
   GEMINI_RESEARCH_PRICES_USD,
+  chooseResearchProvider,
   addUsage,
   buildResearchRequest,
   costFromUsage,
@@ -180,3 +181,28 @@ describe("researcher error", () => {
   })
 })
 
+describe("chooseResearchProvider", () => {
+  const both = { claudeApiKey: "sk-ant", geminiApiKey: "AIza" }
+
+  it("uses the provider asked for when its key is there", () => {
+    expect(chooseResearchProvider({ ...both, provider: "claude" })).toBe("claude")
+    expect(chooseResearchProvider({ ...both, provider: " Gemini " })).toBe("gemini")
+  })
+
+  it("turns research off when the provider asked for has no key", () => {
+    expect(chooseResearchProvider({ provider: "claude", claudeApiKey: "", geminiApiKey: "AIza" })).toBeNull()
+  })
+
+  it("prefers Gemini when no provider is set", () => {
+    expect(chooseResearchProvider({ ...both, provider: "" })).toBe("gemini")
+    expect(chooseResearchProvider({ provider: "", claudeApiKey: "sk-ant", geminiApiKey: "" })).toBe("claude")
+  })
+
+  it("ignores an unknown provider name and falls back to the keys", () => {
+    expect(chooseResearchProvider({ ...both, provider: "openai" })).toBe("gemini")
+  })
+
+  it("turns research off without any key", () => {
+    expect(chooseResearchProvider({ provider: "", claudeApiKey: "", geminiApiKey: "" })).toBeNull()
+  })
+})

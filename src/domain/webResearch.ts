@@ -19,6 +19,21 @@ export const GEMINI_RESEARCH_PRICES_USD: ResearchPrices = {
   perThousandWebSearches: 14,
 }
 
+export type ResearchProvider = "claude" | "gemini"
+
+export function chooseResearchProvider(settings: {
+  provider: string
+  claudeApiKey: string
+  geminiApiKey: string
+}): ResearchProvider | null {
+  const keys: Record<ResearchProvider, string> = { claude: settings.claudeApiKey, gemini: settings.geminiApiKey }
+  const wanted = settings.provider.trim().toLowerCase()
+  if (wanted === "claude" || wanted === "gemini") return keys[wanted] ? wanted : null
+  if (keys.gemini) return "gemini"
+  if (keys.claude) return "claude"
+  return null
+}
+
 export const DEFAULT_MONTHLY_LIMIT_USD = 20
 
 export type WebResearchStatus = "done" | "failed"

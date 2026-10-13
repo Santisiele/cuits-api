@@ -2,13 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import Fastify, { type FastifyInstance } from "fastify"
 import { schemas } from "@schemas.js"
 import type { Role } from "@domain/users"
-import { CLAUDE_RESEARCH_PRICES_USD } from "@domain/webResearch"
+import { CLAUDE_RESEARCH_PRICES_USD, GEMINI_RESEARCH_PRICES_USD } from "@domain/webResearch"
 import { FakeResearcher, InMemoryWebResearchRepository, storedResearch } from "./webResearchFakes"
 
 const state = {
   repository: new InMemoryWebResearchRepository(),
   researcher: new FakeResearcher(),
   apiKey: "test-key",
+  geminiApiKey: "",
+  provider: "",
 }
 
 vi.mock("@config.js", () => ({
@@ -16,6 +18,16 @@ vi.mock("@config.js", () => ({
     anthropic: {
       get apiKey() {
         return state.apiKey
+      },
+    },
+    gemini: {
+      get apiKey() {
+        return state.geminiApiKey
+      },
+    },
+    research: {
+      get provider() {
+        return state.provider
       },
     },
   },
@@ -39,6 +51,12 @@ vi.mock("@infrastructure/anthropic/ClaudeWebResearcher.js", () => ({
       prices: CLAUDE_RESEARCH_PRICES_USD,
       research: (...args: Parameters<FakeResearcher["research"]>) => state.researcher.research(...args),
     }),
+  },
+}))
+
+vi.mock("@infrastructure/google/GeminiWebResearcher.js", () => ({
+  GeminiWebResearcher: {
+    withApiKey: () => ({ prices: GEMINI_RESEARCH_PRICES_USD, research: async () => { throw new Error("gemini is not used here") } }),
   },
 }))
 
@@ -87,6 +105,8 @@ describe("research routes", () => {
     state.repository.subjects.set(TAX_ID, { businessName: "ACME SA", inMyBase: true })
     state.researcher = new FakeResearcher()
     state.apiKey = "test-key"
+    state.geminiApiKey = ""
+    state.provider = ""
   })
 
   it("answers 403 to a member on every route without calling Claude", async () => {
@@ -150,6 +170,23 @@ describe("research routes", () => {
     const response = await app.inject({ method: "POST", url: "/research/20111111112" })
     expect(response.statusCode).toBe(404)
     expect(response.json().error).toBe("not_in_base")
+  })
+
+  it("POST uses Gemini when its key is set and no provider is chosen", async () => {
+    state.geminiApiKey = "AIza-test"
+    const app = await buildApp("admin")
+    const response = await app.inject({ method: "POST", url: `/research/${TAX_ID}` })
+    expect(response.statusCode).toBe(502)
+    expect(state.researcher.calls).toHaveLength(0)
+  })
+
+  it("POST uses Claude when it is the chosen provider", async () => {
+    state.geminiApiKey = "AIza-test"
+    state.provider = "claude"
+    const app = await buildApp("admin")
+    const response = await app.inject({ method: "POST", url: `/research/${TAX_ID}` })
+    expect(response.statusCode).toBe(201)
+    expect(state.researcher.calls).toHaveLength(1)
   })
 
   it("POST answers 503 research_off without an API key", async () => {
