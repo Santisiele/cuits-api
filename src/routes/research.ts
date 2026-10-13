@@ -14,6 +14,9 @@ const STATUS_BY_REASON: Record<WebResearchRejection, number> = {
   budget_exhausted: 409,
   research_failed: 502,
   research_off: 503,
+  research_not_found: 404,
+  already_archived: 409,
+  not_archived: 409,
 }
 
 function handleError(err: unknown, reply: FastifyReply) {

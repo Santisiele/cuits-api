@@ -4,11 +4,14 @@ import {
   ResearcherError,
   WEB_RESEARCH_PRICES_USD,
   addUsage,
+  archiveRejection,
   buildResearchRequest,
   costFromUsage,
   isBudgetExhausted,
   isValidMonthlyLimit,
   isValidResearchCuit,
+  isValidResearchId,
+  restoreRejection,
   roundUsd,
   sourcesFromBlocks,
   startOfMonthInBuenosAires,
@@ -101,6 +104,28 @@ describe("CUIT validation", () => {
     expect(isValidResearchCuit("30-71234567-8")).toBe(false)
     expect(isValidResearchCuit("3071234567")).toBe(false)
     expect(isValidResearchCuit("3071234567a")).toBe(false)
+  })
+})
+
+describe("archiving", () => {
+  it("accepts only a UUID as a research id", () => {
+    expect(isValidResearchId("3f2b8c1e-9a4d-4c7b-8e1f-0a2b3c4d5e6f")).toBe(true)
+    expect(isValidResearchId("3F2B8C1E-9A4D-4C7B-8E1F-0A2B3C4D5E6F")).toBe(true)
+    expect(isValidResearchId("r1")).toBe(false)
+    expect(isValidResearchId("3f2b8c1e-9a4d-4c7b-8e1f-0a2b3c4d5e6")).toBe(false)
+    expect(isValidResearchId("3f2b8c1e-9a4d-4c7b-8e1f-0a2b3c4d5e6fx")).toBe(false)
+  })
+
+  it("archives only a research that exists and is not archived", () => {
+    expect(archiveRejection(null)).toBe("research_not_found")
+    expect(archiveRejection({ archivedAt: "2026-10-13T15:00:00.000Z" })).toBe("already_archived")
+    expect(archiveRejection({ archivedAt: null })).toBeNull()
+  })
+
+  it("restores only a research that exists and is archived", () => {
+    expect(restoreRejection(null)).toBe("research_not_found")
+    expect(restoreRejection({ archivedAt: null })).toBe("not_archived")
+    expect(restoreRejection({ archivedAt: "2026-10-13T15:00:00.000Z" })).toBeNull()
   })
 })
 

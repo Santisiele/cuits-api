@@ -16,6 +16,9 @@ export type WebResearchRejection =
   | "budget_exhausted"
   | "research_failed"
   | "research_off"
+  | "research_not_found"
+  | "already_archived"
+  | "not_archived"
 
 export interface ResearchUsage {
   inputTokens: number
@@ -91,6 +94,22 @@ const CUIT_PATTERN = /^\d{11}$/
 
 export function isValidResearchCuit(taxId: string): boolean {
   return CUIT_PATTERN.test(taxId)
+}
+
+const RESEARCH_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function isValidResearchId(id: string): boolean {
+  return RESEARCH_ID_PATTERN.test(id)
+}
+
+export function archiveRejection(research: { archivedAt: string | null } | null): WebResearchRejection | null {
+  if (!research) return "research_not_found"
+  return research.archivedAt === null ? null : "already_archived"
+}
+
+export function restoreRejection(research: { archivedAt: string | null } | null): WebResearchRejection | null {
+  if (!research) return "research_not_found"
+  return research.archivedAt === null ? "not_archived" : null
 }
 
 export function isValidMonthlyLimit(value: unknown): value is number {
