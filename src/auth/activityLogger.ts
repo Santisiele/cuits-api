@@ -423,6 +423,26 @@ export function logWebResearch(
   })
 }
 
+export function logResearchArchived(username: string, research: { id: string; taxId: string }): void {
+  activityLogger.info({
+    event: "research_archived",
+    username,
+    researchId: research.id,
+    taxId: research.taxId,
+    message: `${username} archived the web research ${research.id} of CUIT ${research.taxId}`,
+  })
+}
+
+export function logResearchRestored(username: string, research: { id: string; taxId: string }): void {
+  activityLogger.info({
+    event: "research_restored",
+    username,
+    researchId: research.id,
+    taxId: research.taxId,
+    message: `${username} restored the web research ${research.id} of CUIT ${research.taxId}`,
+  })
+}
+
 export function logResearchBudgetChanged(username: string, monthlyLimitUsd: number): void {
   activityLogger.info({
     event: "research_budget_changed",

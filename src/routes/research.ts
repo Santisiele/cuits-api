@@ -3,7 +3,8 @@ import { WebResearchService, WebResearchError } from "@application/WebResearchSe
 import { Neo4jWebResearchRepository } from "@infrastructure/neo4j/Neo4jWebResearchRepository.js"
 import { ClaudeWebResearcher } from "@infrastructure/anthropic/ClaudeWebResearcher.js"
 import { requireAdmin } from "@middleware/requireAdmin.js"
-import { logResearchBudgetChanged, logWebResearch } from "@auth/activityLogger.js"
+import { requireCreator } from "@middleware/requireCreator.js"
+import { logResearchArchived, logResearchBudgetChanged, logResearchRestored, logWebResearch } from "@auth/activityLogger.js"
 import { config } from "@config.js"
 import type { WebResearchRejection } from "@domain/webResearch.js"
 
@@ -65,6 +66,14 @@ const errorSchema = {
 
 const taxIdParams = { type: "object", properties: { taxId: { type: "string" } } } as const
 
+const idParams = { type: "object", properties: { id: { type: "string" } } } as const
+
+const changeSchema = {
+  hide: true,
+  params: idParams,
+  response: { 200: researchSchema, 403: errorSchema, 404: errorSchema, 409: errorSchema },
+} as const
+
 export default async function researchRoutes(server: FastifyInstance) {
   const apiKey = config.anthropic.apiKey
   const service = new WebResearchService(
@@ -111,6 +120,49 @@ export default async function researchRoutes(server: FastifyInstance) {
       },
     },
     async () => ({ research: await service.recent() })
+  )
+
+  server.get(
+    "/research/archived",
+    {
+      preHandler: requireCreator,
+      schema: {
+        hide: true,
+        response: {
+          200: { type: "object", properties: { research: { type: "array", items: recentResearchSchema } } },
+          403: errorSchema,
+        },
+      },
+    },
+    async () => ({ research: await service.archived() })
+  )
+
+  server.post<{ Params: { id: string } }>(
+    "/research/:id/archive",
+    { preHandler: requireAdmin, schema: changeSchema },
+    async (request, reply) => {
+      try {
+        const research = await service.archive(request.params.id, request.username)
+        logResearchArchived(request.username, research)
+        return research
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.post<{ Params: { id: string } }>(
+    "/research/:id/restore",
+    { preHandler: requireCreator, schema: changeSchema },
+    async (request, reply) => {
+      try {
+        const research = await service.restore(request.params.id)
+        logResearchRestored(request.username, research)
+        return research
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
   )
 
   server.get<{ Params: { taxId: string } }>(
