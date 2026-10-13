@@ -12,6 +12,7 @@ import type {
   BackupNode,
   BackupRelationship,
 } from "@domain/backup.js"
+import type { Role, StoredUser } from "@domain/users.js"
 import type {
   CuitNode,
   CuitNodeUpdate,
@@ -323,4 +324,16 @@ export interface ISourceLoader {
  */
 export interface ILoadOutputWriter {
   write(outcomes: import("@domain/entities.js").RowLoadOutcome[]): Promise<void>
+}
+export interface IUserRepository {
+  findByUsername(username: string): Promise<StoredUser | null>
+  findAll(): Promise<StoredUser[]>
+  create(user: StoredUser): Promise<"created" | "taken">
+  update(username: string, fields: { role?: Role; disabledAt?: string | null }): Promise<StoredUser | null>
+  setPasswordHash(username: string, passwordHash: string): Promise<boolean>
+}
+
+export interface IPasswordHasher {
+  hash(password: string): Promise<string>
+  compare(password: string, hash: string): Promise<boolean>
 }

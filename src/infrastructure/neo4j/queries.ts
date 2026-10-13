@@ -757,4 +757,48 @@ export const Queries = {
     CREATE CONSTRAINT trust_level_value_unique IF NOT EXISTS
     FOR (t:TrustLevel) REQUIRE t.value IS UNIQUE
   `,
+
+  CREATE_USER_CONSTRAINT: `
+    CREATE CONSTRAINT user_key_unique IF NOT EXISTS
+    FOR (u:User) REQUIRE u.usernameKey IS UNIQUE
+  `,
+
+  FIND_USER: `
+    MATCH (u:User {usernameKey: $key})
+    RETURN u
+  `,
+
+  FIND_ALL_USERS: `
+    MATCH (u:User)
+    RETURN u
+    ORDER BY u.usernameKey
+  `,
+
+  CREATE_USER: `
+    OPTIONAL MATCH (existing:User {usernameKey: $key})
+    WITH existing
+    WHERE existing IS NULL
+    CREATE (u:User {
+      usernameKey: $key,
+      username: $username,
+      passwordHash: $passwordHash,
+      role: $role,
+      createdAt: $createdAt,
+      disabledAt: $disabledAt
+    })
+    RETURN u
+  `,
+
+  UPDATE_USER: `
+    MATCH (u:User {usernameKey: $key})
+    SET u.role = CASE WHEN $setRole THEN $role ELSE u.role END,
+        u.disabledAt = CASE WHEN $setDisabledAt THEN $disabledAt ELSE u.disabledAt END
+    RETURN u
+  `,
+
+  SET_USER_PASSWORD_HASH: `
+    MATCH (u:User {usernameKey: $key})
+    SET u.passwordHash = $passwordHash
+    RETURN u.username AS username
+  `,
 } as const
