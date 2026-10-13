@@ -167,6 +167,23 @@ describe("WebResearchService budget and history", () => {
     expect((await service.history(TAX_ID)).map((research) => research.id)).toEqual(["new", "old"])
   })
 
+  it("hides archived research from the history and the recent list", async () => {
+    repository.saved.push(
+      storedResearch({ id: "kept" }),
+      storedResearch({ id: "hidden", archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" })
+    )
+    expect((await service.history(TAX_ID)).map((research) => research.id)).toEqual(["kept"])
+    expect((await service.recent()).map((research) => research.id)).toEqual(["kept"])
+  })
+
+  it("still counts archived research in the month's spend", async () => {
+    repository.saved.push(
+      storedResearch({ id: "a", costUsd: 0.1 }),
+      storedResearch({ id: "b", costUsd: 0.2, archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" })
+    )
+    expect(await service.budget()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 0.3, researchCountThisMonth: 2 })
+  })
+
   it("rejects a malformed CUIT in the history", async () => {
     expect((await rejection(service.history("abc"))).reason).toBe("invalid_cuit")
   })

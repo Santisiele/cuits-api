@@ -882,12 +882,14 @@ export const Queries = {
 
   FIND_WEB_RESEARCH_FOR_CUIT: `
     MATCH (r:WebResearch)-[:ABOUT]->(c:CUIT {id: $taxId})
+    WHERE r.archivedAt IS NULL
     RETURN r, c.id AS taxId, c.businessName AS businessName
     ORDER BY r.requestedAt DESC
   `,
 
   FIND_RECENT_WEB_RESEARCH: `
     MATCH (r:WebResearch)-[:ABOUT]->(c:CUIT)
+    WHERE r.archivedAt IS NULL
     RETURN r, c.id AS taxId, c.businessName AS businessName
     ORDER BY r.requestedAt DESC
     LIMIT $limit

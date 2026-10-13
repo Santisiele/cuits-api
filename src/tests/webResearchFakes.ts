@@ -46,7 +46,7 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
   }
 
   private newestFirst(): WebResearch[] {
-    return [...this.saved].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
+    return this.saved.filter((research) => research.archivedAt === null).sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))
   }
 }
 

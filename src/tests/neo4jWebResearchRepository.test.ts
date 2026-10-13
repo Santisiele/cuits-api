@@ -95,6 +95,12 @@ describe("Neo4jWebResearchRepository", () => {
     })
   })
 
+  it("leaves archived research out of the history and the recent list but not out of the spend", () => {
+    expect(Queries.FIND_WEB_RESEARCH_FOR_CUIT).toContain("r.archivedAt IS NULL")
+    expect(Queries.FIND_RECENT_WEB_RESEARCH).toContain("r.archivedAt IS NULL")
+    expect(Queries.SUM_WEB_RESEARCH_SINCE).not.toContain("archivedAt")
+  })
+
   it("stores the sources as a JSON string", async () => {
     await repository.save({
       id: "r1",
