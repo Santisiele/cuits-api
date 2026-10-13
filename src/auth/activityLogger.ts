@@ -394,3 +394,30 @@ export function logTrustLevelOperation(username: string, summary: TrustLevelOper
     message: `${username}: ${summary.message}`,
   })
 }
+
+export function logWebResearch(
+  username: string,
+  research: { taxId: string; status: string; costUsd: number; webSearches: number },
+  detail: string | null = null
+): void {
+  const log = research.status === "done" ? activityLogger.info.bind(activityLogger) : activityLogger.error.bind(activityLogger)
+  log({
+    event: "web_research",
+    username,
+    taxId: research.taxId,
+    status: research.status,
+    costUsd: research.costUsd,
+    webSearches: research.webSearches,
+    detail,
+    message: `${username} researched CUIT ${research.taxId} on the web — ${research.status}, ${research.costUsd} USD`,
+  })
+}
+
+export function logResearchBudgetChanged(username: string, monthlyLimitUsd: number): void {
+  activityLogger.info({
+    event: "research_budget_changed",
+    username,
+    monthlyLimitUsd,
+    message: `${username} set the monthly web research limit to ${monthlyLimitUsd} USD`,
+  })
+}
