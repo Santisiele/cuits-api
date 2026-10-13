@@ -141,11 +141,11 @@ describe("research routes", () => {
     expect(response.json().error).toBe("invalid_cuit")
   })
 
-  it("POST answers 404 not_in_base", async () => {
+  it("POST answers 404 cuit_not_found", async () => {
     const app = await buildApp("admin")
     const response = await app.inject({ method: "POST", url: "/research/20111111112" })
     expect(response.statusCode).toBe(404)
-    expect(response.json().error).toBe("not_in_base")
+    expect(response.json().error).toBe("cuit_not_found")
   })
 
   it("POST answers 503 research_off without an API key", async () => {

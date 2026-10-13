@@ -44,8 +44,8 @@ export class WebResearchService {
       throw new WebResearchError("research_off", "Web research is not configured")
     }
     const subject = await this.repository.findSubject(taxId)
-    if (!subject?.inMyBase) {
-      throw new WebResearchError("not_in_base", "That CUIT is not in the base")
+    if (!subject) {
+      throw new WebResearchError("cuit_not_found", "That CUIT is not in the graph")
     }
     const budget = await this.budget()
     if (isBudgetExhausted(budget.spentThisMonthUsd, budget.monthlyLimitUsd)) {

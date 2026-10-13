@@ -10,7 +10,7 @@ import type { WebResearchRejection } from "@domain/webResearch.js"
 const STATUS_BY_REASON: Record<WebResearchRejection, number> = {
   invalid_cuit: 400,
   invalid_limit: 400,
-  not_in_base: 404,
+  cuit_not_found: 404,
   budget_exhausted: 409,
   research_failed: 502,
   research_off: 503,

@@ -12,7 +12,7 @@ export type WebResearchStatus = "done" | "failed"
 export type WebResearchRejection =
   | "invalid_cuit"
   | "invalid_limit"
-  | "not_in_base"
+  | "cuit_not_found"
   | "budget_exhausted"
   | "research_failed"
   | "research_off"

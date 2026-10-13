@@ -65,13 +65,15 @@ describe("WebResearchService.research", () => {
   })
 
   it("refuses a CUIT that is not in the graph", async () => {
-    expect((await rejection(service.research("20111111112", "santi"))).reason).toBe("not_in_base")
+    expect((await rejection(service.research("20111111112", "santi"))).reason).toBe("cuit_not_found")
+    expect(researcher.calls).toEqual([])
   })
 
-  it("refuses a CUIT outside the base", async () => {
+  it("researches a CUIT that belongs to no source", async () => {
     repository.subjects.set(TAX_ID, { businessName: "ACME SA", inMyBase: false })
-    expect((await rejection(service.research(TAX_ID, "santi"))).reason).toBe("not_in_base")
-    expect(researcher.calls).toEqual([])
+    const research = await service.research(TAX_ID, "santi")
+    expect(research.status).toBe("done")
+    expect(researcher.calls).toEqual([{ businessName: "ACME SA", taxId: TAX_ID }])
   })
 
   it("does not call Claude once the month's spend reaches the limit", async () => {
