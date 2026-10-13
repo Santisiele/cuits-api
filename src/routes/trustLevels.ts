@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify"
+import { requireAdmin } from "@middleware/requireAdmin.js"
 import { TrustLevelAdminService, TrustLevelAdminError } from "@application/TrustLevelAdminService.js"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { verifyUserPassword, PasswordVerificationError } from "@auth/passwordVerifier.js"
@@ -187,6 +188,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
   }>(
     "/trust-levels",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Create a trust level",
         querystring: { type: "object", properties: { dryRun: { type: "string" } } },
@@ -234,6 +236,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
   }>(
     "/trust-levels/:value",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Rename a trust level or change its color",
         params: { type: "object", required: ["value"], properties: { value: { type: "string" } } },
@@ -286,6 +289,7 @@ export default async function trustLevelRoutes(server: FastifyInstance) {
   }>(
     "/trust-levels/:value",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Delete a trust level and move its CUITs back to no level",
         params: { type: "object", required: ["value"], properties: { value: { type: "string" } } },

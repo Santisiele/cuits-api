@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from "fastify"
+import { requireAdmin } from "@middleware/requireAdmin.js"
 import { SourceAdminService, SourceAdminError } from "@application/SourceAdminService.js"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { verifyUserPassword, PasswordVerificationError } from "@auth/passwordVerifier.js"
@@ -128,6 +129,7 @@ export default async function sourceAdminRoutes(server: FastifyInstance) {
   }>(
     "/sources/:name",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Rename a source",
         params: {
@@ -182,6 +184,7 @@ export default async function sourceAdminRoutes(server: FastifyInstance) {
   }>(
     "/sources/merge",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Merge one source into another",
         querystring: {
@@ -237,6 +240,7 @@ export default async function sourceAdminRoutes(server: FastifyInstance) {
   }>(
     "/sources/:name",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Delete a source, removing nodes left without any",
         params: {
@@ -292,6 +296,7 @@ export default async function sourceAdminRoutes(server: FastifyInstance) {
   }>(
     "/nodes/:taxId/sources",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Add a source to a node, or move it between sources",
         params: {

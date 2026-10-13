@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify"
+import { requireAdmin } from "@middleware/requireAdmin.js"
 import { Neo4jSource } from "@infrastructure/neo4j/Neo4jSource.js"
 import { extractActivityMonths } from "@domain/activityMonths.js"
 import { summariseLenders } from "@domain/financieraLenders.js"
@@ -203,6 +204,7 @@ export default async function graphRoutes(server: FastifyInstance) {
   }>(
     "/graph/relationship",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Add a relationship between two Tax IDs",
         body: {
@@ -284,6 +286,7 @@ export default async function graphRoutes(server: FastifyInstance) {
   }>(
     "/graph/relationship",
     {
+      preHandler: requireAdmin,
       schema: {
         summary: "Delete a relationship between two Tax IDs",
         body: {
