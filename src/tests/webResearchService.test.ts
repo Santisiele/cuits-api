@@ -51,6 +51,8 @@ describe("WebResearchService.research", () => {
       cacheReadTokens: 10_000,
       webSearches: 6,
       costUsd: 0.342,
+      archivedAt: null,
+      archivedBy: null,
     })
     expect(repository.saved).toEqual([research])
   })

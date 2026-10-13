@@ -71,6 +71,8 @@ describe("Neo4jWebResearchRepository", () => {
         cacheReadTokens: 0,
         webSearches: 2,
         costUsd: 0.5,
+        archivedAt: null,
+        archivedBy: null,
       },
     ])
     expect(neo4j.isInt(state.calls[0]?.params["limit"])).toBe(true)
@@ -79,10 +81,18 @@ describe("Neo4jWebResearchRepository", () => {
   it("survives missing properties and broken sources", async () => {
     state.rows = [{ taxId: "30712345678", r: { properties: { sources: "not json" } } }]
     const [research] = await repository.listForCuit("30712345678")
-    expect(research).toMatchObject({ status: "failed", summary: "", sources: [], costUsd: 0 })
+    expect(research).toMatchObject({ status: "failed", summary: "", sources: [], costUsd: 0, archivedAt: null, archivedBy: null })
 
     state.rows = [{ taxId: "30712345678", r: { properties: { sources: "{}" } } }]
     expect((await repository.listForCuit("30712345678"))[0]?.sources).toEqual([])
+  })
+
+  it("reads who archived a research and when", async () => {
+    state.rows = [{ taxId: "30712345678", r: { properties: { archivedAt: "2026-10-13T15:00:00.000Z", archivedBy: "santi" } } }]
+    expect((await repository.listForCuit("30712345678"))[0]).toMatchObject({
+      archivedAt: "2026-10-13T15:00:00.000Z",
+      archivedBy: "santi",
+    })
   })
 
   it("stores the sources as a JSON string", async () => {
@@ -100,6 +110,8 @@ describe("Neo4jWebResearchRepository", () => {
       cacheReadTokens: 3,
       webSearches: 4,
       costUsd: 0.1,
+      archivedAt: null,
+      archivedBy: null,
     })
     expect(state.calls[0]?.query).toBe(Queries.CREATE_WEB_RESEARCH)
     expect(state.calls[0]?.params["sources"]).toBe('[{"url":"https://a.com","title":"A"}]')

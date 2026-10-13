@@ -74,6 +74,8 @@ const RESEARCH_FIELDS = {
   model: "claude-opus-5-5",
   costUsd: 0.342,
   webSearches: 6,
+  archivedAt: null,
+  archivedBy: null,
 }
 
 describe("research routes", () => {
@@ -185,6 +187,8 @@ describe("research routes", () => {
       model: "claude-opus-5-5",
       costUsd: 1.5,
       webSearches: 4,
+      archivedAt: null,
+      archivedBy: null,
     })
   })
 
@@ -245,6 +249,8 @@ describe("research routes", () => {
         model: "claude-opus-5-5",
         costUsd: 1.5,
         webSearches: 4,
+        archivedAt: null,
+        archivedBy: null,
       },
     ])
   })

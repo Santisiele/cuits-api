@@ -126,6 +126,8 @@ export class WebResearchService {
       model,
       ...usage,
       costUsd: costFromUsage(usage),
+      archivedAt: null,
+      archivedBy: null,
     }
   }
 }

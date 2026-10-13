@@ -18,6 +18,10 @@ function toText(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
 
+function toNullableText(value: unknown): string | null {
+  return typeof value === "string" ? value : null
+}
+
 function toSources(value: unknown): ResearchSource[] {
   try {
     const parsed: unknown = JSON.parse(toText(value))
@@ -44,6 +48,8 @@ function toResearch(properties: Record<string, unknown>, taxId: unknown): WebRes
     cacheReadTokens: toNumber(properties["cacheReadTokens"]),
     webSearches: toNumber(properties["webSearches"]),
     costUsd: toNumber(properties["costUsd"]),
+    archivedAt: toNullableText(properties["archivedAt"]),
+    archivedBy: toNullableText(properties["archivedBy"]),
   }
 }
 

@@ -85,6 +85,8 @@ export function storedResearch(overrides: Partial<WebResearch> = {}): WebResearc
     cacheReadTokens: 3,
     webSearches: 4,
     costUsd: 1.5,
+    archivedAt: null,
+    archivedBy: null,
     ...overrides,
   }
 }

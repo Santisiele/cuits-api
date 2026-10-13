@@ -53,6 +53,8 @@ export interface WebResearch {
   cacheReadTokens: number
   webSearches: number
   costUsd: number
+  archivedAt: string | null
+  archivedBy: string | null
 }
 
 export interface WebResearchWithName extends WebResearch {

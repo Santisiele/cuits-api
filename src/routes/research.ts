@@ -38,6 +38,8 @@ const researchProperties = {
   model: { type: "string" },
   costUsd: { type: "number" },
   webSearches: { type: "number" },
+  archivedAt: { type: ["string", "null"] },
+  archivedBy: { type: ["string", "null"] },
 } as const
 
 const researchSchema = { type: "object", properties: researchProperties } as const
