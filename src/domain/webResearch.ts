@@ -1,9 +1,23 @@
-export const WEB_RESEARCH_PRICES_USD = {
+export interface ResearchPrices {
+  inputPerMillionTokens: number
+  outputPerMillionTokens: number
+  cacheReadPerMillionTokens: number
+  perThousandWebSearches: number
+}
+
+export const CLAUDE_RESEARCH_PRICES_USD: ResearchPrices = {
   inputPerMillionTokens: 4,
   outputPerMillionTokens: 20,
   cacheReadPerMillionTokens: 0.2,
   perThousandWebSearches: 10,
-} as const
+}
+
+export const GEMINI_RESEARCH_PRICES_USD: ResearchPrices = {
+  inputPerMillionTokens: 0.75,
+  outputPerMillionTokens: 3.75,
+  cacheReadPerMillionTokens: 0.075,
+  perThousandWebSearches: 14,
+}
 
 export const DEFAULT_MONTHLY_LIMIT_USD = 20
 
@@ -101,8 +115,7 @@ export function roundUsd(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000
 }
 
-export function costFromUsage(usage: ResearchUsage): number {
-  const prices = WEB_RESEARCH_PRICES_USD
+export function costFromUsage(usage: ResearchUsage, prices: ResearchPrices): number {
   return roundUsd(
     (usage.inputTokens * prices.inputPerMillionTokens) / 1_000_000 +
       (usage.outputTokens * prices.outputPerMillionTokens) / 1_000_000 +

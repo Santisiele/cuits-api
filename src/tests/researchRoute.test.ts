@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import Fastify, { type FastifyInstance } from "fastify"
 import { schemas } from "@schemas.js"
 import type { Role } from "@domain/users"
+import { CLAUDE_RESEARCH_PRICES_USD } from "@domain/webResearch"
 import { FakeResearcher, InMemoryWebResearchRepository, storedResearch } from "./webResearchFakes"
 
 const state = {
@@ -34,7 +35,10 @@ vi.mock("@infrastructure/neo4j/Neo4jWebResearchRepository.js", () => ({
 
 vi.mock("@infrastructure/anthropic/ClaudeWebResearcher.js", () => ({
   ClaudeWebResearcher: {
-    withApiKey: () => ({ research: (...args: Parameters<FakeResearcher["research"]>) => state.researcher.research(...args) }),
+    withApiKey: () => ({
+      prices: CLAUDE_RESEARCH_PRICES_USD,
+      research: (...args: Parameters<FakeResearcher["research"]>) => state.researcher.research(...args),
+    }),
   },
 }))
 

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk"
 import type { IWebResearcher } from "@ports/interfaces.js"
 import {
+  CLAUDE_RESEARCH_PRICES_USD,
   EMPTY_USAGE,
   ResearcherError,
   addUsage,
@@ -39,6 +40,8 @@ export function usageOf(message: Anthropic.Beta.BetaMessage): ResearchUsage {
 }
 
 export class ClaudeWebResearcher implements IWebResearcher {
+  readonly prices = CLAUDE_RESEARCH_PRICES_USD
+
   constructor(
     private readonly client: Anthropic,
     private readonly timeoutMs: number = RESEARCH_TIMEOUT_MS

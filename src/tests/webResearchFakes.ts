@@ -1,5 +1,6 @@
 import type { IWebResearcher, IWebResearchRepository } from "@ports/interfaces"
 import {
+  CLAUDE_RESEARCH_PRICES_USD,
   DEFAULT_MONTHLY_LIMIT_USD,
   type ResearchFindings,
   type ResearchSubject,
@@ -51,6 +52,7 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
 }
 
 export class FakeResearcher implements IWebResearcher {
+  readonly prices = CLAUDE_RESEARCH_PRICES_USD
   readonly calls: ResearchSubject[] = []
   failure: Error | null = null
 
