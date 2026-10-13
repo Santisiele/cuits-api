@@ -31,6 +31,26 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
       .map((research) => ({ ...research, businessName: this.subjects.get(research.taxId)?.businessName ?? "" }))
   }
 
+  async findById(id: string): Promise<WebResearch | null> {
+    return this.saved.find((research) => research.id === id) ?? null
+  }
+
+  async archive(id: string, archivedAt: string, archivedBy: string): Promise<void> {
+    this.replace(id, { archivedAt, archivedBy })
+  }
+
+  async restore(id: string): Promise<void> {
+    this.replace(id, { archivedAt: null, archivedBy: null })
+  }
+
+  async listArchived(limit: number): Promise<WebResearchWithName[]> {
+    return this.saved
+      .filter((research) => research.archivedAt !== null)
+      .sort((a, b) => (b.archivedAt ?? "").localeCompare(a.archivedAt ?? ""))
+      .slice(0, limit)
+      .map((research) => ({ ...research, businessName: this.subjects.get(research.taxId)?.businessName ?? "" }))
+  }
+
   async getMonthlyLimit(): Promise<number> {
     return this.monthlyLimitUsd ?? DEFAULT_MONTHLY_LIMIT_USD
   }
@@ -43,6 +63,12 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
   async spendSince(since: string): Promise<{ totalUsd: number; count: number }> {
     const inMonth = this.saved.filter((research) => research.requestedAt >= since)
     return { totalUsd: inMonth.reduce((sum, research) => sum + research.costUsd, 0), count: inMonth.length }
+  }
+
+  private replace(id: string, changes: Partial<WebResearch>): void {
+    const index = this.saved.findIndex((research) => research.id === id)
+    const current = this.saved[index]
+    if (current) this.saved[index] = { ...current, ...changes }
   }
 
   private newestFirst(): WebResearch[] {

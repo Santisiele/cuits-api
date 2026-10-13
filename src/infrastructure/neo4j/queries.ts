@@ -895,6 +895,29 @@ export const Queries = {
     LIMIT $limit
   `,
 
+  FIND_WEB_RESEARCH_BY_ID: `
+    MATCH (r:WebResearch {id: $id})-[:ABOUT]->(c:CUIT)
+    RETURN r, c.id AS taxId
+  `,
+
+  ARCHIVE_WEB_RESEARCH: `
+    MATCH (r:WebResearch {id: $id})
+    SET r.archivedAt = $archivedAt, r.archivedBy = $archivedBy
+  `,
+
+  RESTORE_WEB_RESEARCH: `
+    MATCH (r:WebResearch {id: $id})
+    REMOVE r.archivedAt, r.archivedBy
+  `,
+
+  FIND_ARCHIVED_WEB_RESEARCH: `
+    MATCH (r:WebResearch)-[:ABOUT]->(c:CUIT)
+    WHERE r.archivedAt IS NOT NULL
+    RETURN r, c.id AS taxId, c.businessName AS businessName
+    ORDER BY r.archivedAt DESC
+    LIMIT $limit
+  `,
+
   SUM_WEB_RESEARCH_SINCE: `
     MATCH (r:WebResearch)
     WHERE r.requestedAt >= $since

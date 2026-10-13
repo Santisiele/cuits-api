@@ -372,6 +372,10 @@ export interface IWebResearchRepository {
   save(research: WebResearch): Promise<void>
   listForCuit(taxId: string): Promise<WebResearch[]>
   listRecent(limit: number): Promise<WebResearchWithName[]>
+  findById(id: string): Promise<WebResearch | null>
+  archive(id: string, archivedAt: string, archivedBy: string): Promise<void>
+  restore(id: string): Promise<void>
+  listArchived(limit: number): Promise<WebResearchWithName[]>
   getMonthlyLimit(): Promise<number>
   setMonthlyLimit(monthlyLimitUsd: number, updatedBy: string, updatedAt: string): Promise<void>
   spendSince(since: string): Promise<{ totalUsd: number; count: number }>

@@ -89,8 +89,35 @@ export class Neo4jWebResearchRepository implements IWebResearchRepository {
   }
 
   listRecent(limit: number): Promise<WebResearchWithName[]> {
+    return this.listWithName(Queries.FIND_RECENT_WEB_RESEARCH, limit)
+  }
+
+  findById(id: string): Promise<WebResearch | null> {
     return this.run(async (session) => {
-      const result = await session.run(Queries.FIND_RECENT_WEB_RESEARCH, { limit: neo4j.int(limit) })
+      const record = (await session.run(Queries.FIND_WEB_RESEARCH_BY_ID, { id })).records[0]
+      return record ? toResearch(record.get("r").properties, record.get("taxId")) : null
+    })
+  }
+
+  archive(id: string, archivedAt: string, archivedBy: string): Promise<void> {
+    return this.run(async (session) => {
+      await session.run(Queries.ARCHIVE_WEB_RESEARCH, { id, archivedAt, archivedBy })
+    })
+  }
+
+  restore(id: string): Promise<void> {
+    return this.run(async (session) => {
+      await session.run(Queries.RESTORE_WEB_RESEARCH, { id })
+    })
+  }
+
+  listArchived(limit: number): Promise<WebResearchWithName[]> {
+    return this.listWithName(Queries.FIND_ARCHIVED_WEB_RESEARCH, limit)
+  }
+
+  private listWithName(query: string, limit: number): Promise<WebResearchWithName[]> {
+    return this.run(async (session) => {
+      const result = await session.run(query, { limit: neo4j.int(limit) })
       return result.records.map((record) => ({
         ...toResearch(record.get("r").properties, record.get("taxId")),
         businessName: toText(record.get("businessName")),

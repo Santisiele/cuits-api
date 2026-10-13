@@ -101,6 +101,44 @@ describe("Neo4jWebResearchRepository", () => {
     expect(Queries.SUM_WEB_RESEARCH_SINCE).not.toContain("archivedAt")
   })
 
+  it("finds a research by id, or nothing", async () => {
+    expect(await repository.findById("r1")).toBeNull()
+    expect(state.calls[0]).toEqual({ query: Queries.FIND_WEB_RESEARCH_BY_ID, params: { id: "r1" } })
+
+    state.rows = [{ taxId: "30712345678", r: { properties: { id: "r1", archivedAt: "2026-10-13T15:00:00.000Z", archivedBy: "santi" } } }]
+    expect(await repository.findById("r1")).toMatchObject({
+      id: "r1",
+      taxId: "30712345678",
+      archivedAt: "2026-10-13T15:00:00.000Z",
+      archivedBy: "santi",
+    })
+  })
+
+  it("archives and restores by id", async () => {
+    await repository.archive("r1", "2026-10-13T15:00:00.000Z", "santi")
+    await repository.restore("r1")
+    expect(state.calls).toEqual([
+      { query: Queries.ARCHIVE_WEB_RESEARCH, params: { id: "r1", archivedAt: "2026-10-13T15:00:00.000Z", archivedBy: "santi" } },
+      { query: Queries.RESTORE_WEB_RESEARCH, params: { id: "r1" } },
+    ])
+  })
+
+  it("lists archived research with the name, newest archived first, bounded by an integer limit", async () => {
+    state.rows = [
+      {
+        taxId: "30712345678",
+        businessName: "ACME SA",
+        r: { properties: { id: "r1", status: "done", archivedAt: "2026-10-13T15:00:00.000Z", archivedBy: "santi" } },
+      },
+    ]
+    expect(await repository.listArchived(500)).toEqual([
+      expect.objectContaining({ id: "r1", businessName: "ACME SA", archivedAt: "2026-10-13T15:00:00.000Z", archivedBy: "santi" }),
+    ])
+    expect(state.calls[0]?.query).toBe(Queries.FIND_ARCHIVED_WEB_RESEARCH)
+    expect(neo4j.isInt(state.calls[0]?.params["limit"])).toBe(true)
+    expect(Queries.FIND_ARCHIVED_WEB_RESEARCH).toContain("ORDER BY r.archivedAt DESC")
+  })
+
   it("stores the sources as a JSON string", async () => {
     await repository.save({
       id: "r1",
