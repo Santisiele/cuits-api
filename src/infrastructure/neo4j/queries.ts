@@ -717,6 +717,15 @@ export const Queries = {
     LIMIT $limit
   `,
 
+  SAVE_BIRTHDAY_SWEEP: `
+    MERGE (b:BirthdaySweep {id: "daily"})
+    SET b.day = $day,
+        b.consultedToday = $consultedToday,
+        b.dailyLimit = $dailyLimit,
+        b.misses = $misses,
+        b.updatedAt = $updatedAt
+  `,
+
   SET_BIRTHDAY: `
     MATCH (c:CUIT {id: $taxId})
     SET c.birthday = $birthday

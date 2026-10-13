@@ -13,6 +13,7 @@ import type {
   BackupRelationship,
 } from "@domain/backup.js"
 import type { Role, StoredUser } from "@domain/users.js"
+import type { BirthdaySweepSnapshot } from "@domain/birthdayProgress.js"
 import type {
   ResearchFindings,
   ResearchSubject,
@@ -281,6 +282,10 @@ export interface IBirthdaySweepRepository {
   countPeopleWithoutBirthday(): Promise<number>
   findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]>
   setBirthday(taxId: string, birthday: string): Promise<void>
+}
+
+export interface IBirthdaySweepMirror {
+  saveSweep(snapshot: BirthdaySweepSnapshot): Promise<void>
 }
 
 export interface IBackupRepository {

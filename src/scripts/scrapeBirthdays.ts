@@ -6,6 +6,8 @@ import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 import { SacScraper } from "@scrapers/nosisSac.js"
 import { BirthdaySweepService, type SweepEvent } from "@application/BirthdaySweepService.js"
+import { BirthdaySweepMirror } from "@application/BirthdaySweepMirror.js"
+import { Neo4jBirthdaySweepRepository } from "@infrastructure/neo4j/Neo4jBirthdaySweepRepository.js"
 import {
   DAILY_LIMIT,
   budgetFor,
@@ -28,6 +30,10 @@ function readState(): ScrapeState {
 function writeState(state: ScrapeState): void {
   fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true })
   fs.writeFileSync(STATE_PATH, JSON.stringify(state, null, 2), "utf8")
+}
+
+function logMirrorFailure(error: unknown): void {
+  logger.warn(`Could not mirror the sweep state into the graph: ${error instanceof Error ? error.message : String(error)}`)
 }
 
 function randomDelay(): Promise<void> {
@@ -68,6 +74,12 @@ async function main(): Promise<void> {
   }
 
   const service = new BirthdaySweepService(new Neo4jRepository())
+  const mirror = new BirthdaySweepMirror(new Neo4jBirthdaySweepRepository(), logMirrorFailure)
+
+  function persist(current: ScrapeState): void {
+    writeState(current)
+    mirror.push(current)
+  }
 
   try {
     const pending = await service.countPending()
@@ -99,11 +111,11 @@ async function main(): Promise<void> {
     })
 
     const tally = await service.sweep(scraper, candidates, state, {
-      persist: writeState,
+      persist,
       wait: randomDelay,
       report: logEvent,
     })
-    writeState(state)
+    persist(state)
 
     logger.info("─── Summary ─────────────────────────────────")
     logger.info(`Updated:          ${tally.updated}`)
@@ -113,6 +125,7 @@ async function main(): Promise<void> {
     logger.info(`Consultations:    ${state.consultedToday}/${DAILY_LIMIT} today`)
     logger.info(`Still pending:    ${pending - tally.updated}`)
   } finally {
+    await mirror.settled()
     await Neo4jDriver.close()
   }
 }
