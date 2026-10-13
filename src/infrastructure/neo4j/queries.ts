@@ -726,6 +726,52 @@ export const Queries = {
         b.updatedAt = $updatedAt
   `,
 
+  FIND_BIRTHDAY_SWEEP: `
+    MATCH (b:BirthdaySweep {id: "daily"})
+    RETURN b.day            AS day,
+           b.consultedToday AS consultedToday,
+           b.dailyLimit     AS dailyLimit,
+           b.misses         AS misses,
+           b.updatedAt      AS updatedAt
+  `,
+
+  COUNT_KNOWN_PEOPLE_BIRTHDAYS: `
+    MATCH (c:CUIT {isKnown: true})
+    WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'
+    RETURN count(c) AS knownPeople,
+           count(CASE WHEN c.birthday IS NOT NULL AND trim(c.birthday) <> '' THEN 1 END) AS withBirthday
+  `,
+
+  COUNT_BIRTHDAYS_BY_SOURCE: `
+    MATCH (s:Source {category: "known"})
+    OPTIONAL MATCH (s)<-[:HAS_SOURCE]-(c:CUIT {isKnown: true})
+    WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'
+    WITH s.name AS source,
+         count(c) AS people,
+         count(CASE WHEN c.birthday IS NOT NULL AND trim(c.birthday) <> '' THEN 1 END) AS withBirthday
+    RETURN source, people, withBirthday, people - withBirthday AS missing
+    ORDER BY missing DESC, source
+  `,
+
+  FIND_CUIT_NAMES: `
+    UNWIND $taxIds AS taxId
+    OPTIONAL MATCH (c:CUIT {id: taxId})
+    RETURN taxId, coalesce(c.businessName, '') AS businessName
+  `,
+
+  FIND_PEOPLE_PENDING_BIRTHDAY: `
+    MATCH (c:CUIT {isKnown: true})
+    WHERE c.id =~ '^(20|23|24|27)[0-9]{9}$'
+      AND (c.birthday IS NULL OR trim(c.birthday) = '')
+      AND NOT c.id IN $skip
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(s:Source)
+    WITH c, s.name AS source
+    ORDER BY source
+    WITH c, collect(source) AS sources
+    RETURN c.id AS taxId, coalesce(c.businessName, '') AS businessName, sources
+    ORDER BY businessName, taxId
+  `,
+
   SET_BIRTHDAY: `
     MATCH (c:CUIT {id: $taxId})
     SET c.birthday = $birthday
