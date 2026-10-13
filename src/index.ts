@@ -11,6 +11,7 @@ import sourceAdminRoutes from "@routes/sources.js"
 import trustLevelRoutes from "@routes/trustLevels.js"
 import userRoutes from "@routes/users.js"
 import researchRoutes from "@routes/research.js"
+import birthdayRoutes from "@routes/birthdays.js"
 import { schemas } from "@schemas.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
@@ -96,6 +97,7 @@ async function protectedRoutes(instance: FastifyInstance) {
   await instance.register(trustLevelRoutes)
   await instance.register(userRoutes)
   await instance.register(researchRoutes)
+  await instance.register(birthdayRoutes)
 }
 
 await server.register(protectedRoutes)

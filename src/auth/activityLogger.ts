@@ -239,6 +239,16 @@ export function logBirthdaysViewed(
   })
 }
 
+export function logBirthdayProgressViewed(username: string, missing: number, pending: number): void {
+  activityLogger.info({
+    event: "birthday_progress_viewed",
+    username,
+    missing,
+    pending,
+    message: `${username} viewed the birthday load progress — ${missing} missing, ${pending} pending`,
+  })
+}
+
 /** Logs the to-know nodes list being viewed. */
 export function logToKnowViewed(username: string, nodeCount: number): void {
   activityLogger.info({
