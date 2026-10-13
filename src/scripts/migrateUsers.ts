@@ -12,10 +12,10 @@ interface FileUser {
 
 const args = process.argv.slice(2)
 const apply = args.includes("--apply")
-const adminUsername = args.find((a) => !a.startsWith("--"))
+const creatorUsername = args.find((a) => !a.startsWith("--"))
 
-if (!adminUsername) {
-  console.error("Usage: pnpm migrate:users <adminUsername> [--apply]")
+if (!creatorUsername) {
+  console.error("Usage: pnpm migrate:users <creatorUsername> [--apply]")
   process.exit(1)
 }
 
@@ -31,8 +31,8 @@ const fileUsers = (JSON.parse(fs.readFileSync(usersPath, "utf-8")) as FileUser[]
   (u) => u.username && u.passwordHash
 )
 
-if (!fileUsers.some((u) => isSameUser(u.username, adminUsername))) {
-  console.error(`"${adminUsername}" is not in ${usersPath}, so nobody would be admin. Aborting.`)
+if (!fileUsers.some((u) => isSameUser(u.username, creatorUsername))) {
+  console.error(`"${creatorUsername}" is not in ${usersPath}, so nobody would be the creator. Aborting.`)
   process.exit(1)
 }
 
@@ -43,7 +43,7 @@ console.log(`${apply ? "Migrating" : "Dry run:"} ${fileUsers.length} users from 
 
 try {
   for (const fileUser of fileUsers) {
-    const role = isSameUser(fileUser.username, adminUsername) ? "admin" : "member"
+    const role = isSameUser(fileUser.username, creatorUsername) ? "creator" : "member"
     const existing = await repository.findByUsername(fileUser.username)
     if (existing) {
       console.log(`  ${fileUser.username}: already in the graph as ${existing.role}, left alone`)
