@@ -128,6 +128,8 @@ describe("the request to Claude", () => {
     expect(system).toContain("fuente")
     expect(system).toContain("homónimos")
     expect(system).toContain("no encontrás nada relevante")
+    expect(system).toContain("únicamente con el informe final")
+    expect(system).toContain("Markdown")
   })
 })
 
@@ -151,6 +153,25 @@ describe("reading the answer", () => {
 
   it("joins the text blocks into the summary", () => {
     expect(summaryFromBlocks(blocks)).toBe("ACME SA es una constructora constituida en 2010. Sin concursos.")
+  })
+
+  it("drops what was written between searches and keeps only the final answer", () => {
+    expect(
+      summaryFromBlocks([
+        { type: "text", text: "Let me search the Boletín Oficial." },
+        { type: "server_tool_use" },
+        { type: "web_search_tool_result" },
+        { type: "text", text: "Let me get more details." },
+        { type: "server_tool_use" },
+        { type: "web_fetch_tool_result" },
+        { type: "thinking" },
+        { type: "text", text: "## Resumen\nACME SA es una constructora." },
+      ])
+    ).toBe("## Resumen\nACME SA es una constructora.")
+  })
+
+  it("keeps all the text when no tool was used", () => {
+    expect(summaryFromBlocks([{ type: "text", text: "Sin datos públicos." }])).toBe("Sin datos públicos.")
   })
 
   it("takes deduplicated sources from the web search citations", () => {

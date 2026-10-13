@@ -138,6 +138,8 @@ const SYSTEM_PROMPT = [
   "Cada afirmación tiene que estar respaldada por una fuente citada.",
   "Si hay homónimos o dudas de que se trate de la misma entidad, decilo explícitamente.",
   "Si no encontrás nada relevante, decilo en lugar de rellenar.",
+  "Respondé únicamente con el informe final, todo en español. No narres lo que vas a buscar ni lo que estás haciendo.",
+  "Usá Markdown: títulos con ##, listas con guiones, negritas para lo importante y enlaces con [texto](url).",
 ].join("\n")
 
 export function buildResearchRequest(subject: ResearchSubject): ResearchRequest {
@@ -148,8 +150,14 @@ export function buildResearchRequest(subject: ResearchSubject): ResearchRequest 
   }
 }
 
+function isToolBlock(block: CitedBlock): boolean {
+  return block.type.endsWith("tool_use") || block.type.endsWith("tool_result")
+}
+
 export function summaryFromBlocks(blocks: readonly CitedBlock[]): string {
+  const lastTool = blocks.reduce((last, block, index) => (isToolBlock(block) ? index : last), -1)
   return blocks
+    .slice(lastTool + 1)
     .map((block) => (block.type === "text" ? block.text ?? "" : ""))
     .join("")
     .trim()
