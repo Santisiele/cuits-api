@@ -801,4 +801,58 @@ export const Queries = {
     SET u.passwordHash = $passwordHash
     RETURN u.username AS username
   `,
+
+  FIND_RESEARCH_SUBJECT: `
+    MATCH (c:CUIT {id: $taxId})
+    RETURN c.businessName AS businessName, c.inMyBase AS inMyBase
+  `,
+
+  CREATE_WEB_RESEARCH: `
+    MATCH (c:CUIT {id: $taxId})
+    CREATE (r:WebResearch {
+      id: $id,
+      requestedAt: $requestedAt,
+      requestedBy: $requestedBy,
+      status: $status,
+      summary: $summary,
+      sources: $sources,
+      model: $model,
+      inputTokens: $inputTokens,
+      outputTokens: $outputTokens,
+      cacheReadTokens: $cacheReadTokens,
+      webSearches: $webSearches,
+      costUsd: $costUsd
+    })-[:ABOUT]->(c)
+  `,
+
+  FIND_WEB_RESEARCH_FOR_CUIT: `
+    MATCH (r:WebResearch)-[:ABOUT]->(c:CUIT {id: $taxId})
+    RETURN r, c.id AS taxId, c.businessName AS businessName
+    ORDER BY r.requestedAt DESC
+  `,
+
+  FIND_RECENT_WEB_RESEARCH: `
+    MATCH (r:WebResearch)-[:ABOUT]->(c:CUIT)
+    RETURN r, c.id AS taxId, c.businessName AS businessName
+    ORDER BY r.requestedAt DESC
+    LIMIT $limit
+  `,
+
+  SUM_WEB_RESEARCH_SINCE: `
+    MATCH (r:WebResearch)
+    WHERE r.requestedAt >= $since
+    RETURN coalesce(sum(r.costUsd), 0.0) AS totalUsd, count(r) AS count
+  `,
+
+  FIND_AI_BUDGET: `
+    MATCH (b:AiBudget {id: "monthly"})
+    RETURN b.monthlyLimitUsd AS monthlyLimitUsd
+  `,
+
+  SET_AI_BUDGET: `
+    MERGE (b:AiBudget {id: "monthly"})
+    SET b.monthlyLimitUsd = $monthlyLimitUsd,
+        b.updatedAt = $updatedAt,
+        b.updatedBy = $updatedBy
+  `,
 } as const
