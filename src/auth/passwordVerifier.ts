@@ -1,5 +1,5 @@
-import bcrypt from "bcrypt"
-import { UserRepository } from "@auth/UserRepository.js"
+import { Neo4jUserRepository } from "@infrastructure/neo4j/Neo4jUserRepository.js"
+import { BcryptPasswordHasher } from "@infrastructure/auth/BcryptPasswordHasher.js"
 
 /**
  * Raised when step-up authentication fails. Carries no detail about
@@ -14,7 +14,8 @@ export class PasswordVerificationError extends Error {
   }
 }
 
-const userRepository = new UserRepository()
+const userRepository = new Neo4jUserRepository()
+const hasher = new BcryptPasswordHasher()
 
 /**
  * Verifies that a password matches the currently-authenticated user's
@@ -33,9 +34,9 @@ export async function verifyUserPassword(
   username: string,
   password: string,
 ): Promise<void> {
-  const user = userRepository.findByUsername(username)
+  const user = await userRepository.findByUsername(username)
   if (!user) throw new PasswordVerificationError("User not found")
 
-  const isValid = await bcrypt.compare(password, user.passwordHash)
+  const isValid = await hasher.compare(password, user.passwordHash)
   if (!isValid) throw new PasswordVerificationError("Invalid password")
 }

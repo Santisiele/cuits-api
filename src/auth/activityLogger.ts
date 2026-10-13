@@ -61,6 +61,26 @@ export function logUnauthorized(ip: string, url: string, reason: string): void {
   activityLogger.warn({ event: "unauthorized", ip, url, reason, message: `Unauthorized access to ${url}` })
 }
 
+export function logForbidden(username: string, ip: string, url: string): void {
+  activityLogger.warn({ event: "forbidden", username, ip, url, message: `${username} was denied ${url}, admin only` })
+}
+
+export function logUserOperation(
+  actor: string,
+  operation: "create" | "update" | "reset_password" | "change_own_password",
+  target: string,
+  details: Record<string, unknown> = {}
+): void {
+  activityLogger.info({
+    event: "user_operation",
+    username: actor,
+    operation,
+    target,
+    ...details,
+    message: `${actor} ran ${operation} on user ${target}`,
+  })
+}
+
 // ─── Semantic action logs ─────────────────────────────────────────────────────
 
 /** Logs a CUIT search. */

@@ -14,6 +14,8 @@ export default defineConfig({
       "@routes": src("routes"),
       "@scrapers": src("scrapers"),
       "@scripts": src("scripts"),
+      "@auth": src("auth"),
+      "@middleware": src("middleware"),
       "@config.js": src("config.ts"),
       "@config": src("config.ts"),
       "@schemas.js": src("schemas.ts"),

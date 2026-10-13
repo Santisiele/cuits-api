@@ -1,8 +1,7 @@
 import type { FastifyRequest, FastifyReply } from "fastify"
 import { AuthService } from "@auth/AuthService.js"
 import { logUnauthorized } from "@auth/activityLogger.js"
-
-const authService = new AuthService()
+import type { Role } from "@domain/users.js"
 
 // ─── Request augmentation ─────────────────────────────────────────────────────
 
@@ -10,38 +9,34 @@ declare module "fastify" {
   interface FastifyRequest {
     /** Username extracted from the verified JWT. Set by the auth middleware. */
     username: string
+    role: Role
   }
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
-/**
- * Fastify hook that verifies the JWT on every request to protected routes.
- *
- * Expects the token in the Authorization header: `Bearer <token>`
- *
- * On success: sets `request.username` for downstream handlers.
- * On failure: returns 401 and logs the unauthorized attempt.
- */
-export async function authMiddleware(
-  request: FastifyRequest,
-  reply: FastifyReply
-): Promise<void> {
-  const authHeader = request.headers.authorization
+type SessionResolver = Pick<AuthService, "resolveSession">
 
-  if (!authHeader?.startsWith("Bearer ")) {
-    logUnauthorized(request.ip, request.url, "missing_token")
-    await reply.code(401).send({ message: "Authentication required" })
-    return
-  }
+export function createAuthMiddleware(authService: SessionResolver) {
+  return async function authMiddleware(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+    const authHeader = request.headers.authorization
 
-  const token = authHeader.slice(7)
+    if (!authHeader?.startsWith("Bearer ")) {
+      logUnauthorized(request.ip, request.url, "missing_token")
+      await reply.code(401).send({ message: "Authentication required" })
+      return
+    }
 
-  try {
-    const payload = authService.verify(token)
-    request.username = payload.username
-  } catch {
-    logUnauthorized(request.ip, request.url, "invalid_token")
-    await reply.code(401).send({ message: "Invalid or expired token" })
+    const session = await authService.resolveSession(authHeader.slice(7))
+    if (!session.valid) {
+      logUnauthorized(request.ip, request.url, session.reason)
+      await reply.code(401).send({ message: "Invalid or expired token" })
+      return
+    }
+
+    request.username = session.username
+    request.role = session.role
   }
 }
+
+export const authMiddleware = createAuthMiddleware(new AuthService())

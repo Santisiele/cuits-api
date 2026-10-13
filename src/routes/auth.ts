@@ -33,6 +33,7 @@ export default async function authRoutes(server: FastifyInstance) {
             properties: {
               token: { type: "string" },
               username: { type: "string" },
+              role: { type: "string" },
             },
           },
           401: {
@@ -56,7 +57,7 @@ export default async function authRoutes(server: FastifyInstance) {
       }
 
       logLogin(result.username, ip)
-      return { token: result.token, username: result.username }
+      return { token: result.token, username: result.username, role: result.role }
     }
   )
 
