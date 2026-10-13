@@ -3,10 +3,10 @@ import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   isAssignableRole,
-  isSameUser,
   isValidPassword,
   isValidUsername,
   toPublicUser,
+  userChangeRejection,
   type AssignableRole,
   type PublicUser,
   type Role,
@@ -61,7 +61,7 @@ export class UserAdminService {
     return toPublicUser(user)
   }
 
-  async update(actor: string, username: string, changes: UserChanges): Promise<PublicUser> {
+  async update(actorRole: Role, username: string, changes: UserChanges): Promise<PublicUser> {
     if (changes.role !== undefined && !isAssignableRole(changes.role)) {
       throw new UserAdminError("invalid_role", "Role must be admin or member")
     }
@@ -71,13 +71,7 @@ export class UserAdminService {
     const role = changes.role as AssignableRole | undefined
     const disabled = changes.disabled as boolean | undefined
 
-    const existing = await this.requireUser(username)
-    if (isSameUser(actor, existing.username) && (role === "member" || disabled === true)) {
-      throw new UserAdminError(
-        "cannot_change_self",
-        "An admin cannot demote or disable themselves"
-      )
-    }
+    const existing = await this.requireChangeableUser(actorRole, username)
 
     const fields: { role?: Role; disabledAt?: string | null } = {}
     if (role !== undefined) fields.role = role
@@ -90,9 +84,9 @@ export class UserAdminService {
     return toPublicUser(updated)
   }
 
-  async resetPassword(username: string, password: string): Promise<void> {
+  async resetPassword(actorRole: Role, username: string, password: string): Promise<void> {
     this.validatePassword(password)
-    const existing = await this.requireUser(username)
+    const existing = await this.requireChangeableUser(actorRole, username)
     await this.repository.setPasswordHash(existing.username, await this.hasher.hash(password))
   }
 
@@ -111,6 +105,18 @@ export class UserAdminService {
         `Password must be ${MIN_PASSWORD_LENGTH} to ${MAX_PASSWORD_LENGTH} characters`
       )
     }
+  }
+
+  private async requireChangeableUser(actorRole: Role, username: string): Promise<StoredUser> {
+    const user = await this.requireUser(username)
+    const rejection = userChangeRejection(actorRole, user.role)
+    if (rejection === "cannot_change_creator") {
+      throw new UserAdminError(rejection, "Nobody can change the creator through the API")
+    }
+    if (rejection === "creator_only") {
+      throw new UserAdminError(rejection, "Only the creator can change an admin")
+    }
+    return user
   }
 
   private async requireUser(username: string): Promise<StoredUser> {

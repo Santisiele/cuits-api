@@ -7,6 +7,7 @@ import {
   isValidPassword,
   isValidUsername,
   toPublicUser,
+  userChangeRejection,
   usernameKey,
 } from "@domain/users"
 import { UserAdminService, UserAdminError } from "@application/UserAdminService"
@@ -101,68 +102,125 @@ describe("UserAdminService.create", () => {
   })
 })
 
-describe("UserAdminService.update", () => {
-  it("changes the role of another user", async () => {
-    const repository = new InMemoryUserRepository([storedUser(), storedUser({ username: "luchi", role: "member" })])
-    const user = await service(repository).update("santi", "luchi", { role: "admin" })
-    expect(user.role).toBe("admin")
+function team() {
+  return new InMemoryUserRepository([
+    storedUser({ username: "sofi", role: "creator" }),
+    storedUser({ username: "santi", role: "admin" }),
+    storedUser({ username: "diego", role: "admin" }),
+    storedUser({ username: "luchi", role: "member" }),
+  ])
+}
+
+describe("who can change whom", () => {
+  it("nobody changes the creator", () => {
+    expect(userChangeRejection("creator", "creator")).toBe("cannot_change_creator")
+    expect(userChangeRejection("admin", "creator")).toBe("cannot_change_creator")
   })
 
-  it("disables and re-enables a user", async () => {
-    const repository = new InMemoryUserRepository([storedUser(), storedUser({ username: "luchi", role: "member" })])
-    const users = service(repository)
+  it("only the creator changes an admin", () => {
+    expect(userChangeRejection("creator", "admin")).toBeNull()
+    expect(userChangeRejection("admin", "admin")).toBe("creator_only")
+  })
 
-    expect((await users.update("santi", "luchi", { disabled: true })).disabled).toBe(true)
-    expect((await repository.findByUsername("luchi"))?.disabledAt).toBe(NOW.toISOString())
-    expect((await users.update("santi", "luchi", { disabled: false })).disabled).toBe(false)
+  it("the creator and admins change a member", () => {
+    expect(userChangeRejection("creator", "member")).toBeNull()
+    expect(userChangeRejection("admin", "member")).toBeNull()
+  })
+})
+
+describe("UserAdminService.update", () => {
+  it("lets the creator and admins promote a member", async () => {
+    for (const actor of ["creator", "admin"] as const) {
+      const repository = team()
+      expect((await service(repository).update(actor, "luchi", { role: "admin" })).role).toBe("admin")
+    }
+  })
+
+  it("lets only the creator demote an admin", async () => {
+    const repository = team()
+    expect(await rejection(service(repository).update("admin", "diego", { role: "member" }))).toBe("creator_only")
+    expect((await repository.findByUsername("diego"))?.role).toBe("admin")
+    expect((await service(repository).update("creator", "diego", { role: "member" })).role).toBe("member")
+  })
+
+  it("lets the creator and admins disable and re-enable a member", async () => {
+    for (const actor of ["creator", "admin"] as const) {
+      const repository = team()
+      const users = service(repository)
+      expect((await users.update(actor, "luchi", { disabled: true })).disabled).toBe(true)
+      expect((await repository.findByUsername("luchi"))?.disabledAt).toBe(NOW.toISOString())
+      expect((await users.update(actor, "luchi", { disabled: false })).disabled).toBe(false)
+    }
+  })
+
+  it("lets only the creator disable or enable an admin", async () => {
+    const repository = team()
+    expect(await rejection(service(repository).update("admin", "diego", { disabled: true }))).toBe("creator_only")
+    expect((await service(repository).update("creator", "diego", { disabled: true })).disabled).toBe(true)
+  })
+
+  it("stops an admin from changing themselves", async () => {
+    const users = service(team())
+    expect(await rejection(users.update("admin", "Santi", { role: "member" }))).toBe("creator_only")
+    expect(await rejection(users.update("admin", "santi", { disabled: true }))).toBe("creator_only")
+  })
+
+  it("never changes the creator, not even by the creator", async () => {
+    const users = service(team())
+    expect(await rejection(users.update("creator", "sofi", { disabled: true }))).toBe("cannot_change_creator")
+    expect(await rejection(users.update("admin", "sofi", { role: "member" }))).toBe("cannot_change_creator")
   })
 
   it("keeps the original date when disabling an already disabled user", async () => {
     const repository = new InMemoryUserRepository([
-      storedUser(),
-      storedUser({ username: "luchi", disabledAt: "2026-01-01T00:00:00.000Z" }),
+      storedUser({ username: "luchi", role: "member", disabledAt: "2026-01-01T00:00:00.000Z" }),
     ])
-    await service(repository).update("santi", "luchi", { disabled: true })
+    await service(repository).update("admin", "luchi", { disabled: true })
     expect((await repository.findByUsername("luchi"))?.disabledAt).toBe("2026-01-01T00:00:00.000Z")
   })
 
-  it("refuses to let an admin demote or disable themselves", async () => {
-    const users = service(new InMemoryUserRepository([storedUser()]))
-    expect(await rejection(users.update("Santi", "santi", { role: "member" }))).toBe("cannot_change_self")
-    expect(await rejection(users.update("santi", "santi", { disabled: true }))).toBe("cannot_change_self")
-  })
-
-  it("lets an admin re-save their own admin role", async () => {
-    const users = service(new InMemoryUserRepository([storedUser()]))
-    expect((await users.update("santi", "santi", { role: "admin" })).role).toBe("admin")
-  })
-
   it("reports a user deleted between the lookup and the write", async () => {
-    const repository = new InMemoryUserRepository([storedUser(), storedUser({ username: "luchi" })])
+    const repository = team()
     repository.update = async () => null
-    expect(await rejection(service(repository).update("santi", "luchi", { role: "member" }))).toBe("user_not_found")
+    expect(await rejection(service(repository).update("admin", "luchi", { role: "admin" }))).toBe("user_not_found")
   })
 
   it("rejects an unknown user and invalid changes", async () => {
-    const users = service(new InMemoryUserRepository([storedUser()]))
-    expect(await rejection(users.update("santi", "nadie", { role: "member" }))).toBe("user_not_found")
-    expect(await rejection(users.update("santi", "santi", { role: "owner" }))).toBe("invalid_role")
-    expect(await rejection(users.update("santi", "santi", { role: "creator" }))).toBe("invalid_role")
-    expect(await rejection(users.update("santi", "santi", { disabled: "yes" }))).toBe("invalid_disabled")
+    const users = service(team())
+    expect(await rejection(users.update("admin", "nadie", { role: "member" }))).toBe("user_not_found")
+    expect(await rejection(users.update("admin", "luchi", { role: "owner" }))).toBe("invalid_role")
+    expect(await rejection(users.update("creator", "luchi", { role: "creator" }))).toBe("invalid_role")
+    expect(await rejection(users.update("admin", "luchi", { disabled: "yes" }))).toBe("invalid_disabled")
   })
 })
 
 describe("passwords", () => {
-  it("resets another user's password", async () => {
-    const repository = new InMemoryUserRepository([storedUser({ username: "luchi" })])
-    await service(repository).resetPassword("luchi", "nueva1234")
-    expect((await repository.findByUsername("luchi"))?.passwordHash).toBe("hashed:nueva1234")
+  it("lets the creator and admins reset a member's password", async () => {
+    for (const actor of ["creator", "admin"] as const) {
+      const repository = team()
+      await service(repository).resetPassword(actor, "luchi", "nueva1234")
+      expect((await repository.findByUsername("luchi"))?.passwordHash).toBe("hashed:nueva1234")
+    }
+  })
+
+  it("lets only the creator reset an admin's password", async () => {
+    const repository = team()
+    expect(await rejection(service(repository).resetPassword("admin", "diego", "nueva1234"))).toBe("creator_only")
+    expect((await repository.findByUsername("diego"))?.passwordHash).toBe("hashed:secret123")
+    await service(repository).resetPassword("creator", "diego", "nueva1234")
+    expect((await repository.findByUsername("diego"))?.passwordHash).toBe("hashed:nueva1234")
+  })
+
+  it("never resets the creator's password", async () => {
+    const users = service(team())
+    expect(await rejection(users.resetPassword("creator", "sofi", "nueva1234"))).toBe("cannot_change_creator")
+    expect(await rejection(users.resetPassword("admin", "sofi", "nueva1234"))).toBe("cannot_change_creator")
   })
 
   it("rejects a reset with a short password or an unknown user", async () => {
-    const users = service(new InMemoryUserRepository([storedUser()]))
-    expect(await rejection(users.resetPassword("santi", "short"))).toBe("invalid_password")
-    expect(await rejection(users.resetPassword("nadie", "nueva1234"))).toBe("user_not_found")
+    const users = service(team())
+    expect(await rejection(users.resetPassword("admin", "luchi", "short"))).toBe("invalid_password")
+    expect(await rejection(users.resetPassword("admin", "nadie", "nueva1234"))).toBe("user_not_found")
   })
 
   it("changes your own password only with the current one", async () => {

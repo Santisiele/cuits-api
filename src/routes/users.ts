@@ -14,9 +14,10 @@ const STATUS_BY_REASON: Record<UserRejection, number> = {
   invalid_role: 400,
   invalid_disabled: 400,
   wrong_password: 400,
+  creator_only: 403,
   user_not_found: 404,
   username_taken: 409,
-  cannot_change_self: 409,
+  cannot_change_creator: 409,
 }
 
 function handleError(err: unknown, reply: FastifyReply) {
@@ -152,7 +153,7 @@ export default async function userRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const user = await service.update(request.username, request.params.username, request.body)
+        const user = await service.update(request.role, request.params.username, request.body)
         logUserOperation(request.username, "update", user.username, { ...request.body })
         return user
       } catch (err) {
@@ -173,12 +174,12 @@ export default async function userRoutes(server: FastifyInstance) {
           required: ["password"],
           properties: { password: { type: "string" } },
         },
-        response: { 200: messageSchema, 400: errorSchema, 403: errorSchema, 404: errorSchema },
+        response: { 200: messageSchema, 400: errorSchema, 403: errorSchema, 404: errorSchema, 409: errorSchema },
       },
     },
     async (request, reply) => {
       try {
-        await service.resetPassword(request.params.username, request.body.password)
+        await service.resetPassword(request.role, request.params.username, request.body.password)
         logUserOperation(request.username, "reset_password", request.params.username)
         return { message: "Password reset" }
       } catch (err) {

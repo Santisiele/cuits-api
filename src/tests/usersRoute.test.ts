@@ -52,11 +52,17 @@ async function buildApp(as: { username: string; role: Role }): Promise<FastifyIn
 
 const ADMIN = { username: "santi", role: "admin" as const }
 const MEMBER = { username: "luchi", role: "member" as const }
+const CREATOR = { username: "sofi", role: "creator" as const }
 
 describe("user routes", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    state.repository = new InMemoryUserRepository([storedUser(), storedUser({ username: "luchi", role: "member" })])
+    state.repository = new InMemoryUserRepository([
+      storedUser(),
+      storedUser({ username: "luchi", role: "member" }),
+      storedUser({ username: "diego", role: "admin" }),
+      storedUser({ username: "sofi", role: "creator" }),
+    ])
   })
 
   it("POST /auth/login answers the role too", async () => {
@@ -148,15 +154,53 @@ describe("user routes", () => {
     expect(response.json().error).toBe("invalid_password")
   })
 
-  it("PATCH /users/:username disables a user and refuses to disable yourself", async () => {
+  it("PATCH /users/:username disables a member", async () => {
     const app = await buildApp(ADMIN)
     const disabled = await app.inject({ method: "PATCH", url: "/users/luchi", payload: { disabled: true } })
     expect(disabled.statusCode).toBe(200)
     expect(disabled.json().disabled).toBe(true)
+  })
 
-    const self = await app.inject({ method: "PATCH", url: "/users/santi", payload: { role: "member" } })
-    expect(self.statusCode).toBe(409)
-    expect(self.json().error).toBe("cannot_change_self")
+  it("PATCH /users/:username answers 403 creator_only when an admin changes an admin, themselves included", async () => {
+    const app = await buildApp(ADMIN)
+    for (const target of ["santi", "diego"]) {
+      const response = await app.inject({ method: "PATCH", url: `/users/${target}`, payload: { role: "member" } })
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toEqual({ error: "creator_only", message: expect.any(String) })
+    }
+    const reset = await app.inject({ method: "POST", url: "/users/diego/password", payload: { password: "nueva1234" } })
+    expect(reset.statusCode).toBe(403)
+    expect(reset.json().error).toBe("creator_only")
+    expect((await state.repository.findByUsername("diego"))?.role).toBe("admin")
+  })
+
+  it("lets the creator demote, disable and reset an admin", async () => {
+    const app = await buildApp(CREATOR)
+    const demoted = await app.inject({ method: "PATCH", url: "/users/diego", payload: { role: "member", disabled: true } })
+    expect(demoted.statusCode).toBe(200)
+    expect(demoted.json()).toMatchObject({ role: "member", disabled: true })
+    const reset = await app.inject({ method: "POST", url: "/users/santi/password", payload: { password: "nueva1234" } })
+    expect(reset.statusCode).toBe(200)
+  })
+
+  it("answers 409 cannot_change_creator to anyone touching the creator", async () => {
+    for (const actor of [ADMIN, CREATOR]) {
+      const app = await buildApp(actor)
+      const patch = await app.inject({ method: "PATCH", url: "/users/sofi", payload: { disabled: true } })
+      expect(patch.statusCode).toBe(409)
+      expect(patch.json()).toEqual({ error: "cannot_change_creator", message: expect.any(String) })
+      const reset = await app.inject({ method: "POST", url: "/users/sofi/password", payload: { password: "nueva1234" } })
+      expect(reset.statusCode).toBe(409)
+      expect(reset.json().error).toBe("cannot_change_creator")
+    }
+    expect((await state.repository.findByUsername("sofi"))?.disabledAt).toBeNull()
+  })
+
+  it("PATCH /users/:username answers 400 invalid_role for creator", async () => {
+    const app = await buildApp(CREATOR)
+    const response = await app.inject({ method: "PATCH", url: "/users/luchi", payload: { role: "creator" } })
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe("invalid_role")
   })
 
   it("PATCH /users/:username answers 404 for an unknown user", async () => {

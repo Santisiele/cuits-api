@@ -29,7 +29,8 @@ export type UserRejection =
   | "username_taken"
   | "user_not_found"
   | "wrong_password"
-  | "cannot_change_self"
+  | "cannot_change_creator"
+  | "creator_only"
 
 export const MIN_PASSWORD_LENGTH = 8
 export const MAX_PASSWORD_LENGTH = 72
@@ -46,6 +47,15 @@ export function isAssignableRole(value: unknown): value is AssignableRole {
 
 export function canAdminister(role: Role): boolean {
   return role === "creator" || role === "admin"
+}
+
+export function userChangeRejection(
+  actorRole: Role,
+  targetRole: Role
+): "cannot_change_creator" | "creator_only" | null {
+  if (targetRole === "creator") return "cannot_change_creator"
+  if (targetRole === "admin" && actorRole !== "creator") return "creator_only"
+  return null
 }
 
 export function isValidUsername(username: string): boolean {
