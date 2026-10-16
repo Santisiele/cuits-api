@@ -93,7 +93,7 @@ export default async function researchRoutes(server: FastifyInstance) {
   server.patch<{ Body: { monthlyLimitUsd?: unknown } | undefined }>(
     "/research/budget",
     {
-      preHandler: requireAdmin,
+      preHandler: requireCreator,
       schema: { hide: true, response: { 200: budgetSchema, 400: errorSchema, 403: errorSchema } },
     },
     async (request, reply) => {

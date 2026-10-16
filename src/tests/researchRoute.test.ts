@@ -118,12 +118,13 @@ describe("research routes", () => {
     expect(logForbidden).toHaveBeenCalledTimes(8)
   })
 
-  it("answers 403 to an admin on the archived list and on restore", async () => {
+  it("answers 403 to an admin on the archived list, on restore and on changing the limit", async () => {
     state.repository.saved.push(storedResearch({ id: ID, archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" }))
     const app = await buildApp("admin")
     const responses = await Promise.all([
       app.inject({ method: "GET", url: "/research/archived" }),
       app.inject({ method: "POST", url: `/research/${ID}/restore` }),
+      app.inject({ method: "PATCH", url: "/research/budget", payload: { monthlyLimitUsd: 5 } }),
     ])
 
     for (const response of responses) {
@@ -131,6 +132,7 @@ describe("research routes", () => {
       expect(response.json()).toEqual({ error: "forbidden", message: "Only the creator can do this" })
     }
     expect(state.repository.saved[0]?.archivedAt).toBe("2026-10-12T12:00:00.000Z")
+    expect(state.repository.monthlyLimitUsd).toBeNull()
     expect(logResearchRestored).not.toHaveBeenCalled()
   })
 
@@ -237,7 +239,7 @@ describe("research routes", () => {
   })
 
   it("PATCH /research/budget changes the limit and logs it", async () => {
-    const app = await buildApp("admin")
+    const app = await buildApp("creator")
     const response = await app.inject({ method: "PATCH", url: "/research/budget", payload: { monthlyLimitUsd: 7.5 } })
 
     expect(response.statusCode).toBe(200)
@@ -246,7 +248,7 @@ describe("research routes", () => {
   })
 
   it("PATCH /research/budget answers 400 invalid_limit for a bad value", async () => {
-    const app = await buildApp("admin")
+    const app = await buildApp("creator")
     const payloads = [{ monthlyLimitUsd: -1 }, { monthlyLimitUsd: "5" }, {}]
     for (const payload of payloads) {
       const response = await app.inject({ method: "PATCH", url: "/research/budget", payload })
