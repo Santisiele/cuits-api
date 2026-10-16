@@ -3,10 +3,12 @@ import Fastify, { type FastifyInstance } from "fastify"
 import { schemas } from "@schemas.js"
 
 const findNode = vi.fn()
+const updateNode = vi.fn()
 
 vi.mock("@infrastructure/neo4j/Neo4jSource.js", () => ({
   Neo4jSource: class {
     findNode = findNode
+    updateNode = updateNode
   },
 }))
 
@@ -101,5 +103,36 @@ describe("GET /graph/node/:taxId — lenders", () => {
     findNode.mockResolvedValue(null)
     const res = await app.inject({ method: "GET", url: "/graph/node/20000000001" })
     expect(res.statusCode).toBe(404)
+  })
+})
+
+describe("PATCH /graph/node/:taxId — the trust reason is optional", () => {
+  async function patch(body: Record<string, unknown>) {
+    const app = Fastify()
+    for (const schema of Object.values(schemas)) app.addSchema(schema)
+    app.addHook("preHandler", async (request) => {
+      request.username = "santi"
+    })
+    await app.register(graphRoutes)
+    return app.inject({ method: "PATCH", url: "/graph/node/30645705943", payload: body })
+  }
+
+  it("assigns a level without a reason", async () => {
+    updateNode.mockResolvedValue("updated")
+    const res = await patch({ levelOfTrust: 4 })
+    expect(res.statusCode).toBe(200)
+    expect(updateNode).toHaveBeenCalledWith("30645705943", { levelOfTrust: 4 })
+  })
+
+  it("keeps a reason when one is given, trimmed", async () => {
+    updateNode.mockResolvedValue("updated")
+    await patch({ levelOfTrust: 4, trustReason: "  de cordoba  " })
+    expect(updateNode).toHaveBeenLastCalledWith("30645705943", { levelOfTrust: 4, trustReason: "de cordoba" })
+  })
+
+  it("clears the reason when the level is removed", async () => {
+    updateNode.mockResolvedValue("updated")
+    await patch({ levelOfTrust: 0, trustReason: "viejo" })
+    expect(updateNode).toHaveBeenLastCalledWith("30645705943", { levelOfTrust: 0, trustReason: "" })
   })
 })

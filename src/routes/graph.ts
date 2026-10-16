@@ -489,14 +489,8 @@ export default async function graphRoutes(server: FastifyInstance) {
     async (request, reply) => {
       const { taxId } = request.params
       const { phone, email, birthday, entryDate, exitDate, loadedAt, levelOfTrust, trustReason } = request.body
-      if (levelOfTrust !== undefined && levelOfTrust !== 0 && !trustReason?.trim()) {
-        return reply
-          .code(400)
-          .send({ message: "A reason is required when a trust level is assigned" })
-      }
-
       try {
-        const reason = levelOfTrust === 0 ? "" : trustReason
+        const reason = levelOfTrust === 0 ? "" : trustReason?.trim()
         const fields = Object.fromEntries(
           Object.entries({ phone, email, birthday, levelOfTrust, trustReason: reason }).filter(([, v]) => v !== undefined)
         ) as { phone?: string; email?: string; birthday?: string, entryDate?: string, exitDate?: string, loadedAt?: string, levelOfTrust?: number, trustReason?: string }
