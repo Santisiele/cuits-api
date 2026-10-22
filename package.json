@@ -23,7 +23,7 @@
     "load:crm": "tsx src/scripts/loadFromCrm.ts",
     "load:bolsa": "tsx src/scripts/loadFromBolsa.ts",
     "load:deudoresFinanciera": "tsx src/scripts/loadFromDeudoresFinanciera.ts",
-    "load:deudores": "tsx src/scripts/loadFromDeudores.ts",
+    "load:deudoresBancos": "tsx src/scripts/loadFromDeudores.ts",
     "update:birthdays": "tsx src/scripts/updateBirthdays.ts",
     "migrate:sources": "tsx src/scripts/migrateSourcesToNodes.ts",
     "scrape:xlsx": "tsx src/scripts/scrapeToXlsx.ts",

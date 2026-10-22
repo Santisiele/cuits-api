@@ -10,7 +10,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const dryRun = args.includes("--dry-run")
   const inputPath = args.find((arg) => arg !== "--dry-run")
-  if (!inputPath) throw new Error("Usage: load:deudores <file> [--dry-run]")
+  if (!inputPath) throw new Error("Usage: load:deudoresBancos <file> [--dry-run]")
 
   logger.info(`Input: ${inputPath}`)
   const loader = new DeudoresEntityLoader(inputPath)
