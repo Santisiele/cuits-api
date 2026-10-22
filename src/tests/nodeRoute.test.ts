@@ -108,6 +108,47 @@ describe("GET /graph/node/:taxId — lenders", () => {
     expect(res.json().financieraMonths).toEqual(["2026-04"])
   })
 
+  it("sends bank debts apart from financiera debts, with every field", async () => {
+    findNode.mockResolvedValue({
+      ...debtor([{ entityName: "FINARES S.A.", date: "01/04/2026", situation: "3", totalLoan: "100" }]),
+      sources: ["Deudores por financiera", "Deudores Banco de Comercio"],
+      customFields: {
+        financieraOperations: JSON.stringify([
+          { entityName: "FINARES S.A.", date: "01/04/2026", situation: "3", totalLoan: "100" },
+        ]),
+        bankOperations: JSON.stringify([
+          { entityName: "BANCO DE COMERCIO S.A.", date: "01/07/2026", situation: "3", totalLoan: "127000" },
+          { entityName: "BANCO DE COMERCIO S.A.", date: "01/06/2026", situation: "2", totalLoan: "90000" },
+        ]),
+      },
+    })
+    const res = await app.inject({ method: "GET", url: "/graph/node/30645705943" })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().financieraMonths).toEqual(["2026-04"])
+    expect(res.json().financieraLenders).toEqual([
+      { entityName: "FINARES S.A.", months: [{ period: "2026-04", situation: "3", totalLoan: 100 }] },
+    ])
+    expect(res.json().bankMonths).toEqual(["2026-07", "2026-06"])
+    expect(res.json().bankLenders).toEqual([
+      {
+        entityName: "BANCO DE COMERCIO S.A.",
+        months: [
+          { period: "2026-07", situation: "3", totalLoan: 127000 },
+          { period: "2026-06", situation: "2", totalLoan: 90000 },
+        ],
+      },
+    ])
+  })
+
+  it("sends empty bank lists for a CUIT that owes no bank", async () => {
+    findNode.mockResolvedValue(
+      debtor([{ entityName: "FINARES S.A.", date: "01/04/2026", situation: "3", totalLoan: "1" }])
+    )
+    const res = await app.inject({ method: "GET", url: "/graph/node/30645705943" })
+    expect(res.json().bankMonths).toEqual([])
+    expect(res.json().bankLenders).toEqual([])
+  })
+
   it("answers 404 for a CUIT that is not in the graph", async () => {
     findNode.mockResolvedValue(null)
     const res = await app.inject({ method: "GET", url: "/graph/node/20000000001" })

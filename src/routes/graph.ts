@@ -8,6 +8,24 @@ import { logCuitSearch, logPathSearch, logRelationshipAdded, logRelationshipDele
 
 const neo4jSource = new Neo4jSource()
 
+const LENDER_SCHEMA = {
+  type: "object",
+  properties: {
+    entityName: { type: "string" },
+    months: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          period: { type: "string", description: "yyyy-mm, empty when the date is unknown." },
+          situation: { type: "string" },
+          totalLoan: { type: "number" },
+        },
+      },
+    },
+  },
+}
+
 /**
  * Parses a date string into its day/month components.
  * Accepts dd/mm/yyyy, dd-mm-yyyy, or just dd/mm (year ignored).
@@ -378,23 +396,19 @@ export default async function graphRoutes(server: FastifyInstance) {
                 description:
                   "Each lender this CUIT borrowed from, with its loan per month, newest month first. " +
                   "Lenders are sorted by the loan of their newest month, largest first.",
-                items: {
-                  type: "object",
-                  properties: {
-                    entityName: { type: "string" },
-                    months: {
-                      type: "array",
-                      items: {
-                        type: "object",
-                        properties: {
-                          period: { type: "string", description: "yyyy-mm, empty when the date is unknown." },
-                          situation: { type: "string" },
-                          totalLoan: { type: "number" },
-                        },
-                      },
-                    },
-                  },
-                },
+                items: LENDER_SCHEMA,
+              },
+              bankMonths: {
+                type: "array",
+                items: { type: "string" },
+                description: "Months with bank debtor operations, as yyyy-mm, most recent first.",
+              },
+              bankLenders: {
+                type: "array",
+                description:
+                  "Each bank this CUIT owes, with its loan per month, newest month first. " +
+                  "Banks are sorted by the loan of their newest month, largest first.",
+                items: LENDER_SCHEMA,
               },
               levelOfTrust: {
                 type: "number",
@@ -449,6 +463,8 @@ export default async function graphRoutes(server: FastifyInstance) {
           bolsaMonths: extractActivityMonths(node.customFields, "bolsaOperations"),
           financieraMonths: extractActivityMonths(node.customFields, "financieraOperations"),
           financieraLenders: summariseLenders(node.customFields, "financieraOperations"),
+          bankMonths: extractActivityMonths(node.customFields, "bankOperations"),
+          bankLenders: summariseLenders(node.customFields, "bankOperations"),
           publicationDate: readPublicationDate(node.customFields),
         }
       } catch (error) {
