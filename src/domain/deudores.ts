@@ -9,6 +9,7 @@ export interface DeudorOperation {
 
 export interface DeudoresGroup {
   taxId: string
+  businessName: string
   source: string
   operations: DeudorOperation[]
 }
@@ -36,12 +37,16 @@ const SOURCE_PREFIX = "Deudores "
 const MAX_LISTED_ROWS = 10
 
 const COLUMNS = {
-  period: "fecha",
-  cuit: "cuit",
-  situation: "situacion",
-  totalLoan: "prestamototal",
-  entity: "descripcion",
+  period: ["fecha"],
+  cuit: ["numeroidentificacion", "cuit"],
+  situation: ["situacion"],
+  totalLoan: ["prestamototal"],
+  entity: ["banco", "descripcion"],
 } as const
+
+const NAME_COLUMN = "nombre"
+
+type Columns = Record<keyof typeof COLUMNS, number> & { name: number }
 
 const LEGAL_SUFFIX =
   /[\s,]+(S\.?\s*A\.?\s*U\.?|S\.?\s*R\.?\s*L\.?|S\.?\s*A\.?\s*S\.?|S\.?\s*C\.?\s*A\.?|S\.?\s*A\.?)$/i
@@ -86,13 +91,13 @@ export function deudoresSourceName(entityName: string): string {
   return SOURCE_PREFIX + cleanEntityName(entityName)
 }
 
-function findColumns(header: unknown[]): Record<keyof typeof COLUMNS, number> {
+function findColumns(header: unknown[]): Columns {
   const names = header.map(normaliseHeader)
   const missing: string[] = []
-  const indexes = {} as Record<keyof typeof COLUMNS, number>
-  for (const [key, name] of Object.entries(COLUMNS) as [keyof typeof COLUMNS, string][]) {
-    const index = names.indexOf(name)
-    if (index === -1) missing.push(name)
+  const indexes = { name: names.indexOf(NAME_COLUMN) } as Columns
+  for (const [key, accepted] of Object.entries(COLUMNS) as [keyof typeof COLUMNS, readonly string[]][]) {
+    const index = names.findIndex((name) => accepted.includes(name))
+    if (index === -1) missing.push(accepted.join(" or "))
     indexes[key] = index
   }
   if (missing.length > 0) throw new Error(`Deudores file is missing columns: ${missing.join(", ")}`)
@@ -109,8 +114,8 @@ function periodDate(raw: unknown): string {
 
 function readOperation(
   row: unknown[],
-  columns: Record<keyof typeof COLUMNS, number>
-): { taxId: string; operation: DeudorOperation } | DeudoresSkipReason {
+  columns: Columns
+): { taxId: string; businessName: string; operation: DeudorOperation } | DeudoresSkipReason {
   const taxId = cell(row[columns.cuit]).replace(/\D/g, "")
   if (!CUIT_PATTERN.test(taxId)) return "cuit"
 
@@ -126,7 +131,8 @@ function readOperation(
   const entityName = cell(row[columns.entity]).replace(/\s+/g, " ")
   if (!cleanEntityName(entityName)) return "entity"
 
-  return { taxId, operation: { entityName, date, situation, totalLoan } }
+  const businessName = columns.name === -1 ? "" : cell(row[columns.name]).replace(/\s+/g, " ")
+  return { taxId, businessName, operation: { entityName, date, situation, totalLoan } }
 }
 
 export function parseDeudores(rows: unknown[][]): ParsedDeudores {
@@ -148,7 +154,8 @@ export function parseDeudores(rows: unknown[][]): ParsedDeudores {
 
     const source = deudoresSourceName(read.operation.entityName)
     const key = `${read.taxId}|${source}`
-    const group = groups.get(key) ?? { taxId: read.taxId, source, operations: [] }
+    const group = groups.get(key) ?? { taxId: read.taxId, businessName: "", source, operations: [] }
+    if (!group.businessName) group.businessName = read.businessName
     group.operations.push(read.operation)
     groups.set(key, group)
   })
@@ -211,7 +218,7 @@ export function deudoresLoadableRows(groups: DeudoresGroup[], loadedAt: string):
     nodes: {
       main: {
         document: group.taxId,
-        businessName: "",
+        businessName: group.businessName,
         source: group.source,
         category: "to_know",
         attributes: {

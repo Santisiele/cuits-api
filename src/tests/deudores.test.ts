@@ -78,6 +78,7 @@ describe("parseDeudores", () => {
       groups: [
         {
           taxId: "30645705943",
+          businessName: "",
           source: "Deudores Banco de Comercio",
           operations: [
             { entityName: "BANCO DE COMERCIO S.A.", date: "01/07/2026", situation: "3", totalLoan: "127000" },
@@ -96,8 +97,29 @@ describe("parseDeudores", () => {
     expect(parsed.groups).toEqual([
       {
         taxId: "20111111119",
+        businessName: "",
         source: "Deudores Finares",
         operations: [{ entityName: "FINARES SA", date: "01/05/2026", situation: "1", totalLoan: "500" }],
+      },
+    ])
+  })
+
+  it("reads the bank file as it really comes, with NumeroIdentificacion, Nombre and Banco", () => {
+    const parsed = parseDeudores([
+      ["Fecha", "NumeroIdentificacion", "Situacion", "PrestamoTotal", "Nombre", "Banco"],
+      [202607, 20054564946, 1, 33000, "DIRECTOR  JAIME", "BANCO DE COMERCIO S.A."],
+      [202607, 20054564946, 2, 1000, "", "BANCO DE COMERCIO S.A."],
+    ])
+    expect(parsed.skipped).toEqual([])
+    expect(parsed.groups).toEqual([
+      {
+        taxId: "20054564946",
+        businessName: "DIRECTOR JAIME",
+        source: "Deudores Banco de Comercio",
+        operations: [
+          { entityName: "BANCO DE COMERCIO S.A.", date: "01/07/2026", situation: "1", totalLoan: "33000" },
+          { entityName: "BANCO DE COMERCIO S.A.", date: "01/07/2026", situation: "2", totalLoan: "1000" },
+        ],
       },
     ])
   })
@@ -184,7 +206,7 @@ describe("parseDeudores", () => {
 
   it("names every missing column", () => {
     expect(() => parseDeudores([["Fecha", "CUIT", "Situacion"]])).toThrow(
-      "missing columns: prestamototal, descripcion"
+      "missing columns: prestamototal, banco or descripcion"
     )
   })
 
@@ -251,6 +273,14 @@ describe("describeDeudoresDryRun", () => {
 })
 
 describe("deudoresLoadableRows", () => {
+  it("writes the name the bank file brings", () => {
+    const { groups } = parseDeudores([
+      ["Fecha", "NumeroIdentificacion", "Situacion", "PrestamoTotal", "Nombre", "Banco"],
+      ["202607", "20054564946", "1", "33000", "DIRECTOR JAIME", "BANCO DE COMERCIO S.A."],
+    ])
+    expect(deudoresLoadableRows(groups, "22/10/2026")[0]?.nodes["main"]?.businessName).toBe("DIRECTOR JAIME")
+  })
+
   it("writes each group as a to_know node with no name and its operations as JSON", () => {
     const { groups } = parseDeudores(file(["202607", "20111111119", "3", "127000", "BANCO DE COMERCIO S.A."]))
     expect(deudoresLoadableRows(groups, "22/10/2026")).toEqual([
