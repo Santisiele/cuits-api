@@ -31,6 +31,7 @@
     "create:user": "tsx src/scripts/createUser.ts",
     "migrate:users": "tsx src/scripts/migrateUsers.ts",
     "migrate:splitOperations": "tsx src/scripts/splitOperationsBySource.ts",
+    "migrate:bankOperations": "tsx src/scripts/migrateBankOperations.ts",
     "sac:test": "tsx src/scripts/testSacBirthday.ts",
     "scrape:birthdays": "tsx src/scripts/scrapeBirthdays.ts",
     "backup:open": "tsx src/scripts/openBackup.ts",
