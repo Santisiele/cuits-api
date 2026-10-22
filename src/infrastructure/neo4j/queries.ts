@@ -936,4 +936,23 @@ export const Queries = {
         b.updatedAt = $updatedAt,
         b.updatedBy = $updatedBy
   `,
+
+  FIND_TRUST_LEVEL_OPTIONS: `
+    MATCH (t:TrustLevel)
+    RETURN t.value AS value, t.label AS label
+  `,
+
+  FIND_EXISTING_CUITS: `
+    UNWIND $ids AS id
+    MATCH (c:CUIT {id: id})
+    RETURN c.id AS id
+  `,
+
+  ASSIGN_TRUST_LEVELS: `
+    UNWIND $rows AS row
+    MATCH (c:CUIT {id: row.taxId})
+    SET c.levelOfTrust = row.value,
+        c.trustReason = CASE WHEN row.reason = "" THEN coalesce(c.trustReason, "") ELSE row.reason END
+    RETURN count(c) AS updated
+  `,
 } as const
