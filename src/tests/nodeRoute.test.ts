@@ -69,7 +69,7 @@ describe("GET /graph/node/:taxId — lenders", () => {
     app = await buildApp()
   })
 
-  it("sends each lender with its count and total", async () => {
+  it("sends each lender with every field of each month", async () => {
     findNode.mockResolvedValue(
       debtor([
         { entityName: "FINARES S.A.", date: "01/04/2026", situation: "3", totalLoan: "2638000" },
@@ -80,8 +80,17 @@ describe("GET /graph/node/:taxId — lenders", () => {
     const res = await app.inject({ method: "GET", url: "/graph/node/30645705943" })
     expect(res.statusCode).toBe(200)
     expect(res.json().financieraLenders).toEqual([
-      { entityName: "FINARES S.A.", operationCount: 2, totalLoan: 3638000 },
-      { entityName: "MARIAS CAPITAL SA", operationCount: 1, totalLoan: 500000 },
+      {
+        entityName: "FINARES S.A.",
+        months: [
+          { period: "2026-05", situation: "3", totalLoan: 1000000 },
+          { period: "2026-04", situation: "3", totalLoan: 2638000 },
+        ],
+      },
+      {
+        entityName: "MARIAS CAPITAL SA",
+        months: [{ period: "2026-05", situation: "1", totalLoan: 500000 }],
+      },
     ])
   })
 

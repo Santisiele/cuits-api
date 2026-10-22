@@ -376,14 +376,23 @@ export default async function graphRoutes(server: FastifyInstance) {
               financieraLenders: {
                 type: "array",
                 description:
-                  "Each lender this CUIT borrowed from in Deudores por financiera, with how many " +
-                  "operations and the sum of their loans, largest total first.",
+                  "Each lender this CUIT borrowed from, with its loan per month, newest month first. " +
+                  "Lenders are sorted by the loan of their newest month, largest first.",
                 items: {
                   type: "object",
                   properties: {
                     entityName: { type: "string" },
-                    operationCount: { type: "number" },
-                    totalLoan: { type: "number" },
+                    months: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          period: { type: "string", description: "yyyy-mm, empty when the date is unknown." },
+                          situation: { type: "string" },
+                          totalLoan: { type: "number" },
+                        },
+                      },
+                    },
                   },
                 },
               },

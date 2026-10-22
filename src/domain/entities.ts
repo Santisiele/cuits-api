@@ -333,10 +333,15 @@ export interface TrustLevelInfo {
   description: string
 }
 
+export interface FinancieraLenderMonth {
+  period: string
+  situation: string
+  totalLoan: number
+}
+
 export interface FinancieraLender {
   entityName: string
-  operationCount: number
-  totalLoan: number
+  months: FinancieraLenderMonth[]
 }
 
 export interface BirthdayCandidate {
