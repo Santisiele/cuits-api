@@ -148,6 +148,12 @@ describe("parseDeudores", () => {
     })
   })
 
+  it("keeps any situation the entity reports, like 11", () => {
+    const parsed = parseDeudores(file(["202607", "30505607925", "11", "250312000", "BANCO DE COMERCIO S.A."]))
+    expect(parsed.skipped).toEqual([])
+    expect(parsed.groups[0]?.operations[0]?.situation).toBe("11")
+  })
+
   it.each([
     [["202607", "2011111111", "1", "100", "FINARES SA"], "cuit"],
     [["202607", "", "1", "100", "FINARES SA"], "cuit"],
@@ -155,7 +161,8 @@ describe("parseDeudores", () => {
     [["202613", "20111111119", "1", "100", "FINARES SA"], "period"],
     [["202600", "20111111119", "1", "100", "FINARES SA"], "period"],
     [["", "20111111119", "1", "100", "FINARES SA"], "period"],
-    [["202607", "20111111119", "6", "100", "FINARES SA"], "situation"],
+    [["202607", "20111111119", "0", "100", "FINARES SA"], "situation"],
+    [["202607", "20111111119", "A", "100", "FINARES SA"], "situation"],
     [["202607", "20111111119", "", "100", "FINARES SA"], "situation"],
     [["202607", "20111111119", "1", "1.500", "FINARES SA"], "amount"],
     [["202607", "20111111119", "1", "", "FINARES SA"], "amount"],

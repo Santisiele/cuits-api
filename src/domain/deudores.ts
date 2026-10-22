@@ -50,7 +50,7 @@ const CONNECTORS = new Set(["de", "del", "la", "las", "los", "el", "y", "e"])
 
 const CUIT_PATTERN = /^\d{11}$/
 const PERIOD_PATTERN = /^(\d{4})(\d{2})$/
-const SITUATION_PATTERN = /^[1-5]$/
+const SITUATION_PATTERN = /^[1-9]\d*$/
 const AMOUNT_PATTERN = /^\d+$/
 
 function normaliseHeader(raw: unknown): string {
