@@ -223,7 +223,7 @@ export function deudoresLoadableRows(groups: DeudoresGroup[], loadedAt: string):
         category: "to_know",
         attributes: {
           loadedAt,
-          customFields: { financieraOperations: JSON.stringify(group.operations) },
+          customFields: { bankOperations: JSON.stringify(group.operations) },
         },
       },
     },

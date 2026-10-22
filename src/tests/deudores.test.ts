@@ -295,7 +295,7 @@ describe("deudoresLoadableRows", () => {
             attributes: {
               loadedAt: "22/10/2026",
               customFields: {
-                financieraOperations: JSON.stringify([
+                bankOperations: JSON.stringify([
                   { entityName: "BANCO DE COMERCIO S.A.", date: "01/07/2026", situation: "3", totalLoan: "127000" },
                 ]),
               },
