@@ -236,7 +236,7 @@ export const Queries = {
    */
   MERGE_BASE_NODE: `
     MERGE (c:CUIT {id: $id})
-    SET c.businessName = $name,
+    SET c.businessName = CASE WHEN $name IS NULL OR trim($name) = '' THEN COALESCE(c.businessName, '') ELSE $name END,
         c.isKnown      = CASE WHEN $isKnown = true THEN true ELSE COALESCE(c.isKnown, false) END,
         c.isToKnow     = CASE WHEN $isToKnow = true THEN true ELSE COALESCE(c.isToKnow, false) END,
         c.phone        = COALESCE($phone,     c.phone),
