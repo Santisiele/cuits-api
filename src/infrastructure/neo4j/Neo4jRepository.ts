@@ -39,7 +39,7 @@ import type {
   SourceInfo,
 } from "@domain/entities.js"
 
-const OPERATION_KEYS = ["bolsaOperations", "financieraOperations"] as const
+const OPERATION_KEYS = ["bolsaOperations", "financieraOperations", "bankOperations"] as const
 
 const KEEP_ALIVE_ID = "aura"
 const BACKUP_ID = "weekly"
