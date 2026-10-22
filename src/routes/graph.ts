@@ -448,7 +448,7 @@ export default async function graphRoutes(server: FastifyInstance) {
           ...node,
           bolsaMonths: extractActivityMonths(node.customFields, "bolsaOperations"),
           financieraMonths: extractActivityMonths(node.customFields, "financieraOperations"),
-          financieraLenders: summariseLenders(node.customFields),
+          financieraLenders: summariseLenders(node.customFields, "financieraOperations"),
           publicationDate: readPublicationDate(node.customFields),
         }
       } catch (error) {

@@ -31,8 +31,8 @@ function newestFirst(a: FinancieraLenderMonth, b: FinancieraLenderMonth): number
   return a.period < b.period ? 1 : -1
 }
 
-export function summariseLenders(customFields: Record<string, unknown>): FinancieraLender[] {
-  const raw = customFields["financieraOperations"]
+export function summariseLenders(customFields: Record<string, unknown>, key: string): FinancieraLender[] {
+  const raw = customFields[key]
   if (typeof raw !== "string" || raw.length === 0) return []
 
   let operations: unknown
