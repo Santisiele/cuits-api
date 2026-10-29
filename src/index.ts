@@ -25,6 +25,7 @@ import { ResendMailer } from "@infrastructure/mail/ResendMailer.js"
 import { packBackup } from "@helpers/backupArchive.js"
 import { config } from "@config.js"
 import { authMiddleware } from "@middleware/authMiddleware.js"
+import { documentRoute } from "@helpers/openapi.js"
 import type { FastifyInstance } from "fastify"
 
 // ─── Server setup ─────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ await server.register(swagger, {
     },
     security: [{ bearerAuth: [] }],
   },
+  transform: documentRoute,
 })
 
 await server.register(swaggerUi, { routePrefix: "/docs" })
