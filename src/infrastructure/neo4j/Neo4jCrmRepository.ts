@@ -24,6 +24,7 @@ import {
   type LastAction,
   type RemovalFacts,
   type RemovalOutcome,
+  TaskNoLongerOpenError,
 } from "@domain/crm.js"
 
 const ENTITY_LABELS: Record<ChangeEntityType, string> = {
@@ -334,7 +335,10 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
   recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
     return this.write(async (tx) => {
       await tx.run(Queries.CRM_CREATE_ACTION, { ...action, doneByKey: responsibleKey(action.doneBy) })
-      for (const task of closedTasks) await tx.run(Queries.CRM_SET_TASK, taskParams(task))
+      for (const task of closedTasks) {
+        const result = await tx.run(Queries.CRM_COMPLETE_TASK, { id: task.id, closedAt: task.closedAt })
+        if (toNumber(result.records[0]?.get("completed")) !== 1) throw new TaskNoLongerOpenError(task.id)
+      }
       if (nextTask) await tx.run(Queries.CRM_CREATE_TASK, taskParams(nextTask))
       await tx.run(Queries.CRM_LINK_ACTION_TASKS, action)
       for (const change of changes) await writeChange(tx, change)

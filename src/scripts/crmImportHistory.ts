@@ -90,7 +90,7 @@ async function main(): Promise<void> {
       let openTaskId: string | null = null
       for (const step of companySteps) {
         try {
-          const result = await service.recordAction(
+          const result = await service.importAction(
             {
               companyTaxId: taxId,
               doneBy: step.doneBy,

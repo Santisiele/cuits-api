@@ -20,6 +20,8 @@ import {
   shouldMarkNosisPending,
   sortAgenda,
   taskStatusRejection,
+  TaskNoLongerOpenError,
+  withCurrentFields,
   todayInBuenosAires,
   uniqueIds,
   uniqueTaxIds,
@@ -197,7 +199,7 @@ export class CrmService {
 
   async updateCompany(taxId: string, body: CompanyBody, by: string): Promise<CrmCompany> {
     const company = await this.requireCompany(taxId)
-    const { fields, joinsKnownSource } = await this.companyFields(body)
+    const { fields, joinsKnownSource } = await this.companyFields(withCurrentFields(body, company))
     const changesSource = fields.originSource !== company.originSource
     const markNosisPending =
       changesSource && joinsKnownSource && shouldMarkNosisPending(await this.repository.findCuitState(taxId), joinsKnownSource)
@@ -328,7 +330,15 @@ export class CrmService {
     return restored
   }
 
-  async recordAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
+  recordAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
+    return this.record(body, actor, true)
+  }
+
+  importAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
+    return this.record(body, actor, false)
+  }
+
+  private async record(body: ActionBody, actor: Actor, requiresNextTask: boolean): Promise<ActionResult> {
     const companyTaxId = this.requireCuit(body.companyTaxId)
     await this.requireOpenCompany(companyTaxId)
     const responsibles = await this.repository.listResponsibles()
@@ -339,8 +349,8 @@ export class CrmService {
     const completesTaskIds = uniqueIds(body.completesTaskIds)
     if (completesTaskIds === null) this.fail("task_not_found")
     const toClose = await Promise.all(completesTaskIds.map((id) => this.requireOpenTaskOf(id, companyTaxId)))
-    if (!body.nextTask) this.fail("next_task_required")
-    const nextTask = await this.newTask({ ...body.nextTask, companyTaxId }, actor.username, responsibles)
+    if (!body.nextTask && requiresNextTask) this.fail("next_task_required")
+    const nextTask = body.nextTask ? await this.newTask({ ...body.nextTask, companyTaxId }, actor.username, responsibles) : null
 
     const at = this.now().toISOString()
     const action: Action = {
@@ -357,13 +367,13 @@ export class CrmService {
       archivedAt: null,
     }
     const closedTasks = toClose.map((task) => ({ ...task, status: "done" as const, closedAt: at }))
-    await this.repository.recordAction(action, closedTasks, nextTask && { ...nextTask, createdAt: at }, [
+    await this.completingTasks(() => this.repository.recordAction(action, closedTasks, nextTask && { ...nextTask, createdAt: at }, [
       this.change(at, actor.username, "Action", action.id, "create", {}, this.actionView(action)),
       ...closedTasks.map((task) =>
         this.change(at, actor.username, "Task", task.id, "complete", { status: "open" }, { status: "done", byAction: action.id })
       ),
       ...(nextTask ? [this.change(at, actor.username, "Task", nextTask.id, "create", {}, this.taskView(nextTask))] : []),
-    ])
+    ]))
     return { action, closedTasks, nextTask: nextTask && { ...nextTask, createdAt: at } }
   }
 
@@ -413,14 +423,15 @@ export class CrmService {
   async updateTask(id: string, body: TaskBody, actor: Actor): Promise<Task> {
     const task = await this.requireChangeableTask(id, actor)
     if (task.status !== "open") this.fail("task_not_open")
+    await this.requireOpenCompany(task.companyTaxId)
     const at = this.now().toISOString()
+    const keepsAssignee = body.assignee === undefined || (typeof body.assignee === "string" && sameResponsible(body.assignee, task.assignee))
     const updated: Task = {
       ...task,
       description: body.description === undefined ? task.description : this.description(body.description),
       dueDate: body.dueDate === undefined ? task.dueDate : this.calendarDate(body.dueDate),
-      assignee:
-        body.assignee === undefined ? task.assignee : this.responsibleFor(await this.repository.listResponsibles(), body.assignee, null),
-      contactIds: body.contactIds === undefined ? task.contactIds : await this.requireContacts(task.companyTaxId, body.contactIds),
+      assignee: keepsAssignee ? task.assignee : this.responsibleFor(await this.repository.listResponsibles(), body.assignee, null),
+      contactIds: body.contactIds === undefined ? task.contactIds : await this.requireTaskContacts(task, body.contactIds),
     }
     let operation: ChangeOperation = "update"
     if (body.status !== undefined) {
@@ -449,6 +460,7 @@ export class CrmService {
   async restoreTask(id: string, actor: Actor): Promise<Task> {
     const task = await this.requireChangeableTask(id, actor)
     if (task.archivedAt === null) this.fail("not_archived")
+    if (task.status === "open") await this.requireOpenCompany(task.companyTaxId)
     const at = this.now().toISOString()
     const restored = { ...task, archivedAt: null }
     await this.repository.updateTask(
@@ -583,6 +595,23 @@ export class CrmService {
     const found = await this.repository.contactsAtCompany(companyTaxId, ids)
     if (found.length !== ids.length) this.fail("contact_not_found")
     return ids
+  }
+
+  private async requireTaskContacts(task: Task, value: unknown): Promise<string[]> {
+    const ids = uniqueIds(value)
+    if (ids === null) this.fail("contact_not_found")
+    const kept = ids.filter((id) => task.contactIds.includes(id))
+    const added = await this.requireContacts(task.companyTaxId, ids.filter((id) => !task.contactIds.includes(id)))
+    return [...kept, ...added]
+  }
+
+  private async completingTasks(write: () => Promise<void>): Promise<void> {
+    try {
+      await write()
+    } catch (err) {
+      if (err instanceof TaskNoLongerOpenError) this.fail("task_not_open")
+      throw err
+    }
   }
 
   private async requireOpenTaskOf(id: string, companyTaxId: string): Promise<Task> {

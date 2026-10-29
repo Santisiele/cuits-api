@@ -348,6 +348,36 @@ describe("actions and tasks", () => {
     expect(await rejection(service.recordAction({ ...base, nextTask: null }, flavia))).toBe("next_task_required")
   })
 
+  it("lets the history import record a last action with no next task", async () => {
+    const task = await openTask()
+    const result = await service.importAction(
+      { companyTaxId: COMPANY, date: "2026-10-29", description: "Cerró", completesTaskIds: [task.id], nextTask: null },
+      santi
+    )
+    expect(result.nextTask).toBeNull()
+    expect(repository.tasks.get(task.id)?.status).toBe("done")
+  })
+
+  it("completes a task only once when two actions race for it", async () => {
+    const task = await openTask()
+    const body = { companyTaxId: COMPANY, date: "2026-10-29", description: "x", completesTaskIds: [task.id], nextTask: NEXT }
+    const results = await Promise.allSettled([service.recordAction(body, flavia), service.recordAction(body, flavia)])
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"])
+    expect(((results[1] as PromiseRejectedResult).reason as CrmError).reason).toBe("task_not_open")
+    expect(repository.actions.size).toBe(1)
+  })
+
+  it("edits a task whose responsible was disabled or whose contact was archived, as long as those stay", async () => {
+    const task = await openTask(flavia, { contactIds: [anaId] })
+    repository.responsibles = repository.responsibles.map((responsible) =>
+      responsible.name === "Flavia" ? { ...responsible, disabled: true } : responsible
+    )
+    await service.archiveContact(anaId, "santi")
+    const updated = await service.updateTask(task.id, { dueDate: "2026-11-09", assignee: "Flavia", contactIds: [anaId] }, santi)
+    expect(updated).toMatchObject({ dueDate: "2026-11-09", assignee: "Flavia", contactIds: [anaId] })
+    expect(await rejection(service.updateTask(task.id, { assignee: "Nadie" }, santi))).toBe("responsible_not_found")
+  })
+
   it("archives and restores a task", async () => {
     const task = await openTask()
     await service.archiveTask(task.id, flavia)
@@ -434,6 +464,31 @@ describe("origin and closing", () => {
     expect(await rejection(service.addCompany({ taxId: COMPANY, businessName: "ACME", originSource: "Nada" }, "santi"))).toBe(
       "source_not_found"
     )
+  })
+
+  it("keeps a CUIT in a source it already had before the CRM, whatever the origin becomes", async () => {
+    repository.seedCuit(COMPANY, { businessName: "ACME", sources: ["Bolsa"] })
+    await service.addCompany({ taxId: COMPANY, originSource: "Bolsa" }, "santi")
+    await service.updateCompany(COMPANY, { crmOrigin: "Conocido" }, "santi")
+    expect(repository.cuits.get(COMPANY)?.sources).toEqual(["Bolsa"])
+  })
+
+  it("keeps the fields an edit does not send", async () => {
+    await service.addCompany({ taxId: COMPANY, businessName: "ACME", crmBrand: "Acme", crmProduct: "Seguros", originSource: "Poseidon" }, "santi")
+    await service.updateCompany(COMPANY, { crmBrand: "Nueva" }, "santi")
+    expect(repository.cuits.get(COMPANY)).toMatchObject({
+      sources: ["Poseidon"],
+      fields: { crmBrand: "Nueva", crmProduct: "Seguros", crmOrigin: null, originSource: "Poseidon" },
+    })
+  })
+
+  it("brings back no open task nor edits one while the company is closed", async () => {
+    await service.addCompany({ taxId: COMPANY, businessName: "ACME" }, "santi")
+    const task = await service.createTask({ companyTaxId: COMPANY, description: "x", dueDate: "2026-11-02" }, flavia)
+    await service.archiveTask(task.id, flavia)
+    await service.closeCompany(COMPANY, "No va", "santi")
+    expect(await rejection(service.restoreTask(task.id, flavia))).toBe("company_closed")
+    expect(await rejection(service.updateTask(task.id, { dueDate: "2026-11-09" }, flavia))).toBe("company_closed")
   })
 
   it("moves the CUIT when the origin source changes, and takes it out when it goes back to text", async () => {

@@ -264,7 +264,8 @@ export const Queries = {
     WITH c
     MERGE (s:Source {name: $source})
     ON CREATE SET s.category = $sourceCategory
-    MERGE (c)-[:HAS_SOURCE]->(s)
+    MERGE (c)-[link:HAS_SOURCE]->(s)
+    REMOVE link.viaCrm
   `,
 
   MERGE_RELATIONSHIP: `
@@ -580,7 +581,8 @@ export const Queries = {
   ADD_SOURCE_TO_NODE: `
     MATCH (c:CUIT {id: $taxId})
     MATCH (s:Source {name: $sourceName})
-    MERGE (c)-[:HAS_SOURCE]->(s)
+    MERGE (c)-[link:HAS_SOURCE]->(s)
+    REMOVE link.viaCrm
     SET c.sources = CASE
       WHEN $sourceName IN COALESCE(c.sources, []) THEN c.sources
       ELSE COALESCE(c.sources, []) + $sourceName
@@ -1019,7 +1021,8 @@ export const Queries = {
   CRM_ATTACH_SOURCE: `
     MATCH (c:CUIT {id: $taxId})
     MATCH (s:Source {name: $sourceName})
-    MERGE (c)-[:HAS_SOURCE]->(s)
+    MERGE (c)-[link:HAS_SOURCE]->(s)
+    ON CREATE SET link.viaCrm = true
     SET c.sources = CASE
       WHEN $sourceName IN coalesce(c.sources, []) THEN c.sources
       ELSE coalesce(c.sources, []) + $sourceName
@@ -1033,7 +1036,7 @@ export const Queries = {
   `,
 
   CRM_DETACH_SOURCE: `
-    MATCH (c:CUIT {id: $taxId})-[r:HAS_SOURCE]->(:Source {name: $sourceName})
+    MATCH (c:CUIT {id: $taxId})-[r:HAS_SOURCE {viaCrm: true}]->(:Source {name: $sourceName})
     DELETE r
     WITH c
     SET c.sources = [x IN coalesce(c.sources, []) WHERE x <> $sourceName]
@@ -1466,6 +1469,13 @@ export const Queries = {
   CRM_RECORD_PENDING_MAIL: `
     MERGE (m:NosisPendingMail {id: "daily"})
     SET m.lastSentDay = $day, m.lastSentAt = $at
+  `,
+
+  CRM_COMPLETE_TASK: `
+    MATCH (t:Task {id: $id})
+    WHERE t.status = "open" AND t.archivedAt IS NULL
+    SET t.status = "done", t.closedAt = $closedAt
+    RETURN count(t) AS completed
   `,
 
   CRM_CANCEL_OPEN_TASKS: `

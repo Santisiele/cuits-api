@@ -144,11 +144,13 @@ describe("crm company routes", () => {
     expect(malformed.statusCode).toBe(400)
   })
 
-  it("changes the CRM data", async () => {
+  it("changes only the CRM data it is sent", async () => {
     await addCompany()
     const response = await app.inject({ method: "PATCH", url: `/crm/companies/${COMPANY}`, payload: { crmBrand: "Nueva" } })
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ taxId: COMPANY, crmBrand: "Nueva", crmProduct: null })
+    expect(response.json()).toMatchObject({ taxId: COMPANY, crmBrand: "Nueva", crmProduct: "Seguros" })
+    const cleared = await app.inject({ method: "PATCH", url: `/crm/companies/${COMPANY}`, payload: { crmProduct: null } })
+    expect(cleared.json()).toMatchObject({ crmBrand: "Nueva", crmProduct: null })
   })
 
   it("previews the removal and only logs the real one", async () => {
