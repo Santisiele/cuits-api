@@ -4,16 +4,13 @@ import { logger } from "@logger.js"
 import { config } from "@config.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
-import { Neo4jUserRepository } from "@infrastructure/neo4j/Neo4jUserRepository.js"
-import { BcryptPasswordHasher } from "@infrastructure/auth/BcryptPasswordHasher.js"
 import { CrmService } from "@application/CrmService.js"
-import { UserAdminService } from "@application/UserAdminService.js"
 import { isProductionUri, parseCompanyList } from "@domain/crmImport.js"
-import { companiesByContact, parseAliases, parseHistory, usersIn } from "@domain/crmHistoryImport.js"
-import { usernameKey } from "@domain/users.js"
+import { companiesByContact, parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
+import { responsibleKey } from "@domain/responsibles.js"
 
 const USAGE =
-  'Usage: pnpm crm:import-history <file.xlsx> [--by <fallback user>] [--alias "Diego F=diego"]... [--create-users --password <p>] [--apply] [--production]'
+  'Usage: pnpm crm:import-history <file.xlsx> [--by <app user>] [--alias "luc=Luchi"]... [--create-responsibles] [--apply] [--production]'
 
 function valuesAfter(args: string[], flag: string): string[] {
   return args.flatMap((arg, index) => (arg === flag && args[index + 1] ? [args[index + 1]!] : []))
@@ -21,15 +18,13 @@ function valuesAfter(args: string[], flag: string): string[] {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
-  const flagsWithValue = new Set(["--by", "--alias", "--password"])
+  const flagsWithValue = new Set(["--by", "--alias"])
   const file = args.find((arg, index) => !arg.startsWith("--") && !flagsWithValue.has(args[index - 1] ?? ""))
   if (!file) throw new Error(USAGE)
   const apply = args.includes("--apply")
-  const createUsers = args.includes("--create-users")
-  const password = valuesAfter(args, "--password")[0] ?? null
-  const fallbackUser = valuesAfter(args, "--by")[0] ?? "admin"
+  const createResponsibles = args.includes("--create-responsibles")
+  const loader = valuesAfter(args, "--by")[0] ?? "admin"
   const aliases = parseAliases(valuesAfter(args, "--alias"))
-  if (createUsers && !password) throw new Error("--create-users needs --password")
 
   const uri = config.neo4j.uri
   logger.info(`Target database: ${uri}`)
@@ -49,25 +44,24 @@ async function main(): Promise<void> {
     XLSX.utils.sheet_to_json<Record<string, unknown>>(seguimiento, { defval: "" }),
     taxIdByCompany,
     aliases,
-    fallbackUser,
+    loader,
     companiesByContact(listRows)
   )
 
   const steps = [...history.byCompany.values()].flat()
   logger.info(`${steps.length} actions for ${history.byCompany.size} companies, ${steps.filter((step) => step.nextTask).length} with a next task`)
   logger.info(`${[...history.unknownCompanies.values()].reduce((a, b) => a + b, 0)} rows skipped from ${history.unknownCompanies.size} companies without a CUIT in Listas, ${history.withoutDate} without a date`)
-  for (const name of history.invalidNames) logger.warn(`  name that is not a valid username (falls back to ${fallbackUser}): ${name}`)
+  for (const name of history.invalidNames) logger.warn(`  name that is not a valid responsible (falls back to ${loader}): ${name}`)
 
   const repository = new Neo4jCrmRepository()
-  const users = new UserAdminService(new Neo4jUserRepository(), new BcryptPasswordHasher())
   const service = new CrmService(repository)
 
   try {
-    const existing = new Set((await users.list()).map((user) => usernameKey(user.username)))
-    const needed = [...usersIn(history)].sort()
-    const missing = needed.filter((username) => !existing.has(usernameKey(username)))
-    logger.info(`Users: ${needed.join(", ")}`)
-    logger.info(`Missing users: ${missing.length === 0 ? "none" : missing.join(", ")}`)
+    const existing = new Set((await repository.listResponsibles()).map((responsible) => responsibleKey(responsible.name)))
+    const needed = [...new Map([...responsiblesIn(history)].map((name) => [responsibleKey(name), name])).values()].sort()
+    const missing = needed.filter((name) => !existing.has(responsibleKey(name)))
+    logger.info(`Responsibles: ${needed.join(", ")}`)
+    logger.info(`Missing responsibles: ${missing.length === 0 ? "none" : missing.join(", ")}`)
 
     const inCrm = new Set(await repository.companiesInCrm([...history.byCompany.keys()]))
     const outside = [...history.byCompany.keys()].filter((taxId) => !inCrm.has(taxId))
@@ -82,11 +76,11 @@ async function main(): Promise<void> {
       return
     }
     if (actionCount > 0) throw new Error(`The database already holds ${actionCount} actions. Loading the history twice would duplicate it.`)
-    if (missing.length > 0 && !createUsers) throw new Error("Some users are missing. Add --create-users --password <p>.")
+    if (missing.length > 0 && !createResponsibles) throw new Error("Some responsibles are missing. Add --create-responsibles.")
 
-    for (const username of missing) {
-      await users.create(username, password!, "member")
-      logger.info(`  created user ${username}`)
+    for (const name of missing) {
+      await repository.createResponsible({ name, color: "slate", users: [], disabled: false }, new Date().toISOString(), loader)
+      logger.info(`  created responsible ${name} (gray, pick a color in Responsables)`)
     }
 
     let done = 0
@@ -99,13 +93,14 @@ async function main(): Promise<void> {
           const result = await service.recordAction(
             {
               companyTaxId: taxId,
+              doneBy: step.doneBy,
               date: step.date,
               description: step.description,
               contactIds: [],
               completesTaskIds: openTaskId ? [openTaskId] : [],
               nextTask: step.nextTask,
             },
-            { username: step.doneBy, canAdminister: true }
+            { username: loader, canAdminister: true }
           )
           openTaskId = result.nextTask?.id ?? null
           done++
@@ -118,7 +113,7 @@ async function main(): Promise<void> {
     }
 
     logger.info("─── Summary ─────────────────────────────────")
-    logger.info(`Users created:    ${missing.length}`)
+    logger.info(`Responsibles created: ${missing.length}`)
     logger.info(`Actions recorded: ${done}`)
     logger.info(`Failed:           ${failed}`)
   } finally {

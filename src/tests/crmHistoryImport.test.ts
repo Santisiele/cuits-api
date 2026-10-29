@@ -6,11 +6,11 @@ import {
   nameKey,
   parseAliases,
   parseHistory,
-  usernameFor,
-  usersIn,
+  responsibleFor,
+  responsiblesIn,
 } from "@domain/crmHistoryImport"
 
-const ALIASES = parseAliases(["Diego F=diego", "luc=luchi", "diego w=dieguito.w", "broken"])
+const ALIASES = parseAliases(["luc=Luchi", "diego w=Dieguito W", "broken"])
 const COMPANIES = new Map([
   ["Braku SA", "30712345678"],
   ["Nam importaciones SA", "30798765432"],
@@ -43,22 +43,21 @@ describe("excelDate", () => {
   })
 })
 
-describe("usernames from sheet names", () => {
+describe("responsibles from sheet names", () => {
   it("uses the alias when there is one, whatever the case or accents", () => {
-    expect(usernameFor("Diego F", ALIASES)).toBe("diego")
-    expect(usernameFor("  LUC ", ALIASES)).toBe("luchi")
-    expect(usernameFor("Diego W", ALIASES)).toBe("dieguito.w")
+    expect(responsibleFor("  LUC ", ALIASES)).toBe("Luchi")
+    expect(responsibleFor("Diego W", ALIASES)).toBe("Dieguito W")
   })
 
-  it("otherwise lowercases, drops accents and joins words with dots", () => {
-    expect(usernameFor("Tomi J", ALIASES)).toBe("tomi.j")
-    expect(usernameFor("Raúl", ALIASES)).toBe("raul")
-    expect(nameKey(" Flavia ")).toBe("flavia")
+  it("otherwise keeps the name as written, tidied", () => {
+    expect(responsibleFor(" Tomi   J ", ALIASES)).toBe("Tomi J")
+    expect(responsibleFor("Raúl", ALIASES)).toBe("Raúl")
+    expect(nameKey(" Raúl ")).toBe("raul")
   })
 
   it("gives nothing for a blank or impossible name", () => {
-    expect(usernameFor(" ", ALIASES)).toBeNull()
-    expect(usernameFor("Lu", ALIASES)).toBeNull()
+    expect(responsibleFor(" ", ALIASES)).toBeNull()
+    expect(responsibleFor("L", ALIASES)).toBeNull()
   })
 
   it("ignores malformed aliases", () => {
@@ -98,16 +97,16 @@ describe("parseHistory", () => {
         businessName: "Braku SA",
         date: "2025-06-25",
         description: "Con Andrés Braun: Llamé",
-        doneBy: "diego",
-        nextTask: { description: "Coordinar", dueDate: "2025-06-27", assignee: "mati" },
+        doneBy: "Diego F",
+        nextTask: { description: "Coordinar", dueDate: "2025-06-27", assignee: "Mati" },
       },
       {
         taxId: "30712345678",
         businessName: "Braku SA",
         date: "2025-06-25",
         description: NO_DETAIL,
-        doneBy: "diego",
-        nextTask: { description: NO_DETAIL, dueDate: "2025-06-28", assignee: "diego" },
+        doneBy: "Diego F",
+        nextTask: { description: NO_DETAIL, dueDate: "2025-06-28", assignee: "Diego F" },
       },
     ])
   })
@@ -130,10 +129,10 @@ describe("parseHistory", () => {
     expect(history.withoutDate).toBe(1)
   })
 
-  it("falls back to a user when the name is blank or unusable, and reports the unusable one", () => {
-    const history = parseHistory([row({ "Quién lo hizo": "" }), row({ "Quién lo hizo": "Lu" })], COMPANIES, ALIASES, "admin")
-    expect(history.byCompany.get("30712345678")?.map((step) => step.doneBy)).toEqual(["admin", "admin"])
-    expect([...history.invalidNames]).toEqual(["Lu"])
+  it("falls back when the name is blank or unusable, and reports the unusable one", () => {
+    const history = parseHistory([row({ "Quién lo hizo": "" }), row({ "Quién lo hizo": "L" })], COMPANIES, ALIASES, "Sol")
+    expect(history.byCompany.get("30712345678")?.map((step) => step.doneBy)).toEqual(["Sol", "Sol"])
+    expect([...history.invalidNames]).toEqual(["L"])
   })
 
   it("clips text longer than the API accepts", () => {
@@ -158,13 +157,13 @@ describe("parseHistory", () => {
     expect(history.unknownCompanies).toEqual(new Map([["#N/A", 1]]))
   })
 
-  it("lists every user who acts or gets a task", () => {
+  it("lists every responsible who acts or gets a task", () => {
     const history = parseHistory(
       [row({ "Fecha Próxima Acción": 45835, "Quién lo hará": "Raul" }), row({ "Quién lo hizo": "Flavia" })],
       COMPANIES,
       ALIASES,
       "admin"
     )
-    expect([...usersIn(history)].sort()).toEqual(["diego", "flavia", "raul"])
+    expect([...responsiblesIn(history)].sort()).toEqual(["Diego F", "Flavia", "Raul"])
   })
 })
