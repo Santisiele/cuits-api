@@ -39,7 +39,8 @@
     "restore:backup": "tsx src/scripts/restoreBackup.ts",
     "crm:nosis": "tsx src/scripts/crmNosis.ts",
     "crm:import": "tsx src/scripts/crmImport.ts",
-    "crm:import-history": "tsx src/scripts/crmImportHistory.ts"
+    "crm:import-history": "tsx src/scripts/crmImportHistory.ts",
+    "migrate:crmSource": "tsx src/scripts/migrateCrmSource.ts"
   },
   "keywords": [],
   "author": "",
