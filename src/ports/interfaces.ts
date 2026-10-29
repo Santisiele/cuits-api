@@ -354,7 +354,14 @@ export interface ICrmRepository {
   ): Promise<void>
   findRemovalFacts(taxId: string): Promise<RemovalFacts>
   removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void>
-  closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }>
+  closeCompany(
+    taxId: string,
+    reason: string,
+    at: string,
+    by: string,
+    change: Change,
+    taskChange: (taskId: string) => Change
+  ): Promise<{ inservible: boolean; cancelledTaskIds: string[] }>
   reopenCompany(taxId: string, change: Change): Promise<void>
   findSource(name: string): Promise<CrmSource | null>
   listSources(): Promise<CrmSource[]>
@@ -371,7 +378,7 @@ export interface ICrmRepository {
   recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void>
   updateAction(action: Action, change: Change): Promise<void>
   createTask(task: Task, change: Change): Promise<void>
-  updateTask(task: Task, change: Change): Promise<void>
+  updateTask(task: Task, change: Change, previous: Task): Promise<void>
   listActions(taxId: string): Promise<Action[]>
   listTasks(taxId: string): Promise<Task[]>
   listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]>

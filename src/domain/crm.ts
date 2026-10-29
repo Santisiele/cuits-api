@@ -25,6 +25,7 @@ export type CrmRejection =
   | "cancel_reason_required"
   | "invalid_status"
   | "task_not_open"
+  | "task_changed"
   | "task_other_company"
   | "forbidden"
   | "action_not_found"
@@ -299,6 +300,20 @@ export function uniqueTaxIds(values: unknown): string[] | null {
   if (!Array.isArray(values)) return null
   const unique = [...new Set(values)]
   return unique.every(isValidCrmCuit) ? unique : null
+}
+
+export class TaskChangedError extends Error {
+  constructor(readonly taskId: string) {
+    super(`Task ${taskId} changed while it was being written`)
+    this.name = "TaskChangedError"
+  }
+}
+
+export class CompanyClosedError extends Error {
+  constructor(readonly taxId: string) {
+    super(`Company ${taxId} is closed`)
+    this.name = "CompanyClosedError"
+  }
 }
 
 export class TaskNoLongerOpenError extends Error {

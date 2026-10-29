@@ -28,6 +28,7 @@ const STATUS_BY_REASON: Record<CrmRejection, number> = {
   cancel_reason_required: 400,
   invalid_status: 400,
   task_not_open: 400,
+  task_changed: 409,
   task_other_company: 400,
   invalid_entity: 400,
   forbidden: 403,
@@ -352,7 +353,12 @@ export default async function crmRoutes(server: FastifyInstance) {
     async (request, reply) => {
       try {
         const responsible = await responsibles.update(request.params.name, request.body ?? {})
-        logCrmOperation(request.username, "update", "Responsible", responsible.name, { ...request.body, previousName: request.params.name })
+        logCrmOperation(request.username, "update", "Responsible", responsible.name, {
+          previousName: request.params.name,
+          color: responsible.color,
+          users: responsible.users,
+          disabled: responsible.disabled,
+        })
         return responsible
       } catch (err) {
         return handleError(err, reply)
