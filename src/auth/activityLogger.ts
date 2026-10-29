@@ -18,7 +18,7 @@ const LOGS_DIR = path.isAbsolute(rawLogRoute)
   ? rawLogRoute
   : path.resolve(process.cwd(), rawLogRoute)
 
-const LOG_FILE = path.join(LOGS_DIR, process.env["LOG_DOC"] ?? "activity.log")
+export const LOG_FILE = path.join(LOGS_DIR, process.env["LOG_DOC"] ?? "activity.log")
 
 if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true })
@@ -83,13 +83,20 @@ export function logUserOperation(
 
 // ─── Semantic action logs ─────────────────────────────────────────────────────
 
-export function logCrmOperation(username: string, operation: string, entityType: string, entityId: string): void {
+export function logCrmOperation(
+  username: string,
+  operation: string,
+  entityType: string,
+  entityId: string,
+  details: Record<string, unknown> = {}
+): void {
   activityLogger.info({
     event: "crm_operation",
     username,
     operation,
     entityType,
     entityId,
+    ...details,
     message: `${username} ran ${operation} on ${entityType} ${entityId}`,
   })
 }

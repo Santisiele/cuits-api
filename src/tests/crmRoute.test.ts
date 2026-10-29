@@ -63,7 +63,7 @@ describe("crm company routes", () => {
     const response = await app.inject({ method: "POST", url: "/crm/companies", payload: { taxId: COMPANY, businessName: "ACME SA" } })
     expect(response.statusCode).toBe(201)
     expect(response.json()).toEqual({ taxId: COMPANY, created: true, restored: false, nosisPending: false })
-    expect(logCrmOperation).toHaveBeenCalledWith("flavia", "crm_add", "CrmCompany", COMPANY)
+    expect(logCrmOperation).toHaveBeenCalledWith("flavia", "crm_add", "CrmCompany", COMPANY, { businessName: "ACME SA", originSource: null })
   })
 
   it("lists companies without dropping fields", async () => {
@@ -102,7 +102,11 @@ describe("crm company routes", () => {
       inservible: false,
       company: { taxId: COMPANY, closedReason: "No va más", closedBy: "flavia", closedAt: expect.any(String) },
     })
-    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "close", "CrmCompany", COMPANY)
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "close", "CrmCompany", COMPANY, {
+      businessName: "ACME SA",
+      reason: "No va más",
+      inservible: false,
+    })
 
     const reopened = await app.inject({ method: "POST", url: `/crm/companies/${COMPANY}/reopen` })
     expect(reopened.json()).toMatchObject({ closedAt: null, closedReason: null })
@@ -154,7 +158,7 @@ describe("crm company routes", () => {
     expect(logCrmOperation).toHaveBeenCalledTimes(1)
     const real = await app.inject({ method: "DELETE", url: `/crm/companies/${COMPANY}` })
     expect(real.json()).toEqual({ outcome: "deleted", cancelledTaskCount: 0, dryRun: false })
-    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "crm_remove_deleted", "CrmCompany", COMPANY)
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "crm_remove", "CrmCompany", COMPANY, { outcome: "deleted" })
   })
 })
 
@@ -302,7 +306,13 @@ describe("crm action, task and agenda routes", () => {
       payload: { status: "cancelled", cancelReason: "Ya no compra" },
     })
     expect(cancelled.json()).toMatchObject({ status: "cancelled", cancelReason: "Ya no compra" })
-    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "cancelled", "Task", taskId)
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "cancelled", "Task", taskId, {
+      companyTaxId: COMPANY,
+      assignee: "Flavia",
+      dueDate: "2026-11-02",
+      description: "Mandar propuesta",
+      cancelReason: "Ya no compra",
+    })
 
     const history = await app.inject({ method: "GET", url: `/crm/changes?entityType=Task&entityId=${taskId}` })
     expect(history.json().changes[0]).toEqual({
