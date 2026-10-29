@@ -248,7 +248,7 @@ export function todayInBuenosAires(now: Date): string {
 }
 
 export function isOverdue(dueDate: string, today: string): boolean {
-  return dueDate < today
+  return dueDate <= today
 }
 
 export function taskStatusRejection(task: Task, next: unknown, cancelReason: string | null): CrmRejection | null {

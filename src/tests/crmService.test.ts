@@ -368,7 +368,7 @@ describe("actions and tasks", () => {
     ])
     expect(await service.agenda({ assignee: "pedro" }, flavia)).toHaveLength(1)
     expect(await service.agenda({ assignee: "all" }, flavia)).toHaveLength(3)
-    expect(await service.agenda({ assignee: "all", overdueOnly: "true" }, flavia)).toHaveLength(1)
+    expect(await service.agenda({ assignee: "all", overdueOnly: "true" }, flavia)).toHaveLength(2)
   })
 
   it("cancels the open tasks of a company that is archived", async () => {
