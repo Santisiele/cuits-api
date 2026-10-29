@@ -1,8 +1,9 @@
 import neo4j, { type ManagedTransaction, type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
-import type { CrmCuitAdd, ICrmRepository } from "@ports/interfaces.js"
+import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository } from "@ports/interfaces.js"
 import { usernameKey } from "@domain/users.js"
+import type { NosisPendingItem } from "@domain/nosisPending.js"
 import {
   COMPANY_REMOVED_REASON,
   CRM_SOURCE_NAME,
@@ -156,7 +157,7 @@ export async function writeChange(tx: ManagedTransaction, change: Change): Promi
   )
 }
 
-export class Neo4jCrmRepository implements ICrmRepository {
+export class Neo4jCrmRepository implements ICrmRepository, INosisPendingRepository {
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -188,6 +189,38 @@ export class Neo4jCrmRepository implements ICrmRepository {
       await session.run(Queries.CRM_ACTION_CONSTRAINT)
       await session.run(Queries.CRM_TASK_CONSTRAINT)
       await session.run(Queries.CRM_TASK_DUE_DATE_INDEX)
+    })
+  }
+
+  listNosisPending(): Promise<NosisPendingItem[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_NOSIS_PENDING)
+      return result.records.map((record) => ({
+        taxId: toText(record.get("taxId")),
+        businessName: toText(record.get("businessName")),
+        sources: toIds(record.get("sources")),
+        addedBy: toNullableText(record.get("addedBy")),
+        addedAt: toNullableText(record.get("addedAt")),
+      }))
+    })
+  }
+
+  markNosisSearched(taxId: string, businessName: string, at: string): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_MARK_NOSIS_SEARCHED, { taxId, businessName, at })
+    })
+  }
+
+  lastPendingMailDay(): Promise<string | null> {
+    return this.read(async (session) => {
+      const record = (await session.run(Queries.CRM_FIND_PENDING_MAIL)).records[0]
+      return record ? toNullableText(record.get("lastSentDay")) : null
+    })
+  }
+
+  recordPendingMail(day: string, at: string): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_RECORD_PENDING_MAIL, { day, at })
     })
   }
 

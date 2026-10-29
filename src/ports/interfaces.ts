@@ -13,6 +13,7 @@ import type {
   BackupRelationship,
 } from "@domain/backup.js"
 import type { Role, StoredUser } from "@domain/users.js"
+import type { NosisPendingItem } from "@domain/nosisPending.js"
 import type {
   Action,
   AgendaItem,
@@ -361,6 +362,17 @@ export interface ICrmRepository {
   listActions(taxId: string): Promise<Action[]>
   listTasks(taxId: string): Promise<Task[]>
   listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]>
+}
+
+export interface INosisPendingRepository {
+  listNosisPending(): Promise<NosisPendingItem[]>
+  markNosisSearched(taxId: string, businessName: string, at: string): Promise<void>
+  lastPendingMailDay(): Promise<string | null>
+  recordPendingMail(day: string, at: string): Promise<void>
+}
+
+export interface ITextMailer {
+  sendText(message: { subject: string; body: string }): Promise<void>
 }
 
 export interface IBackupMailer {
