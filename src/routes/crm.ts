@@ -1,293 +1,36 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import { CrmError, type AgendaQuery } from "@application/CrmServiceBase.js"
+import type { FastifyInstance } from "fastify"
+import type { AgendaQuery } from "@application/CrmServiceBase.js"
 import { CrmCompanyService } from "@application/CrmCompanyService.js"
 import { CrmContactService } from "@application/CrmContactService.js"
 import { CrmWorkService } from "@application/CrmWorkService.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
 import { NosisPendingService } from "@application/NosisPendingService.js"
 import { requireCreator } from "@middleware/requireCreator.js"
-import { requireAdmin } from "@middleware/requireAdmin.js"
-import { ResponsibleError, ResponsibleService } from "@application/ResponsibleService.js"
-import type { ResponsibleRejection } from "@domain/responsibles.js"
 import { logCrmOperation } from "@auth/activityLogger.js"
 import { NOSIS_PENDING_COMMAND } from "@domain/nosisPending.js"
-import { canAdminister } from "@domain/users.js"
-import type { Action, Actor, CrmRejection, Task } from "@domain/crm.js"
-
-const STATUS_BY_REASON: Record<CrmRejection, number> = {
-  invalid_cuit: 400,
-  business_name_required: 400,
-  full_name_required: 400,
-  company_required: 400,
-  invalid_date: 400,
-  text_too_long: 400,
-  company_not_in_crm: 404,
-  contact_not_found: 404,
-  already_in_crm: 409,
-  already_archived: 409,
-  not_archived: 409,
-  cuil_already_set: 409,
-  description_required: 400,
-  cancel_reason_required: 400,
-  invalid_status: 400,
-  task_not_open: 400,
-  task_changed: 409,
-  task_other_company: 400,
-  invalid_entity: 400,
-  forbidden: 403,
-  action_not_found: 404,
-  task_not_found: 404,
-  user_not_found: 404,
-  next_task_required: 400,
-  close_reason_required: 400,
-  company_closed: 409,
-  not_closed: 409,
-  source_not_found: 404,
-  responsible_not_found: 404,
-  responsible_required: 400,
-}
-
-const RESPONSIBLE_STATUS: Record<ResponsibleRejection, number> = {
-  invalid_name: 400,
-  invalid_color: 400,
-  invalid_users: 400,
-  invalid_disabled: 400,
-  name_taken: 409,
-  responsible_not_found: 404,
-  user_not_found: 404,
-}
-
-function excerpt(text: string): string {
-  return text.length > 160 ? `${text.slice(0, 159)}…` : text
-}
-
-function actionDetails(action: Action): Record<string, unknown> {
-  return { companyTaxId: action.companyTaxId, doneBy: action.doneBy, date: action.date, description: excerpt(action.description) }
-}
-
-function taskDetails(task: Task): Record<string, unknown> {
-  return {
-    companyTaxId: task.companyTaxId,
-    assignee: task.assignee,
-    dueDate: task.dueDate,
-    description: excerpt(task.description),
-    cancelReason: task.cancelReason,
-  }
-}
-
-function actorOf(request: FastifyRequest): Actor {
-  return { username: request.username, canAdminister: canAdminister(request.role) }
-}
-
-function handleError(err: unknown, reply: FastifyReply) {
-  if (err instanceof ResponsibleError) {
-    return reply.code(RESPONSIBLE_STATUS[err.reason]).send({ error: err.reason, message: err.message })
-  }
-  if (!(err instanceof CrmError)) throw err
-  return reply.code(STATUS_BY_REASON[err.reason]).send({ error: err.reason, message: err.message })
-}
-
-const nullableString = { type: ["string", "null"] } as const
-
-const companySchema = {
-  type: "object",
-  properties: {
-    taxId: { type: "string" },
-    businessName: { type: "string" },
-    crmBrand: nullableString,
-    crmProduct: nullableString,
-    crmOrigin: nullableString,
-    originSource: nullableString,
-    nosisPending: { type: "boolean" },
-    addedAt: nullableString,
-    addedBy: nullableString,
-    lastActionDate: nullableString,
-    nextDueDate: nullableString,
-    openTaskCount: { type: "number" },
-    closedAt: nullableString,
-    closedReason: nullableString,
-    closedBy: nullableString,
-  },
-} as const
-
-const contactSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" },
-    fullName: { type: "string" },
-    phone: nullableString,
-    email: nullableString,
-    birthday: nullableString,
-    cuil: nullableString,
-    companyTaxIds: { type: "array", items: { type: "string" } },
-    createdAt: { type: "string" },
-    archivedAt: nullableString,
-  },
-} as const
-
-const idList = { type: "array", items: { type: "string" } } as const
-
-const actionSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" },
-    companyTaxId: { type: "string" },
-    date: { type: "string" },
-    description: { type: "string" },
-    doneBy: { type: "string" },
-    recordedBy: { type: "string" },
-    contactIds: idList,
-    createdTaskId: nullableString,
-    completedTaskIds: idList,
-    createdAt: { type: "string" },
-    archivedAt: nullableString,
-  },
-} as const
-
-const taskProperties = {
-  id: { type: "string" },
-  companyTaxId: { type: "string" },
-  description: { type: "string" },
-  dueDate: { type: "string" },
-  status: { type: "string" },
-  cancelReason: nullableString,
-  assignee: { type: "string" },
-  createdBy: { type: "string" },
-  contactIds: idList,
-  createdAt: { type: "string" },
-  closedAt: nullableString,
-  archivedAt: nullableString,
-} as const
-
-const taskSchema = { type: "object", properties: taskProperties } as const
-
-const agendaItemSchema = {
-  type: "object",
-  properties: {
-    ...taskProperties,
-    businessName: { type: "string" },
-    overdue: { type: "boolean" },
-    lastAction: {
-      type: ["object", "null"],
-      properties: {
-        date: { type: "string" },
-        description: { type: "string" },
-        doneBy: { type: "string" },
-        contacts: { type: "array", items: { type: "string" } },
-      },
-    },
-  },
-} as const
-
-const changeSchema = {
-  type: "object",
-  properties: {
-    id: { type: "string" },
-    at: { type: "string" },
-    by: { type: "string" },
-    entityType: { type: "string" },
-    entityId: { type: "string" },
-    operation: { type: "string" },
-    before: { type: "object", additionalProperties: true },
-    after: { type: "object", additionalProperties: true },
-  },
-} as const
-
-const taskBodyProperties = {
-  companyTaxId: { type: "string" },
-  description: { type: "string" },
-  dueDate: { type: "string" },
-  assignee: nullableString,
-  contactIds: idList,
-  status: { type: "string" },
-  cancelReason: nullableString,
-} as const
-
-const actionBodySchema = {
-  type: "object",
-  properties: {
-    companyTaxId: { type: "string" },
-    doneBy: nullableString,
-    date: { type: "string" },
-    description: { type: "string" },
-    contactIds: idList,
-    completesTaskIds: idList,
-    nextTask: { type: ["object", "null"], properties: taskBodyProperties },
-  },
-} as const
-
-const companyBodySchema = {
-  type: "object",
-  properties: {
-    taxId: { type: "string" },
-    businessName: nullableString,
-    crmBrand: nullableString,
-    crmProduct: nullableString,
-    crmOrigin: nullableString,
-    originSource: nullableString,
-  },
-} as const
-
-const contactBodySchema = {
-  type: "object",
-  properties: {
-    fullName: { type: "string" },
-    companyTaxIds: { type: "array", items: { type: "string" } },
-    phone: nullableString,
-    email: nullableString,
-    birthday: nullableString,
-    cuil: nullableString,
-  },
-} as const
-
-const errorSchema = {
-  type: "object",
-  properties: { error: { type: "string" }, message: { type: "string" } },
-} as const
-
-const errors = { 400: errorSchema, 403: errorSchema, 404: errorSchema, 409: errorSchema } as const
-
-const taxIdParams = { type: "object", properties: { taxId: { type: "string" } } } as const
-
-const idParams = { type: "object", properties: { id: { type: "string" } } } as const
-
-type CompanyBody = {
-  taxId?: string
-  businessName?: string | null
-  crmBrand?: string | null
-  crmProduct?: string | null
-  crmOrigin?: string | null
-  originSource?: string | null
-}
-
-type ContactBody = {
-  fullName?: string
-  companyTaxIds?: string[]
-  phone?: string | null
-  email?: string | null
-  birthday?: string | null
-  cuil?: string | null
-}
-
-type TaskBody = {
-  companyTaxId?: string
-  description?: string
-  dueDate?: string
-  assignee?: string | null
-  contactIds?: string[]
-  status?: string
-  cancelReason?: string | null
-}
-
-type ActionBody = {
-  companyTaxId?: string
-  doneBy?: string | null
-  date?: string
-  description?: string
-  contactIds?: string[]
-  completesTaskIds?: string[]
-  nextTask?: TaskBody | null
-}
+import responsibleRoutes from "@routes/responsibles.js"
+import { actionDetails, taskDetails, actorOf, handleError } from "@routes/crmHttp.js"
+import {
+  nullableString,
+  companySchema,
+  contactSchema,
+  actionSchema,
+  taskSchema,
+  agendaItemSchema,
+  changeSchema,
+  taskBodyProperties,
+  actionBodySchema,
+  companyBodySchema,
+  contactBodySchema,
+  errorSchema,
+  errors,
+  taxIdParams,
+  idParams,
+  type CompanyBody,
+  type ContactBody,
+  type TaskBody,
+  type ActionBody,
+} from "@routes/crmSchemas.js"
 
 export default async function crmRoutes(server: FastifyInstance) {
   const repository = new Neo4jCrmRepository()
@@ -295,82 +38,8 @@ export default async function crmRoutes(server: FastifyInstance) {
   const contacts = new CrmContactService(repository)
   const work = new CrmWorkService(repository)
   const nosisPending = new NosisPendingService(repository)
-  const responsibles = new ResponsibleService(repository)
 
-  const responsibleSchema = {
-    type: "object",
-    properties: {
-      name: { type: "string" },
-      color: { type: "string" },
-      users: { type: "array", items: { type: "string" } },
-      disabled: { type: "boolean" },
-    },
-  } as const
-
-  const responsibleBody = {
-    type: "object",
-    properties: {
-      name: { type: "string" },
-      color: { type: "string" },
-      users: { type: "array", items: { type: "string" } },
-      disabled: { type: "boolean" },
-    },
-  } as const
-
-  server.get(
-    "/crm/responsibles",
-    {
-      schema: {
-        summary: "Who actions and tasks can be attributed to, each with a color and the app users it stands for",
-        response: { 200: { type: "object", properties: { responsibles: { type: "array", items: responsibleSchema } } } },
-      },
-    },
-    async () => ({ responsibles: await responsibles.list() })
-  )
-
-  server.post<{ Body: { name?: string; color?: string; users?: string[] } }>(
-    "/crm/responsibles",
-    {
-      preHandler: requireAdmin,
-      schema: { summary: "Add a responsible (admin only)", body: responsibleBody, response: { 201: responsibleSchema, ...errors } },
-    },
-    async (request, reply) => {
-      try {
-        const responsible = await responsibles.create(request.body ?? {}, request.username)
-        logCrmOperation(request.username, "create", "Responsible", responsible.name, { color: responsible.color, users: responsible.users })
-        return reply.code(201).send(responsible)
-      } catch (err) {
-        return handleError(err, reply)
-      }
-    }
-  )
-
-  server.patch<{ Params: { name: string }; Body: { name?: string; color?: string; users?: string[]; disabled?: boolean } }>(
-    "/crm/responsibles/:name",
-    {
-      preHandler: requireAdmin,
-      schema: {
-        summary: "Rename, recolor, relink or disable a responsible (admin only)",
-        params: { type: "object", properties: { name: { type: "string" } } },
-        body: responsibleBody,
-        response: { 200: responsibleSchema, ...errors },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const responsible = await responsibles.update(request.params.name, request.body ?? {}, request.username)
-        logCrmOperation(request.username, "update", "Responsible", responsible.name, {
-          previousName: request.params.name,
-          color: responsible.color,
-          users: responsible.users,
-          disabled: responsible.disabled,
-        })
-        return responsible
-      } catch (err) {
-        return handleError(err, reply)
-      }
-    }
-  )
+  await server.register(responsibleRoutes)
 
   server.get(
     "/crm/companies",
