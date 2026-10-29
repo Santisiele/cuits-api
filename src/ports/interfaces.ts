@@ -14,6 +14,16 @@ import type {
 } from "@domain/backup.js"
 import type { Role, StoredUser } from "@domain/users.js"
 import type {
+  Change,
+  ChangeEntityType,
+  Contact,
+  CrmCompany,
+  CrmCompanyFields,
+  CrmCuitState,
+  RemovalFacts,
+  RemovalOutcome,
+} from "@domain/crm.js"
+import type {
   BirthdaySweepSnapshot,
   PendingPerson,
   PeopleCount,
@@ -311,6 +321,32 @@ export interface IBackupRepository {
   clearBackupKeys(): Promise<number>
   lastBackupAt(): Promise<string | null>
   recordBackup(lastRunAt: string): Promise<void>
+}
+
+export interface CrmCuitAdd extends CrmCompanyFields {
+  taxId: string
+  businessName: string | null
+  asCompany: boolean
+  markNosisPending: boolean
+  at: string
+  by: string
+}
+
+export interface ICrmRepository {
+  ensureSetup(): Promise<void>
+  findCuitState(taxId: string): Promise<CrmCuitState>
+  addToCrm(add: CrmCuitAdd, change: Change): Promise<void>
+  listCompanies(): Promise<CrmCompany[]>
+  findCompany(taxId: string): Promise<CrmCompany | null>
+  updateCompany(taxId: string, fields: CrmCompanyFields, change: Change): Promise<void>
+  findRemovalFacts(taxId: string): Promise<RemovalFacts>
+  removeCompany(taxId: string, outcome: RemovalOutcome, at: string, change: Change): Promise<void>
+  companiesInCrm(taxIds: string[]): Promise<string[]>
+  createContact(contact: Contact, change: Change): Promise<void>
+  findContact(id: string): Promise<Contact | null>
+  updateContact(contact: Contact, change: Change): Promise<void>
+  listContacts(taxId: string): Promise<Contact[]>
+  listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]>
 }
 
 export interface IBackupMailer {
