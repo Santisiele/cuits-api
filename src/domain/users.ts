@@ -1,4 +1,29 @@
-import type { TrustLevelColor } from "@domain/entities.js"
+export const USER_COLORS = [
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "lime",
+  "green",
+  "emerald",
+  "teal",
+  "cyan",
+  "sky",
+  "blue",
+  "indigo",
+  "violet",
+  "purple",
+  "fuchsia",
+  "pink",
+  "rose",
+  "slate",
+] as const
+
+export type UserColor = (typeof USER_COLORS)[number]
+
+export function isUserColor(value: unknown): value is UserColor {
+  return typeof value === "string" && (USER_COLORS as readonly string[]).includes(value)
+}
 
 export const ROLES = ["creator", "admin", "member"] as const
 
@@ -14,7 +39,7 @@ export interface StoredUser {
   role: Role
   createdAt: string
   disabledAt: string | null
-  color?: TrustLevelColor | null
+  color?: UserColor | null
 }
 
 export interface PublicUser {
@@ -22,7 +47,7 @@ export interface PublicUser {
   role: Role
   createdAt: string
   disabled: boolean
-  color: TrustLevelColor | null
+  color: UserColor | null
 }
 
 export type UserRejection =

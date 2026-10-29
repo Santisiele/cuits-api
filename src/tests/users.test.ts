@@ -11,6 +11,7 @@ import {
   toPublicUser,
   userChangeRejection,
   usernameKey,
+  USER_COLORS,
 } from "@domain/users"
 import { UserAdminService, UserAdminError } from "@application/UserAdminService"
 import { InMemoryUserRepository, plainHasher, storedUser } from "./userFakes"
@@ -203,6 +204,11 @@ describe("UserAdminService.update", () => {
 
   it("refuses a color outside the palette", async () => {
     expect(await rejection(service(team()).update("admin", "luchi", { color: "#ff0000" }))).toBe("invalid_color")
+  })
+
+  it("offers eighteen colors for users, beyond the trust level ones", async () => {
+    expect(USER_COLORS).toHaveLength(18)
+    expect((await service(team()).update("admin", "luchi", { color: "indigo" })).color).toBe("indigo")
   })
 
   it("still guards the role when the color comes along", async () => {

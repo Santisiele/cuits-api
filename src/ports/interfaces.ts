@@ -12,7 +12,7 @@ import type {
   BackupNode,
   BackupRelationship,
 } from "@domain/backup.js"
-import type { Role, StoredUser } from "@domain/users.js"
+import type { Role, StoredUser, UserColor } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
 import type {
   Action,
@@ -418,7 +418,7 @@ export interface IUserRepository {
   findByUsername(username: string): Promise<StoredUser | null>
   findAll(): Promise<StoredUser[]>
   create(user: StoredUser): Promise<"created" | "taken">
-  update(username: string, fields: { role?: Role; disabledAt?: string | null; color?: TrustLevelColor | null }): Promise<StoredUser | null>
+  update(username: string, fields: { role?: Role; disabledAt?: string | null; color?: UserColor | null }): Promise<StoredUser | null>
   setPasswordHash(username: string, passwordHash: string): Promise<boolean>
 }
 
