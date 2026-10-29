@@ -111,10 +111,10 @@ describe("crm company routes", () => {
   it("previews the removal and only logs the real one", async () => {
     await addCompany()
     const preview = await app.inject({ method: "DELETE", url: `/crm/companies/${COMPANY}?dryRun=true` })
-    expect(preview.json()).toEqual({ outcome: "deleted", dryRun: true })
+    expect(preview.json()).toEqual({ outcome: "deleted", cancelledTaskCount: 0, dryRun: true })
     expect(logCrmOperation).toHaveBeenCalledTimes(1)
     const real = await app.inject({ method: "DELETE", url: `/crm/companies/${COMPANY}` })
-    expect(real.json()).toEqual({ outcome: "deleted", dryRun: false })
+    expect(real.json()).toEqual({ outcome: "deleted", cancelledTaskCount: 0, dryRun: false })
     expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "crm_remove_deleted", "CrmCompany", COMPANY)
   })
 })
@@ -171,5 +171,128 @@ describe("crm contact routes", () => {
     const response = await app.inject({ method: "PATCH", url: "/crm/contacts/nope", payload: {} })
     expect(response.statusCode).toBe(404)
     expect(response.json().error).toBe("contact_not_found")
+  })
+})
+
+describe("crm action, task and agenda routes", () => {
+  const TASK_FIELDS = {
+    id: expect.any(String),
+    companyTaxId: COMPANY,
+    description: "Mandar propuesta",
+    dueDate: "2026-11-02",
+    status: "open",
+    cancelReason: null,
+    assignee: "flavia",
+    createdBy: "flavia",
+    contactIds: [],
+    createdAt: expect.any(String),
+    closedAt: null,
+    archivedAt: null,
+  }
+
+  async function recordAction() {
+    await addCompany()
+    state.repository.users = ["flavia", "santi"]
+    return app.inject({
+      method: "POST",
+      url: "/crm/actions",
+      payload: {
+        companyTaxId: COMPANY,
+        date: "2026-10-29",
+        description: "Lo llamé",
+        nextTask: { description: "Mandar propuesta", dueDate: "2026-11-02" },
+      },
+    })
+  }
+
+  it("records an action and answers every field of it and its next task", async () => {
+    const response = await recordAction()
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toEqual({
+      action: {
+        id: expect.any(String),
+        companyTaxId: COMPANY,
+        date: "2026-10-29",
+        description: "Lo llamé",
+        doneBy: "flavia",
+        contactIds: [],
+        createdTaskId: expect.any(String),
+        completedTaskIds: [],
+        createdAt: expect.any(String),
+        archivedAt: null,
+      },
+      closedTasks: [],
+      nextTask: TASK_FIELDS,
+    })
+  })
+
+  it("answers a null next task when there is none", async () => {
+    await addCompany()
+    const response = await app.inject({
+      method: "POST",
+      url: "/crm/actions",
+      payload: { companyTaxId: COMPANY, date: "2026-10-29", description: "x" },
+    })
+    expect(response.json().nextTask).toBeNull()
+  })
+
+  it("serves the agenda with the company name and overdue flag", async () => {
+    await recordAction()
+    const response = await app.inject({ method: "GET", url: "/crm/agenda?assignee=all" })
+    expect(response.json().tasks).toEqual([{ ...TASK_FIELDS, businessName: "ACME SA", overdue: expect.any(Boolean) }])
+  })
+
+  it("shows actions and tasks on the company", async () => {
+    await recordAction()
+    const detail = (await app.inject({ method: "GET", url: `/crm/companies/${COMPANY}` })).json()
+    expect(detail.actions).toHaveLength(1)
+    expect(detail.tasks).toEqual([TASK_FIELDS])
+  })
+
+  it("cancels a task and serves its history with the changed values", async () => {
+    const taskId = (await recordAction()).json().nextTask.id
+    const missingReason = await app.inject({ method: "PATCH", url: `/crm/tasks/${taskId}`, payload: { status: "cancelled" } })
+    expect(missingReason.statusCode).toBe(400)
+    expect(missingReason.json().error).toBe("cancel_reason_required")
+
+    const cancelled = await app.inject({
+      method: "PATCH",
+      url: `/crm/tasks/${taskId}`,
+      payload: { status: "cancelled", cancelReason: "Ya no compra" },
+    })
+    expect(cancelled.json()).toMatchObject({ status: "cancelled", cancelReason: "Ya no compra" })
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "cancelled", "Task", taskId)
+
+    const history = await app.inject({ method: "GET", url: `/crm/changes?entityType=Task&entityId=${taskId}` })
+    expect(history.json().changes[0]).toEqual({
+      id: expect.any(String),
+      at: expect.any(String),
+      by: "flavia",
+      entityType: "Task",
+      entityId: taskId,
+      operation: "cancel",
+      before: { status: "open", cancelReason: null },
+      after: { status: "cancelled", cancelReason: "Ya no compra" },
+    })
+  })
+
+  it("answers 403 when a member touches someone else's task", async () => {
+    await addCompany()
+    state.repository.users = ["flavia", "santi"]
+    await app.inject({
+      method: "POST",
+      url: "/crm/tasks",
+      payload: { companyTaxId: COMPANY, description: "x", dueDate: "2026-11-02", assignee: "santi" },
+    })
+    const stored = [...state.repository.tasks.values()][0]!
+    state.repository.tasks.set(stored.id, { ...stored, createdBy: "santi" })
+    const response = await app.inject({ method: "DELETE", url: `/crm/tasks/${stored.id}` })
+    expect(response.statusCode).toBe(403)
+    expect(response.json().error).toBe("forbidden")
+  })
+
+  it("lists the users a task can be assigned to", async () => {
+    state.repository.users = ["flavia", "santi"]
+    expect((await app.inject({ method: "GET", url: "/crm/users" })).json()).toEqual({ users: ["flavia", "santi"] })
   })
 })
