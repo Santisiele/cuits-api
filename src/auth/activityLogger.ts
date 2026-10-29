@@ -83,6 +83,17 @@ export function logUserOperation(
 
 // ─── Semantic action logs ─────────────────────────────────────────────────────
 
+export function logCrmOperation(username: string, operation: string, entityType: string, entityId: string): void {
+  activityLogger.info({
+    event: "crm_operation",
+    username,
+    operation,
+    entityType,
+    entityId,
+    message: `${username} ran ${operation} on ${entityType} ${entityId}`,
+  })
+}
+
 /** Logs a CUIT search. */
 export function logCuitSearch(username: string, taxId: string, found: boolean): void {
   activityLogger.info({
