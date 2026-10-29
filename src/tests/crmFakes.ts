@@ -1,4 +1,4 @@
-import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces"
+import type { CrmCuitAdd, CrmPersonAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces"
 import type { NosisPendingItem } from "@domain/nosisPending"
 import type { Responsible } from "@domain/responsibles"
 import type {
@@ -36,6 +36,7 @@ interface StoredCuit {
   knownSources: string[]
   relatedToBase: boolean
   trustBeforeClose: { level: number | null; reason: string | null; closedLevel: number } | null
+  createdByCrm: boolean
   fields: CrmCompanyFields
   addedAt: string | null
   addedBy: string | null
@@ -63,6 +64,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     { name: "Bolsa", category: "toKnow" },
   ]
   inservibleLevel: number | null = 1
+  failContactWrites = false
 
   seedCuit(taxId: string, partial: Partial<StoredCuit> = {}): void {
     this.cuits.set(taxId, {
@@ -80,6 +82,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       sources: [],
       crmSources: [],
       trustBeforeClose: null,
+      createdByCrm: false,
       knownSources: [],
       relatedToBase: false,
       fields: { crmBrand: null, crmProduct: null, crmOrigin: null, originSource: null },
@@ -105,7 +108,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async addToCrm(add: CrmCuitAdd, change: Change): Promise<void> {
-    if (!this.cuits.has(add.taxId)) this.seedCuit(add.taxId, { businessName: add.businessName ?? "" })
+    if (!this.cuits.has(add.taxId)) this.seedCuit(add.taxId, { businessName: add.businessName ?? "", createdByCrm: true })
     const cuit = this.cuits.get(add.taxId)!
     if (add.markNosisPending) cuit.nosisPending = true
     if (add.asCompany) {
@@ -197,6 +200,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     const cuit = this.cuits.get(taxId)!
     const tasks = [...this.tasks.values()].filter((task) => task.companyTaxId === taxId)
     return {
+      createdByCrm: cuit.createdByCrm,
       hasHistory:
         [...this.contacts.values()].some((contact) => contact.companyTaxIds.includes(taxId) || contact.cuil === taxId) ||
         [...this.actions.values()].some((action) => action.companyTaxId === taxId) ||
@@ -233,7 +237,9 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return taxIds.filter((taxId) => this.cuits.get(taxId)?.company === true)
   }
 
-  async createContact(contact: Contact, change: Change): Promise<void> {
+  async createContact(contact: Contact, change: Change, person: CrmPersonAdd | null): Promise<void> {
+    if (this.failContactWrites) throw new Error("contact write failed")
+    if (person) await this.addToCrm(person.add, person.change)
     this.contacts.set(contact.id, { ...contact })
     this.changes.push(change)
   }
@@ -243,7 +249,8 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return contact ? { ...contact } : null
   }
 
-  async updateContact(contact: Contact, change: Change): Promise<void> {
+  async updateContact(contact: Contact, change: Change, person: CrmPersonAdd | null = null): Promise<void> {
+    if (person) await this.addToCrm(person.add, person.change)
     this.contacts.set(contact.id, { ...contact })
     this.changes.push(change)
   }
@@ -282,18 +289,20 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return this.responsibles.map((responsible) => ({ ...responsible, users: [...responsible.users] }))
   }
 
-  async createResponsible(responsible: Responsible): Promise<"created" | "taken"> {
+  async createResponsible(responsible: Responsible, _at: string, _by: string, change: Change): Promise<"created" | "taken"> {
     if (this.responsibles.some((other) => other.name.toLowerCase() === responsible.name.toLowerCase())) return "taken"
     this.responsibles.push({ ...responsible })
+    this.changes.push(change)
     return "created"
   }
 
-  async updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken"> {
+  async updateResponsible(name: string, responsible: Responsible, _at: string, change: Change): Promise<"updated" | "taken"> {
     const index = this.responsibles.findIndex((other) => other.name.toLowerCase() === name.toLowerCase())
     const clash = this.responsibles.findIndex((other) => other.name.toLowerCase() === responsible.name.toLowerCase())
     if (clash >= 0 && clash !== index) return "taken"
     this.responsibles[index] = { ...responsible }
     for (const task of this.tasks.values()) if (task.assignee.toLowerCase() === name.toLowerCase()) task.assignee = responsible.name
+    this.changes.push(change)
     return "updated"
   }
 

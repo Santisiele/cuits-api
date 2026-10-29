@@ -48,6 +48,7 @@ const RESPONSIBLE_STATUS: Record<ResponsibleRejection, number> = {
   invalid_name: 400,
   invalid_color: 400,
   invalid_users: 400,
+  invalid_disabled: 400,
   name_taken: 409,
   responsible_not_found: 404,
   user_not_found: 404,
@@ -352,7 +353,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const responsible = await responsibles.update(request.params.name, request.body ?? {})
+        const responsible = await responsibles.update(request.params.name, request.body ?? {}, request.username)
         logCrmOperation(request.username, "update", "Responsible", responsible.name, {
           previousName: request.params.name,
           color: responsible.color,

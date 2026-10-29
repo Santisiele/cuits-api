@@ -103,12 +103,21 @@ describe("ResponsibleService", () => {
       username: "sol",
       canAdminister: false,
     })
-    const updated = await responsibles.update("raul", { name: "Raúl", color: "blue-300", users: ["sol"], disabled: true })
+    const updated = await responsibles.update("raul", { name: "Raúl", color: "blue-300", users: ["sol"], disabled: true }, "admin")
     expect(updated).toEqual({ name: "Raúl", color: "blue-300", users: ["sol"], disabled: true })
     expect(repository.tasks.get(task.id)?.assignee).toBe("Raúl")
-    expect(await rejection(responsibles.update("Luchi", { name: "Sol" }))).toBe("name_taken")
-    expect(await rejection(responsibles.update("Nadie", {}))).toBe("responsible_not_found")
-    expect(await rejection(responsibles.update("Luchi", { disabled: "yes" }))).toBe("invalid_users")
+    expect(repository.changes.at(-1)).toMatchObject({
+      entityType: "Responsible",
+      entityId: "Raúl",
+      operation: "update",
+      by: "admin",
+      at: NOW.toISOString(),
+      before: { name: "Raul", disabled: false },
+      after: { name: "Raúl", disabled: true },
+    })
+    expect(await rejection(responsibles.update("Luchi", { name: "Sol" }, "admin"))).toBe("name_taken")
+    expect(await rejection(responsibles.update("Nadie", {}, "admin"))).toBe("responsible_not_found")
+    expect(await rejection(responsibles.update("Luchi", { disabled: "yes" }, "admin"))).toBe("invalid_disabled")
   })
 })
 

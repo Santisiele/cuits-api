@@ -1,7 +1,7 @@
 import neo4j, { type ManagedTransaction, type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
-import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces.js"
+import type { CrmCuitAdd, CrmPersonAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces.js"
 import { isResponsibleColor, responsibleKey, type Responsible } from "@domain/responsibles.js"
 import { usernameKey } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
@@ -35,6 +35,7 @@ const ENTITY_LABELS: Record<ChangeEntityType, string> = {
   Contact: "Contact",
   CrmCompany: "CUIT",
   User: "User",
+  Responsible: "Responsible",
 }
 
 function toText(value: unknown): string {
@@ -272,18 +273,22 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  async createResponsible(responsible: Responsible, at: string, by: string): Promise<"created" | "taken"> {
+  async createResponsible(responsible: Responsible, at: string, by: string, change: Change): Promise<"created" | "taken"> {
     const session = this.session()
     try {
-      const result = await session.run(Queries.CREATE_RESPONSIBLE, {
-        name: responsible.name,
-        nameKey: responsibleKey(responsible.name),
-        color: responsible.color,
-        users: responsible.users,
-        at,
-        by,
+      return await session.executeWrite(async (tx) => {
+        const result = await tx.run(Queries.CREATE_RESPONSIBLE, {
+          name: responsible.name,
+          nameKey: responsibleKey(responsible.name),
+          color: responsible.color,
+          users: responsible.users,
+          at,
+          by,
+        })
+        if (result.records.length === 0) return "taken"
+        await writeChange(tx, change)
+        return "created"
       })
-      return result.records.length > 0 ? "created" : "taken"
     } catch (err) {
       if (String((err as { code?: unknown }).code ?? "").includes("ConstraintValidationFailed")) return "taken"
       throw err
@@ -292,19 +297,23 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     }
   }
 
-  async updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken"> {
+  async updateResponsible(name: string, responsible: Responsible, at: string, change: Change): Promise<"updated" | "taken"> {
     const session = this.session()
     try {
-      const result = await session.run(Queries.UPDATE_RESPONSIBLE, {
-        key: responsibleKey(name),
-        name: responsible.name,
-        nameKey: responsibleKey(responsible.name),
-        color: responsible.color,
-        users: responsible.users,
-        disabled: responsible.disabled,
-        at: new Date().toISOString(),
+      return await session.executeWrite(async (tx) => {
+        const result = await tx.run(Queries.UPDATE_RESPONSIBLE, {
+          key: responsibleKey(name),
+          name: responsible.name,
+          nameKey: responsibleKey(responsible.name),
+          color: responsible.color,
+          users: responsible.users,
+          disabled: responsible.disabled,
+          at,
+        })
+        if (result.records.length === 0) return "taken"
+        await writeChange(tx, change)
+        return "updated"
       })
-      return result.records.length > 0 ? "updated" : "taken"
     } finally {
       await session.close()
     }
@@ -511,6 +520,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     return this.read(async (session) => {
       const record = (await session.run(Queries.CRM_FIND_REMOVAL_FACTS, { taxId })).records[0]
       return {
+        createdByCrm: record?.get("createdByCrm") === true,
         hasHistory: record?.get("hasHistory") === true,
         hasSource: record?.get("hasSource") === true,
         relatedToBase: record?.get("relatedToBase") === true,
@@ -538,8 +548,12 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  createContact(contact: Contact, change: Change): Promise<void> {
+  createContact(contact: Contact, change: Change, person: CrmPersonAdd | null): Promise<void> {
     return this.write(async (tx) => {
+      if (person) {
+        await tx.run(Queries.CRM_ADD_CUIT, person.add)
+        await writeChange(tx, person.change)
+      }
       await tx.run(Queries.CRM_CREATE_CONTACT, contact)
       await tx.run(Queries.CRM_LINK_CONTACT, contact)
       await writeChange(tx, change)
@@ -553,8 +567,12 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  updateContact(contact: Contact, change: Change): Promise<void> {
+  updateContact(contact: Contact, change: Change, person: CrmPersonAdd | null = null): Promise<void> {
     return this.write(async (tx) => {
+      if (person) {
+        await tx.run(Queries.CRM_ADD_CUIT, person.add)
+        await writeChange(tx, person.change)
+      }
       await tx.run(Queries.CRM_UPDATE_CONTACT, contact)
       await tx.run(Queries.CRM_LINK_CONTACT, contact)
       await writeChange(tx, change)

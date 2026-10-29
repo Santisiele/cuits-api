@@ -330,6 +330,11 @@ export interface IBackupRepository {
   recordBackup(lastRunAt: string): Promise<void>
 }
 
+export interface CrmPersonAdd {
+  add: CrmCuitAdd
+  change: Change
+}
+
 export interface CrmCuitAdd extends CrmCompanyFields {
   taxId: string
   businessName: string | null
@@ -366,9 +371,9 @@ export interface ICrmRepository {
   findSource(name: string): Promise<CrmSource | null>
   listSources(): Promise<CrmSource[]>
   companiesInCrm(taxIds: string[]): Promise<string[]>
-  createContact(contact: Contact, change: Change): Promise<void>
+  createContact(contact: Contact, change: Change, person: CrmPersonAdd | null): Promise<void>
   findContact(id: string): Promise<Contact | null>
-  updateContact(contact: Contact, change: Change): Promise<void>
+  updateContact(contact: Contact, change: Change, person?: CrmPersonAdd | null): Promise<void>
   listContacts(taxId: string): Promise<Contact[]>
   listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]>
   listActiveUsers(): Promise<CrmUser[]>
@@ -388,8 +393,8 @@ export interface ICrmRepository {
 export interface IResponsibleRepository {
   listResponsibles(): Promise<Responsible[]>
   listActiveUsers(): Promise<CrmUser[]>
-  createResponsible(responsible: Responsible, at: string, by: string): Promise<"created" | "taken">
-  updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken">
+  createResponsible(responsible: Responsible, at: string, by: string, change: Change): Promise<"created" | "taken">
+  updateResponsible(name: string, responsible: Responsible, at: string, change: Change): Promise<"updated" | "taken">
 }
 
 export interface INosisPendingRepository {
