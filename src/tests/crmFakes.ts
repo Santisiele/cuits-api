@@ -1,5 +1,6 @@
-import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository } from "@ports/interfaces"
+import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces"
 import type { NosisPendingItem } from "@domain/nosisPending"
+import type { Responsible } from "@domain/responsibles"
 import type {
   Action,
   AgendaItem,
@@ -36,7 +37,7 @@ interface StoredCuit {
   addedBy: string | null
 }
 
-export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepository {
+export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepository, IResponsibleRepository {
   readonly cuits = new Map<string, StoredCuit>()
   readonly contacts = new Map<string, Contact>()
   readonly changes: Change[] = []
@@ -44,6 +45,11 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   readonly actions = new Map<string, Action>()
   readonly tasks = new Map<string, Task>()
   users = ["santi", "Flavia", "pedro"]
+  responsibles: Responsible[] = [
+    { name: "santi", color: "orange", users: ["santi"], disabled: false },
+    { name: "Flavia", color: "green", users: ["Flavia"], disabled: false },
+    { name: "pedro", color: "blue-500", users: ["pedro"], disabled: false },
+  ]
   readonly colors = new Map<string, string>()
   readonly searchedAt = new Map<string, string>()
   mailDay: string | null = null
@@ -239,6 +245,25 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     this.mailDay = day
   }
 
+  async listResponsibles(): Promise<Responsible[]> {
+    return this.responsibles.map((responsible) => ({ ...responsible, users: [...responsible.users] }))
+  }
+
+  async createResponsible(responsible: Responsible): Promise<"created" | "taken"> {
+    if (this.responsibles.some((other) => other.name.toLowerCase() === responsible.name.toLowerCase())) return "taken"
+    this.responsibles.push({ ...responsible })
+    return "created"
+  }
+
+  async updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken"> {
+    const index = this.responsibles.findIndex((other) => other.name.toLowerCase() === name.toLowerCase())
+    const clash = this.responsibles.findIndex((other) => other.name.toLowerCase() === responsible.name.toLowerCase())
+    if (clash >= 0 && clash !== index) return "taken"
+    this.responsibles[index] = { ...responsible }
+    for (const task of this.tasks.values()) if (task.assignee.toLowerCase() === name.toLowerCase()) task.assignee = responsible.name
+    return "updated"
+  }
+
   async listActiveUsers(): Promise<CrmUser[]> {
     return this.users.map((username) => ({ username, color: this.colors.get(username) ?? null }))
   }
@@ -290,10 +315,11 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return [...this.tasks.values()].filter((task) => task.companyTaxId === taxId && task.archivedAt === null)
   }
 
-  async listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]> {
+  async listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]> {
+    const keys = assignees?.map((name) => name.toLowerCase()) ?? null
     return [...this.tasks.values()]
       .filter((task) => task.status === "open" && task.archivedAt === null)
-      .filter((task) => assignee === null || task.assignee.toLowerCase() === assignee.toLowerCase())
+      .filter((task) => keys === null || keys.includes(task.assignee.toLowerCase()))
       .map((task) => ({ ...task, businessName: this.cuits.get(task.companyTaxId)?.businessName ?? "" }))
   }
 

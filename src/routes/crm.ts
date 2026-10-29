@@ -3,6 +3,9 @@ import { CrmService, CrmError, type AgendaQuery } from "@application/CrmService.
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
 import { NosisPendingService } from "@application/NosisPendingService.js"
 import { requireCreator } from "@middleware/requireCreator.js"
+import { requireAdmin } from "@middleware/requireAdmin.js"
+import { ResponsibleError, ResponsibleService } from "@application/ResponsibleService.js"
+import type { ResponsibleRejection } from "@domain/responsibles.js"
 import { logCrmOperation } from "@auth/activityLogger.js"
 import { NOSIS_PENDING_COMMAND } from "@domain/nosisPending.js"
 import { canAdminister } from "@domain/users.js"
@@ -36,6 +39,17 @@ const STATUS_BY_REASON: Record<CrmRejection, number> = {
   company_closed: 409,
   not_closed: 409,
   source_not_found: 404,
+  responsible_not_found: 404,
+  responsible_required: 400,
+}
+
+const RESPONSIBLE_STATUS: Record<ResponsibleRejection, number> = {
+  invalid_name: 400,
+  invalid_color: 400,
+  invalid_users: 400,
+  name_taken: 409,
+  responsible_not_found: 404,
+  user_not_found: 404,
 }
 
 function actorOf(request: FastifyRequest): Actor {
@@ -43,6 +57,9 @@ function actorOf(request: FastifyRequest): Actor {
 }
 
 function handleError(err: unknown, reply: FastifyReply) {
+  if (err instanceof ResponsibleError) {
+    return reply.code(RESPONSIBLE_STATUS[err.reason]).send({ error: err.reason, message: err.message })
+  }
   if (!(err instanceof CrmError)) throw err
   return reply.code(STATUS_BY_REASON[err.reason]).send({ error: err.reason, message: err.message })
 }
@@ -95,6 +112,7 @@ const actionSchema = {
     date: { type: "string" },
     description: { type: "string" },
     doneBy: { type: "string" },
+    recordedBy: { type: "string" },
     contactIds: idList,
     createdTaskId: nullableString,
     completedTaskIds: idList,
@@ -153,6 +171,7 @@ const actionBodySchema = {
   type: "object",
   properties: {
     companyTaxId: { type: "string" },
+    doneBy: nullableString,
     date: { type: "string" },
     description: { type: "string" },
     contactIds: idList,
@@ -226,6 +245,7 @@ type TaskBody = {
 
 type ActionBody = {
   companyTaxId?: string
+  doneBy?: string | null
   date?: string
   description?: string
   contactIds?: string[]
@@ -237,6 +257,77 @@ export default async function crmRoutes(server: FastifyInstance) {
   const repository = new Neo4jCrmRepository()
   const service = new CrmService(repository)
   const nosisPending = new NosisPendingService(repository)
+  const responsibles = new ResponsibleService(repository)
+
+  const responsibleSchema = {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      color: { type: "string" },
+      users: { type: "array", items: { type: "string" } },
+      disabled: { type: "boolean" },
+    },
+  } as const
+
+  const responsibleBody = {
+    type: "object",
+    properties: {
+      name: { type: "string" },
+      color: { type: "string" },
+      users: { type: "array", items: { type: "string" } },
+      disabled: { type: "boolean" },
+    },
+  } as const
+
+  server.get(
+    "/crm/responsibles",
+    {
+      schema: {
+        summary: "Who actions and tasks can be attributed to, each with a color and the app users it stands for",
+        response: { 200: { type: "object", properties: { responsibles: { type: "array", items: responsibleSchema } } } },
+      },
+    },
+    async () => ({ responsibles: await responsibles.list() })
+  )
+
+  server.post<{ Body: { name?: string; color?: string; users?: string[] } }>(
+    "/crm/responsibles",
+    {
+      preHandler: requireAdmin,
+      schema: { summary: "Add a responsible (admin only)", body: responsibleBody, response: { 201: responsibleSchema, ...errors } },
+    },
+    async (request, reply) => {
+      try {
+        const responsible = await responsibles.create(request.body ?? {}, request.username)
+        logCrmOperation(request.username, "create", "Responsible", responsible.name)
+        return reply.code(201).send(responsible)
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.patch<{ Params: { name: string }; Body: { name?: string; color?: string; users?: string[]; disabled?: boolean } }>(
+    "/crm/responsibles/:name",
+    {
+      preHandler: requireAdmin,
+      schema: {
+        summary: "Rename, recolor, relink or disable a responsible (admin only)",
+        params: { type: "object", properties: { name: { type: "string" } } },
+        body: responsibleBody,
+        response: { 200: responsibleSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const responsible = await responsibles.update(request.params.name, request.body ?? {})
+        logCrmOperation(request.username, "update", "Responsible", responsible.name)
+        return responsible
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
 
   server.get(
     "/crm/companies",

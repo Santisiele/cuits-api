@@ -86,6 +86,7 @@ const ACTION: Action = {
   date: "2026-10-29",
   description: "Lo llamé",
   doneBy: "Flavia",
+  recordedBy: "sol",
   contactIds: [],
   createdTaskId: null,
   completedTaskIds: [],
@@ -133,18 +134,21 @@ describe("taskStatusRejection", () => {
 
 describe("permissions", () => {
   const admin = { username: "santi", canAdminister: true }
-  const flavia = { username: "flavia", canAdminister: false }
-  const pedro = { username: "pedro", canAdminister: false }
+  const flavia = { username: "flavia", canAdminister: false, responsibles: ["flavia", "Triunvirato"] }
+  const sol = { username: "sol", canAdminister: false, responsibles: ["Sol"] }
+  const pedro = { username: "pedro", canAdminister: false, responsibles: ["Pedro"] }
 
-  it("lets admins change any action and members only their own", () => {
+  it("lets admins change any action, members the ones they loaded or that stand for them", () => {
     expect(canChangeAction(admin, ACTION)).toBe(true)
     expect(canChangeAction(flavia, ACTION)).toBe(true)
+    expect(canChangeAction(sol, ACTION)).toBe(true)
     expect(canChangeAction(pedro, ACTION)).toBe(false)
   })
 
-  it("lets a member change a task they created or were assigned", () => {
+  it("lets a member change a task they created or whose responsible stands for them, a group included", () => {
     expect(canChangeTask(admin, TASK)).toBe(true)
     expect(canChangeTask(flavia, TASK)).toBe(true)
+    expect(canChangeTask(flavia, { ...TASK, assignee: "TRIUNVIRATO", createdBy: "sol" })).toBe(true)
     expect(canChangeTask({ username: "Santi", canAdminister: false }, TASK)).toBe(true)
     expect(canChangeTask(pedro, TASK)).toBe(false)
   })

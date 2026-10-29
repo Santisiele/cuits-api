@@ -14,6 +14,7 @@ import type {
 } from "@domain/backup.js"
 import type { Role, StoredUser, UserColor } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
+import type { Responsible } from "@domain/responsibles.js"
 import type {
   Action,
   AgendaItem,
@@ -373,7 +374,15 @@ export interface ICrmRepository {
   updateTask(task: Task, change: Change): Promise<void>
   listActions(taxId: string): Promise<Action[]>
   listTasks(taxId: string): Promise<Task[]>
-  listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]>
+  listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]>
+  listResponsibles(): Promise<Responsible[]>
+}
+
+export interface IResponsibleRepository {
+  listResponsibles(): Promise<Responsible[]>
+  listActiveUsers(): Promise<CrmUser[]>
+  createResponsible(responsible: Responsible, at: string, by: string): Promise<"created" | "taken">
+  updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken">
 }
 
 export interface INosisPendingRepository {
