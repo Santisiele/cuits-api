@@ -681,10 +681,22 @@ export const Queries = {
     MATCH (n) RETURN count(n) AS total
   `,
 
+  CREATE_RESTORE_INDEX: `
+    CREATE INDEX backup_restore_key IF NOT EXISTS FOR (n:BackupRestore) ON (n.__backupKey)
+  `,
+
+  AWAIT_INDEXES: `
+    CALL db.awaitIndexes(300)
+  `,
+
+  DROP_RESTORE_INDEX: `
+    DROP INDEX backup_restore_key IF EXISTS
+  `,
+
   CLEAR_BACKUP_KEYS: `
-    MATCH (n) WHERE n.__backupKey IS NOT NULL
+    MATCH (n:BackupRestore)
     WITH n LIMIT $batchSize
-    REMOVE n.__backupKey
+    REMOVE n.__backupKey, n:BackupRestore
     RETURN count(n) AS cleared
   `,
 

@@ -305,6 +305,7 @@ export interface IBirthdayProgressRepository {
 export interface IBackupRepository {
   exportGraph(exportedAt: string): Promise<GraphBackup>
   countAllNodes(): Promise<number>
+  prepareRestore(): Promise<void>
   restoreNodeBatch(labels: string[], nodes: BackupNode[]): Promise<number>
   restoreRelationshipBatch(type: string, relationships: BackupRelationship[]): Promise<number>
   clearBackupKeys(): Promise<number>

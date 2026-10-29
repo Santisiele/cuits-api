@@ -979,6 +979,16 @@ export class Neo4jRepository
     }
   }
 
+  async prepareRestore(): Promise<void> {
+    const session = this.session()
+    try {
+      await session.run(Queries.CREATE_RESTORE_INDEX)
+      await session.run(Queries.AWAIT_INDEXES)
+    } finally {
+      await session.close()
+    }
+  }
+
   async restoreNodeBatch(labels: string[], nodes: BackupNode[]): Promise<number> {
     for (const label of labels) {
       if (!isSafeGraphName(label)) throw new Error(`Refusing to restore an unsafe label: ${label}`)
@@ -987,7 +997,7 @@ export class Neo4jRepository
     try {
       const result = await session.run(
         `UNWIND $nodes AS node
-         CREATE (n:${labels.join(":")})
+         CREATE (n:${[...labels, "BackupRestore"].join(":")})
          SET n = node.properties, n.__backupKey = node.key
          RETURN count(n) AS created`,
         { nodes: nodes.map((node) => ({ key: node.key, properties: toGraphProperties(node.properties) })) }
@@ -1004,8 +1014,8 @@ export class Neo4jRepository
     try {
       const result = await session.run(
         `UNWIND $relationships AS rel
-         MATCH (a {__backupKey: rel.from})
-         MATCH (b {__backupKey: rel.to})
+         MATCH (a:BackupRestore {__backupKey: rel.from})
+         MATCH (b:BackupRestore {__backupKey: rel.to})
          CREATE (a)-[r:${type}]->(b)
          SET r = rel.properties
          RETURN count(r) AS created`,
@@ -1031,8 +1041,10 @@ export class Neo4jRepository
         const result = await session.run(Queries.CLEAR_BACKUP_KEYS, { batchSize: this.batchParam(5_000) })
         const removed = Number(result.records[0]?.get("cleared") ?? 0)
         cleared += removed
-        if (removed === 0) return cleared
+        if (removed === 0) break
       }
+      await session.run(Queries.DROP_RESTORE_INDEX)
+      return cleared
     } finally {
       await session.close()
     }
