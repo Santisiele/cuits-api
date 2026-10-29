@@ -1,4 +1,5 @@
-import type { CrmCuitAdd, ICrmRepository } from "@ports/interfaces"
+import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository } from "@ports/interfaces"
+import type { NosisPendingItem } from "@domain/nosisPending"
 import type {
   Action,
   AgendaItem,
@@ -29,7 +30,7 @@ interface StoredCuit {
   addedBy: string | null
 }
 
-export class InMemoryCrmRepository implements ICrmRepository {
+export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepository {
   readonly cuits = new Map<string, StoredCuit>()
   readonly contacts = new Map<string, Contact>()
   readonly changes: Change[] = []
@@ -37,6 +38,8 @@ export class InMemoryCrmRepository implements ICrmRepository {
   readonly actions = new Map<string, Action>()
   readonly tasks = new Map<string, Task>()
   users = ["santi", "Flavia", "pedro"]
+  readonly searchedAt = new Map<string, string>()
+  mailDay: string | null = null
   setupCalls = 0
 
   seedCuit(taxId: string, partial: Partial<StoredCuit> = {}): void {
@@ -160,6 +163,28 @@ export class InMemoryCrmRepository implements ICrmRepository {
 
   async listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]> {
     return this.changes.filter((change) => change.entityType === entityType && change.entityId === entityId).reverse()
+  }
+
+  async listNosisPending(): Promise<NosisPendingItem[]> {
+    return [...this.cuits.values()]
+      .filter((cuit) => cuit.nosisPending)
+      .map((cuit) => ({ taxId: cuit.taxId, businessName: cuit.businessName, sources: [], addedBy: cuit.addedBy, addedAt: cuit.addedAt }))
+  }
+
+  async markNosisSearched(taxId: string, businessName: string, at: string): Promise<void> {
+    const cuit = this.cuits.get(taxId)!
+    cuit.nosisPending = false
+    cuit.nosisSearched = true
+    if (!cuit.businessName) cuit.businessName = businessName
+    this.searchedAt.set(taxId, at)
+  }
+
+  async lastPendingMailDay(): Promise<string | null> {
+    return this.mailDay
+  }
+
+  async recordPendingMail(day: string): Promise<void> {
+    this.mailDay = day
   }
 
   async listActiveUsernames(): Promise<string[]> {
