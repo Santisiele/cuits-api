@@ -366,6 +366,11 @@ describe("actions and tasks", () => {
   })
 
   it("lists the users a task can go to", async () => {
-    expect(await service.listUsers()).toEqual(["santi", "Flavia", "pedro"])
+    repository.colors.set("Flavia", "teal")
+    expect(await service.listUsers()).toEqual([
+      { username: "santi", color: null },
+      { username: "Flavia", color: "teal" },
+      { username: "pedro", color: null },
+    ])
   })
 })

@@ -20,6 +20,7 @@ import type {
   Task,
   Change,
   ChangeEntityType,
+  CrmUser,
   Contact,
   CrmCompany,
   CrmCompanyFields,
@@ -351,7 +352,7 @@ export interface ICrmRepository {
   updateContact(contact: Contact, change: Change): Promise<void>
   listContacts(taxId: string): Promise<Contact[]>
   listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]>
-  listActiveUsernames(): Promise<string[]>
+  listActiveUsers(): Promise<CrmUser[]>
   contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]>
   findAction(id: string): Promise<Action | null>
   findTask(id: string): Promise<Task | null>
@@ -417,7 +418,7 @@ export interface IUserRepository {
   findByUsername(username: string): Promise<StoredUser | null>
   findAll(): Promise<StoredUser[]>
   create(user: StoredUser): Promise<"created" | "taken">
-  update(username: string, fields: { role?: Role; disabledAt?: string | null }): Promise<StoredUser | null>
+  update(username: string, fields: { role?: Role; disabledAt?: string | null; color?: TrustLevelColor | null }): Promise<StoredUser | null>
   setPasswordHash(username: string, passwordHash: string): Promise<boolean>
 }
 

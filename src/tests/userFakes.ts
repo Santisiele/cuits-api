@@ -1,5 +1,6 @@
 import type { IPasswordHasher, IUserRepository } from "@ports/interfaces"
 import { usernameKey, type Role, type StoredUser } from "@domain/users"
+import type { TrustLevelColor } from "@domain/entities"
 
 export class InMemoryUserRepository implements IUserRepository {
   readonly users = new Map<string, StoredUser>()
@@ -26,12 +27,13 @@ export class InMemoryUserRepository implements IUserRepository {
 
   async update(
     username: string,
-    fields: { role?: Role; disabledAt?: string | null }
+    fields: { role?: Role; disabledAt?: string | null; color?: TrustLevelColor | null }
   ): Promise<StoredUser | null> {
     const user = this.users.get(usernameKey(username))
     if (!user) return null
     if (fields.role !== undefined) user.role = fields.role
     if ("disabledAt" in fields) user.disabledAt = fields.disabledAt ?? null
+    if ("color" in fields) user.color = fields.color ?? null
     return { ...user }
   }
 

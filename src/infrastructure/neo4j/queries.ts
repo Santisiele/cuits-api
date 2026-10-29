@@ -869,7 +869,8 @@ export const Queries = {
   UPDATE_USER: `
     MATCH (u:User {usernameKey: $key})
     SET u.role = CASE WHEN $setRole THEN $role ELSE u.role END,
-        u.disabledAt = CASE WHEN $setDisabledAt THEN $disabledAt ELSE u.disabledAt END
+        u.disabledAt = CASE WHEN $setDisabledAt THEN $disabledAt ELSE u.disabledAt END,
+        u.color = CASE WHEN $setColor THEN $color ELSE u.color END
     RETURN u
   `,
 
@@ -1193,7 +1194,7 @@ export const Queries = {
   CRM_LIST_ACTIVE_USERNAMES: `
     MATCH (u:User)
     WHERE u.disabledAt IS NULL
-    RETURN u.username AS username
+    RETURN u.username AS username, u.color AS color
     ORDER BY u.usernameKey
   `,
 

@@ -293,7 +293,7 @@ describe("crm action, task and agenda routes", () => {
 
   it("lists the users a task can be assigned to", async () => {
     state.repository.users = ["flavia", "santi"]
-    expect((await app.inject({ method: "GET", url: "/crm/users" })).json()).toEqual({ users: ["flavia", "santi"] })
+    expect((await app.inject({ method: "GET", url: "/crm/users" })).json()).toEqual({ users: [{ username: "flavia", color: null }, { username: "santi", color: null }] })
   })
 })
 

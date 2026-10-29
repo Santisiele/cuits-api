@@ -32,6 +32,7 @@ import {
   type CrmCompany,
   type CrmCompanyFields,
   type CrmRejection,
+  type CrmUser,
   type RemovalOutcome,
   type Task,
 } from "@domain/crm.js"
@@ -146,8 +147,8 @@ export class CrmService {
     return this.repository.listCompanies()
   }
 
-  listUsers(): Promise<string[]> {
-    return this.repository.listActiveUsernames()
+  listUsers(): Promise<CrmUser[]> {
+    return this.repository.listActiveUsers()
   }
 
   async companyDetail(taxId: string): Promise<CompanyDetail> {
@@ -532,7 +533,7 @@ export class CrmService {
 
   private async requireUser(value: unknown): Promise<string> {
     const username = cleanText(value)
-    const users = await this.repository.listActiveUsernames()
+    const users = (await this.repository.listActiveUsers()).map((user) => user.username)
     const match = username === null ? undefined : users.find((user) => user.toLowerCase() === username.toLowerCase())
     if (!match) this.fail("user_not_found")
     return match

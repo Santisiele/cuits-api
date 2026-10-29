@@ -110,6 +110,11 @@ export interface AgendaItem extends Task {
   overdue: boolean
 }
 
+export interface CrmUser {
+  username: string
+  color: string | null
+}
+
 export interface Actor {
   username: string
   canAdminister: boolean

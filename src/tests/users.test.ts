@@ -83,7 +83,7 @@ describe("user rules", () => {
 
   it("never exposes the password hash", () => {
     const user = toPublicUser(storedUser({ disabledAt: NOW.toISOString() }))
-    expect(user).toEqual({ username: "santi", role: "admin", createdAt: "2026-09-29T12:00:00.000Z", disabled: true })
+    expect(user).toEqual({ username: "santi", role: "admin", createdAt: "2026-09-29T12:00:00.000Z", disabled: true, color: null })
   })
 })
 
@@ -92,7 +92,7 @@ describe("UserAdminService.create", () => {
     const repository = new InMemoryUserRepository()
     const user = await service(repository).create(" luchi ", "secret123", "member")
 
-    expect(user).toEqual({ username: "luchi", role: "member", createdAt: NOW.toISOString(), disabled: false })
+    expect(user).toEqual({ username: "luchi", role: "member", createdAt: NOW.toISOString(), disabled: false, color: null })
     expect((await repository.findByUsername("luchi"))?.passwordHash).toBe("hashed:secret123")
   })
 
@@ -192,6 +192,21 @@ describe("UserAdminService.update", () => {
       expect((await repository.findByUsername("luchi"))?.disabledAt).toBe(NOW.toISOString())
       expect((await users.update(actor, "luchi", { disabled: false })).disabled).toBe(false)
     }
+  })
+
+  it("lets any admin change anyone's color, the creator's too, and clear it", async () => {
+    const repository = team()
+    expect((await service(repository).update("admin", "diego", { color: "teal" })).color).toBe("teal")
+    expect((await service(repository).update("admin", "sofi", { color: "pink" })).color).toBe("pink")
+    expect((await service(repository).update("admin", "diego", { color: null })).color).toBeNull()
+  })
+
+  it("refuses a color outside the palette", async () => {
+    expect(await rejection(service(team()).update("admin", "luchi", { color: "#ff0000" }))).toBe("invalid_color")
+  })
+
+  it("still guards the role when the color comes along", async () => {
+    expect(await rejection(service(team()).update("admin", "diego", { color: "teal", role: "member" }))).toBe("creator_only")
   })
 
   it("lets only the creator disable or enable an admin", async () => {
