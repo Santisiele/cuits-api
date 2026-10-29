@@ -976,4 +976,204 @@ export const Queries = {
         c.trustReason = CASE WHEN row.reason = "" THEN coalesce(c.trustReason, "") ELSE row.reason END
     RETURN count(c) AS updated
   `,
+
+  CRM_ENSURE_SOURCE: `
+    MERGE (s:Source {name: $sourceName})
+    ON CREATE SET s.category = "known"
+    SET s.userManaged = true
+  `,
+
+  CRM_CONTACT_CONSTRAINT: `
+    CREATE CONSTRAINT contact_id_unique IF NOT EXISTS FOR (k:Contact) REQUIRE k.id IS UNIQUE
+  `,
+
+  CRM_CHANGE_CONSTRAINT: `
+    CREATE CONSTRAINT change_id_unique IF NOT EXISTS FOR (ch:Change) REQUIRE ch.id IS UNIQUE
+  `,
+
+  CRM_CHANGE_ENTITY_INDEX: `
+    CREATE INDEX change_entity IF NOT EXISTS FOR (ch:Change) ON (ch.entityType, ch.entityId)
+  `,
+
+  CRM_FIND_CUIT_STATE: `
+    OPTIONAL MATCH (c:CUIT {id: $taxId})
+    RETURN c IS NOT NULL AS exists,
+           CASE WHEN c IS NULL THEN false
+                ELSE coalesce(c.crmCompany, false) AND EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source {name: $sourceName}) }
+           END AS inCrm,
+           c.crmArchivedAt IS NOT NULL AS archived,
+           c.nosisSearchedAt IS NOT NULL AS nosisSearched,
+           CASE WHEN c IS NULL THEN false
+                ELSE EXISTS { MATCH (c)-[:HAS_SOURCE]->(s:Source {category: "known"}) WHERE s.name <> $sourceName }
+           END AS inKnownSource
+  `,
+
+  CRM_ADD_TO_SOURCE: `
+    MERGE (c:CUIT {id: $taxId})
+    ON CREATE SET c.businessName = $businessName, c.inMyBase = false
+    SET c.businessName = CASE WHEN coalesce(c.businessName, "") = "" THEN coalesce($businessName, "") ELSE c.businessName END,
+        c.crmCompany = CASE WHEN $asCompany THEN true ELSE coalesce(c.crmCompany, false) END,
+        c.crmBrand = CASE WHEN $asCompany THEN $crmBrand ELSE c.crmBrand END,
+        c.crmProduct = CASE WHEN $asCompany THEN $crmProduct ELSE c.crmProduct END,
+        c.crmOrigin = CASE WHEN $asCompany THEN $crmOrigin ELSE c.crmOrigin END,
+        c.crmAddedAt = CASE WHEN $asCompany OR c.crmAddedAt IS NULL THEN $at ELSE c.crmAddedAt END,
+        c.crmAddedBy = CASE WHEN $asCompany OR c.crmAddedBy IS NULL THEN $by ELSE c.crmAddedBy END,
+        c.crmArchivedAt = CASE WHEN $asCompany THEN null ELSE c.crmArchivedAt END,
+        c.nosisPending = CASE WHEN $markNosisPending THEN true ELSE c.nosisPending END
+    WITH c
+    MATCH (s:Source {name: $sourceName})
+    MERGE (c)-[:HAS_SOURCE]->(s)
+    SET c.sources = CASE
+      WHEN $sourceName IN coalesce(c.sources, []) THEN c.sources
+      ELSE coalesce(c.sources, []) + $sourceName
+    END
+    WITH c
+    MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS categories
+    SET c.isKnown  = "known"  IN categories,
+        c.isToKnow = "toKnow" IN categories,
+        c.inMyBase = size(categories) > 0
+  `,
+
+  CRM_LIST_COMPANIES: `
+    MATCH (:Source {name: $sourceName})<-[:HAS_SOURCE]-(c:CUIT)
+    WHERE c.crmCompany = true AND ($taxId IS NULL OR c.id = $taxId)
+    RETURN c.id AS taxId,
+           c.businessName AS businessName,
+           c.crmBrand AS crmBrand,
+           c.crmProduct AS crmProduct,
+           c.crmOrigin AS crmOrigin,
+           coalesce(c.nosisPending, false) AS nosisPending,
+           c.crmAddedAt AS addedAt,
+           c.crmAddedBy AS addedBy,
+           head(COLLECT {
+             MATCH (c)<-[:ABOUT]-(a:Action) WHERE a.archivedAt IS NULL
+             RETURN a.date ORDER BY a.date DESC LIMIT 1
+           }) AS lastActionDate,
+           head(COLLECT {
+             MATCH (c)<-[:ABOUT]-(t:Task {status: "open"}) WHERE t.archivedAt IS NULL
+             RETURN t.dueDate ORDER BY t.dueDate LIMIT 1
+           }) AS nextDueDate,
+           COUNT { MATCH (c)<-[:ABOUT]-(t:Task {status: "open"}) WHERE t.archivedAt IS NULL } AS openTaskCount
+    ORDER BY toLower(c.businessName)
+  `,
+
+  CRM_COMPANIES_IN_CRM: `
+    UNWIND $taxIds AS taxId
+    MATCH (:Source {name: $sourceName})<-[:HAS_SOURCE]-(c:CUIT {id: taxId})
+    WHERE c.crmCompany = true
+    RETURN c.id AS taxId
+  `,
+
+  CRM_UPDATE_COMPANY: `
+    MATCH (c:CUIT {id: $taxId})
+    SET c.crmBrand = $crmBrand, c.crmProduct = $crmProduct, c.crmOrigin = $crmOrigin
+  `,
+
+  CRM_FIND_REMOVAL_FACTS: `
+    MATCH (c:CUIT {id: $taxId})
+    RETURN (EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
+              OR EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
+              OR EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }) AS hasHistory,
+           EXISTS { MATCH (c)-[:HAS_SOURCE]->(s:Source) WHERE s.name <> $sourceName } AS hasOtherSource,
+           EXISTS { MATCH (c)-[:RELATED_TO]-(:CUIT {inMyBase: true}) } AS relatedToBase
+  `,
+
+  CRM_UNLINK_COMPANY: `
+    MATCH (c:CUIT {id: $taxId})-[r:HAS_SOURCE]->(:Source {name: $sourceName})
+    DELETE r
+    WITH c
+    SET c.sources = [x IN coalesce(c.sources, []) WHERE x <> $sourceName],
+        c.crmCompany = false,
+        c.nosisPending = false,
+        c.crmArchivedAt = CASE WHEN $archive THEN $at ELSE c.crmArchivedAt END
+    WITH c
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS categories
+    SET c.isKnown  = "known"  IN categories,
+        c.isToKnow = "toKnow" IN categories,
+        c.inMyBase = size(categories) > 0
+  `,
+
+  CRM_DELETE_COMPANY: `
+    MATCH (c:CUIT {id: $taxId})
+    WHERE NOT EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) }
+      AND NOT EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
+      AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
+      AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }
+    DETACH DELETE c
+  `,
+
+  CRM_CREATE_CONTACT: `
+    CREATE (k:Contact {
+      id: $id,
+      fullName: $fullName,
+      phone: $phone,
+      email: $email,
+      birthday: $birthday,
+      createdAt: $createdAt,
+      archivedAt: $archivedAt
+    })
+  `,
+
+  CRM_UPDATE_CONTACT: `
+    MATCH (k:Contact {id: $id})
+    SET k.fullName = $fullName,
+        k.phone = $phone,
+        k.email = $email,
+        k.birthday = $birthday,
+        k.archivedAt = $archivedAt
+  `,
+
+  CRM_LINK_CONTACT: `
+    MATCH (k:Contact {id: $id})
+    OPTIONAL MATCH (k)-[old:WORKS_AT]->(c:CUIT)
+    WHERE NOT c.id IN $companyTaxIds
+    DELETE old
+    WITH DISTINCT k
+    UNWIND $companyTaxIds AS taxId
+    MATCH (company:CUIT {id: taxId})
+    MERGE (k)-[:WORKS_AT]->(company)
+    WITH DISTINCT k
+    OPTIONAL MATCH (person:CUIT {id: $cuil})
+    FOREACH (_ IN CASE WHEN person IS NULL THEN [] ELSE [1] END | MERGE (k)-[:IS]->(person))
+  `,
+
+  CRM_FIND_CONTACT: `
+    MATCH (k:Contact {id: $id})
+    RETURN k,
+           COLLECT { MATCH (k)-[:WORKS_AT]->(c:CUIT) RETURN c.id ORDER BY c.id } AS companyTaxIds,
+           head(COLLECT { MATCH (k)-[:IS]->(p:CUIT) RETURN p.id }) AS cuil
+  `,
+
+  CRM_LIST_CONTACTS: `
+    MATCH (k:Contact)-[:WORKS_AT]->(:CUIT {id: $taxId})
+    WHERE k.archivedAt IS NULL
+    RETURN k,
+           COLLECT { MATCH (k)-[:WORKS_AT]->(c:CUIT) RETURN c.id ORDER BY c.id } AS companyTaxIds,
+           head(COLLECT { MATCH (k)-[:IS]->(p:CUIT) RETURN p.id }) AS cuil
+    ORDER BY toLower(k.fullName)
+  `,
+
+  CRM_WRITE_CHANGE: `
+    CREATE (ch:Change {
+      id: $id,
+      at: $at,
+      by: $by,
+      entityType: $entityType,
+      entityId: $entityId,
+      operation: $operation,
+      before: $before,
+      after: $after
+    })
+    WITH ch
+    OPTIONAL MATCH (u:User {usernameKey: $byKey})
+    FOREACH (_ IN CASE WHEN u IS NULL THEN [] ELSE [1] END | CREATE (ch)-[:BY]->(u))
+  `,
+
+  CRM_LIST_CHANGES: `
+    MATCH (ch:Change {entityType: $entityType, entityId: $entityId})
+    RETURN ch
+    ORDER BY ch.at DESC
+  `,
 } as const
