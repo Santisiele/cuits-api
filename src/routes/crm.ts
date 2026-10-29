@@ -1,5 +1,8 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import { CrmService, CrmError, type AgendaQuery } from "@application/CrmService.js"
+import { CrmError, type AgendaQuery } from "@application/CrmServiceBase.js"
+import { CrmCompanyService } from "@application/CrmCompanyService.js"
+import { CrmContactService } from "@application/CrmContactService.js"
+import { CrmWorkService } from "@application/CrmWorkService.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
 import { NosisPendingService } from "@application/NosisPendingService.js"
 import { requireCreator } from "@middleware/requireCreator.js"
@@ -288,7 +291,9 @@ type ActionBody = {
 
 export default async function crmRoutes(server: FastifyInstance) {
   const repository = new Neo4jCrmRepository()
-  const service = new CrmService(repository)
+  const companies = new CrmCompanyService(repository)
+  const contacts = new CrmContactService(repository)
+  const work = new CrmWorkService(repository)
   const nosisPending = new NosisPendingService(repository)
   const responsibles = new ResponsibleService(repository)
 
@@ -375,7 +380,7 @@ export default async function crmRoutes(server: FastifyInstance) {
         response: { 200: { type: "object", properties: { companies: { type: "array", items: companySchema } } } },
       },
     },
-    async () => ({ companies: await service.listCompanies() })
+    async () => ({ companies: await companies.listCompanies() })
   )
 
   server.post<{ Body: CompanyBody }>(
@@ -400,7 +405,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const result = await service.addCompany(request.body ?? {}, request.username)
+        const result = await companies.addCompany(request.body ?? {}, request.username)
         logCrmOperation(request.username, "crm_add", "CrmCompany", result.taxId, { businessName: request.body?.businessName ?? null, originSource: request.body?.originSource ?? null })
         return reply.code(201).send(result)
       } catch (err) {
@@ -431,7 +436,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        return await service.companyDetail(request.params.taxId)
+        return await companies.companyDetail(request.params.taxId)
       } catch (err) {
         return handleError(err, reply)
       }
@@ -450,7 +455,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const company = await service.updateCompany(request.params.taxId, request.body ?? {}, request.username)
+        const company = await companies.updateCompany(request.params.taxId, request.body ?? {}, request.username)
         logCrmOperation(request.username, "update", "CrmCompany", company.taxId, { businessName: company.businessName })
         return company
       } catch (err) {
@@ -478,7 +483,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const result = await service.removeCompany(request.params.taxId, request.query.dryRun === "true", request.username)
+        const result = await companies.removeCompany(request.params.taxId, request.query.dryRun === "true", request.username)
         if (!result.dryRun) logCrmOperation(request.username, "crm_remove", "CrmCompany", request.params.taxId, { outcome: result.outcome })
         return result
       } catch (err) {
@@ -506,7 +511,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const result = await service.closeCompany(request.params.taxId, request.body?.reason, request.username)
+        const result = await companies.closeCompany(request.params.taxId, request.body?.reason, request.username)
         logCrmOperation(request.username, "close", "CrmCompany", request.params.taxId, { businessName: result.company.businessName, reason: result.company.closedReason, inservible: result.inservible })
         return result
       } catch (err) {
@@ -520,7 +525,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Reopen a closed company", params: taxIdParams, response: { 200: companySchema, ...errors } } },
     async (request, reply) => {
       try {
-        const company = await service.reopenCompany(request.params.taxId, request.username)
+        const company = await companies.reopenCompany(request.params.taxId, request.username)
         logCrmOperation(request.username, "reopen", "CrmCompany", request.params.taxId, { businessName: company.businessName })
         return company
       } catch (err) {
@@ -547,7 +552,7 @@ export default async function crmRoutes(server: FastifyInstance) {
         },
       },
     },
-    async () => ({ sources: await service.listSources() })
+    async () => ({ sources: await companies.listSources() })
   )
 
   server.post<{ Body: ContactBody }>(
@@ -557,7 +562,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const contact = await service.createContact(request.body ?? {}, request.username)
+        const contact = await contacts.createContact(request.body ?? {}, request.username)
         logCrmOperation(request.username, "create", "Contact", contact.id, { fullName: contact.fullName, companyTaxIds: contact.companyTaxIds })
         return reply.code(201).send(contact)
       } catch (err) {
@@ -578,7 +583,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const contact = await service.updateContact(request.params.id, request.body ?? {}, request.username)
+        const contact = await contacts.updateContact(request.params.id, request.body ?? {}, request.username)
         logCrmOperation(request.username, "update", "Contact", contact.id, { fullName: contact.fullName, companyTaxIds: contact.companyTaxIds })
         return contact
       } catch (err) {
@@ -592,7 +597,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Archive a contact", params: idParams, response: { 200: contactSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const contact = await service.archiveContact(request.params.id, request.username)
+        const contact = await contacts.archiveContact(request.params.id, request.username)
         logCrmOperation(request.username, "archive", "Contact", contact.id, { fullName: contact.fullName, companyTaxIds: contact.companyTaxIds })
         return contact
       } catch (err) {
@@ -606,7 +611,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Restore an archived contact", params: idParams, response: { 200: contactSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const contact = await service.restoreContact(request.params.id, request.username)
+        const contact = await contacts.restoreContact(request.params.id, request.username)
         logCrmOperation(request.username, "restore", "Contact", contact.id, { fullName: contact.fullName, companyTaxIds: contact.companyTaxIds })
         return contact
       } catch (err) {
@@ -633,7 +638,7 @@ export default async function crmRoutes(server: FastifyInstance) {
         },
       },
     },
-    async () => ({ users: await service.listUsers() })
+    async () => ({ users: await companies.listUsers() })
   )
 
   server.post<{ Body: ActionBody }>(
@@ -657,7 +662,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const result = await service.recordAction(request.body ?? {}, actorOf(request))
+        const result = await work.recordAction(request.body ?? {}, actorOf(request))
         logCrmOperation(request.username, "create", "Action", result.action.id, { ...actionDetails(result.action), nextTask: result.nextTask?.description ?? null, nextAssignee: result.nextTask?.assignee ?? null, nextDueDate: result.nextTask?.dueDate ?? null })
         return reply.code(201).send(result)
       } catch (err) {
@@ -673,7 +678,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const action = await service.updateAction(request.params.id, request.body ?? {}, actorOf(request))
+        const action = await work.updateAction(request.params.id, request.body ?? {}, actorOf(request))
         logCrmOperation(request.username, "update", "Action", action.id, actionDetails(action))
         return action
       } catch (err) {
@@ -687,7 +692,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Archive an action", params: idParams, response: { 200: actionSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const action = await service.archiveAction(request.params.id, actorOf(request))
+        const action = await work.archiveAction(request.params.id, actorOf(request))
         logCrmOperation(request.username, "archive", "Action", action.id, actionDetails(action))
         return action
       } catch (err) {
@@ -701,7 +706,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Restore an archived action", params: idParams, response: { 200: actionSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const action = await service.restoreAction(request.params.id, actorOf(request))
+        const action = await work.restoreAction(request.params.id, actorOf(request))
         logCrmOperation(request.username, "restore", "Action", action.id, actionDetails(action))
         return action
       } catch (err) {
@@ -721,7 +726,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const task = await service.createTask(request.body ?? {}, actorOf(request))
+        const task = await work.createTask(request.body ?? {}, actorOf(request))
         logCrmOperation(request.username, "create", "Task", task.id, taskDetails(task))
         return reply.code(201).send(task)
       } catch (err) {
@@ -742,7 +747,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const task = await service.updateTask(request.params.id, request.body ?? {}, actorOf(request))
+        const task = await work.updateTask(request.params.id, request.body ?? {}, actorOf(request))
         logCrmOperation(request.username, task.status === "open" ? "update" : task.status === "done" ? "complete" : "cancel", "Task", task.id, taskDetails(task))
         return task
       } catch (err) {
@@ -756,7 +761,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Archive a task", params: idParams, response: { 200: taskSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const task = await service.archiveTask(request.params.id, actorOf(request))
+        const task = await work.archiveTask(request.params.id, actorOf(request))
         logCrmOperation(request.username, "archive", "Task", task.id, taskDetails(task))
         return task
       } catch (err) {
@@ -770,7 +775,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     { schema: { summary: "Restore an archived task", params: idParams, response: { 200: taskSchema, ...errors } } },
     async (request, reply) => {
       try {
-        const task = await service.restoreTask(request.params.id, actorOf(request))
+        const task = await work.restoreTask(request.params.id, actorOf(request))
         logCrmOperation(request.username, "restore", "Task", task.id, taskDetails(task))
         return task
       } catch (err) {
@@ -789,7 +794,7 @@ export default async function crmRoutes(server: FastifyInstance) {
         response: { 200: { type: "object", properties: { tasks: { type: "array", items: agendaItemSchema } } } },
       },
     },
-    async (request) => ({ tasks: await service.agenda(request.query, actorOf(request)) })
+    async (request) => ({ tasks: await work.agenda(request.query, actorOf(request)) })
   )
 
   server.get(
@@ -836,7 +841,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        return { changes: await service.changes(request.query.entityType, request.query.entityId) }
+        return { changes: await companies.changes(request.query.entityType, request.query.entityId) }
       } catch (err) {
         return handleError(err, reply)
       }

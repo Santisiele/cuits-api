@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { ResponsibleError, ResponsibleService } from "@application/ResponsibleService"
-import { CrmService } from "@application/CrmService"
+import { CrmCompanyService } from "@application/CrmCompanyService"
+import { CrmWorkService } from "@application/CrmWorkService"
 import {
   RESPONSIBLE_COLORS,
   cleanResponsibleName,
@@ -17,7 +18,8 @@ const NOW = new Date("2026-10-29T15:00:00.000Z")
 
 let repository: InMemoryCrmRepository
 let responsibles: ResponsibleService
-let crm: CrmService
+let companies: CrmCompanyService
+let crm: CrmWorkService
 let nextId: number
 
 function id(n: number): string {
@@ -48,8 +50,9 @@ beforeEach(async () => {
   ]
   nextId = 0
   responsibles = new ResponsibleService(repository, () => NOW)
-  crm = new CrmService(repository, () => NOW, () => id(++nextId))
-  await crm.addCompany({ taxId: COMPANY, businessName: "ACME" }, "sol")
+  companies = new CrmCompanyService(repository, () => NOW, () => id(++nextId))
+  crm = new CrmWorkService(repository, () => NOW, () => id(++nextId))
+  await companies.addCompany({ taxId: COMPANY, businessName: "ACME" }, "sol")
 })
 
 describe("responsible rules", () => {

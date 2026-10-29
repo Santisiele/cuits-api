@@ -4,7 +4,8 @@ import { logger } from "@logger.js"
 import { config } from "@config.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
-import { CrmError, CrmService } from "@application/CrmService.js"
+import { CrmError } from "@application/CrmServiceBase.js"
+import { CrmCompanyService } from "@application/CrmCompanyService.js"
 import { isProductionUri, parseCompanyList } from "@domain/crmImport.js"
 
 const SHEET = "Listas"
@@ -39,7 +40,7 @@ async function main(): Promise<void> {
   for (const item of parsed.conflicting) logger.warn(`  conflicting: ${item.businessName} ${item.cuits.join(", ")}`)
 
   const repository = new Neo4jCrmRepository()
-  const service = new CrmService(repository)
+  const service = new CrmCompanyService(repository)
   const tally = { added: 0, restored: 0, alreadyIn: 0, nosisPending: 0, failed: 0 }
 
   try {
