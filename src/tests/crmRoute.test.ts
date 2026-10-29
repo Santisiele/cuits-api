@@ -281,10 +281,17 @@ describe("crm action, task and agenda routes", () => {
     expect(response.json().error).toBe("next_task_required")
   })
 
-  it("serves the agenda with the company name and overdue flag", async () => {
+  it("serves the agenda with the company name, overdue flag and the action that left each task", async () => {
     await recordAction()
     const response = await app.inject({ method: "GET", url: "/crm/agenda?assignee=all" })
-    expect(response.json().tasks).toEqual([{ ...TASK_FIELDS, businessName: "ACME SA", overdue: expect.any(Boolean) }])
+    expect(response.json().tasks).toEqual([
+      {
+        ...TASK_FIELDS,
+        businessName: "ACME SA",
+        overdue: expect.any(Boolean),
+        lastAction: { date: "2026-10-29", description: "Lo llamé", doneBy: "Flavia", contacts: [] },
+      },
+    ])
   })
 
   it("shows actions and tasks on the company", async () => {

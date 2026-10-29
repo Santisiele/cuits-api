@@ -122,8 +122,16 @@ export interface Task {
   archivedAt: string | null
 }
 
+export interface LastAction {
+  date: string
+  description: string
+  doneBy: string
+  contacts: string[]
+}
+
 export interface AgendaItem extends Task {
   businessName: string
+  lastAction: LastAction | null
   overdue: boolean
 }
 

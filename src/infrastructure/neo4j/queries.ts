@@ -1364,7 +1364,26 @@ export const Queries = {
     WITH t, c, coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee
     WHERE $assigneeKeys IS NULL OR toLower(assignee) IN $assigneeKeys
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName, assignee,
-           COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
+           COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds,
+           coalesce(
+             head(COLLECT {
+               MATCH (a:Action)-[:CREATES]->(t) WHERE a.archivedAt IS NULL
+               RETURN a {
+                 .date, .description,
+                 doneBy: coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(r:Responsible) RETURN r.name }), a.doneBy),
+                 contacts: COLLECT { MATCH (a)-[:WITH]->(k:Contact) RETURN k.fullName ORDER BY k.fullName }
+               }
+             }),
+             head(COLLECT {
+               MATCH (c)<-[:ABOUT]-(a:Action) WHERE a.archivedAt IS NULL
+               WITH a ORDER BY a.date DESC, a.createdAt DESC LIMIT 1
+               RETURN a {
+                 .date, .description,
+                 doneBy: coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(r:Responsible) RETURN r.name }), a.doneBy),
+                 contacts: COLLECT { MATCH (a)-[:WITH]->(k:Contact) RETURN k.fullName ORDER BY k.fullName }
+               }
+             })
+           ) AS lastAction
   `,
 
   CRM_CREATE_TASK: `

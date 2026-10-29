@@ -4,6 +4,7 @@ import type { Responsible } from "@domain/responsibles"
 import type {
   Action,
   AgendaItem,
+  LastAction,
   Task,
   Change,
   ChangeEntityType,
@@ -320,7 +321,21 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return [...this.tasks.values()]
       .filter((task) => task.status === "open" && task.archivedAt === null)
       .filter((task) => keys === null || keys.includes(task.assignee.toLowerCase()))
-      .map((task) => ({ ...task, businessName: this.cuits.get(task.companyTaxId)?.businessName ?? "" }))
+      .map((task) => ({ ...task, businessName: this.cuits.get(task.companyTaxId)?.businessName ?? "", lastAction: this.lastActionFor(task) }))
+  }
+
+  private lastActionFor(task: Task): LastAction | null {
+    const actions = [...this.actions.values()].filter((action) => action.companyTaxId === task.companyTaxId && action.archivedAt === null)
+    const action =
+      actions.find((candidate) => candidate.createdTaskId === task.id) ??
+      actions.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt))[0]
+    if (!action) return null
+    return {
+      date: action.date,
+      description: action.description,
+      doneBy: action.doneBy,
+      contacts: action.contactIds.map((id) => this.contacts.get(id)?.fullName ?? id).sort(),
+    }
   }
 
   private inKnownSource(cuit: StoredCuit): boolean {

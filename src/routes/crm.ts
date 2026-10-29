@@ -158,7 +158,20 @@ const taskSchema = { type: "object", properties: taskProperties } as const
 
 const agendaItemSchema = {
   type: "object",
-  properties: { ...taskProperties, businessName: { type: "string" }, overdue: { type: "boolean" } },
+  properties: {
+    ...taskProperties,
+    businessName: { type: "string" },
+    overdue: { type: "boolean" },
+    lastAction: {
+      type: ["object", "null"],
+      properties: {
+        date: { type: "string" },
+        description: { type: "string" },
+        doneBy: { type: "string" },
+        contacts: { type: "array", items: { type: "string" } },
+      },
+    },
+  },
 } as const
 
 const changeSchema = {
