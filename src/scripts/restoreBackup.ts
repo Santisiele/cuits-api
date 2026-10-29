@@ -39,6 +39,8 @@ async function main(): Promise<void> {
       throw new Error(`Refusing to restore into a database that already holds ${existing} nodes. Add --force if you mean it.`)
     }
 
+    await repository.prepareRestore()
+
     let nodesCreated = 0
     for (const [labelKey, nodes] of byLabels) {
       const labels = labelKey.split(":")

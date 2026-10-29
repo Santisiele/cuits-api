@@ -26,6 +26,7 @@ function makeRepo() {
     lastBackupAt: vi.fn(async (): Promise<string | null> => null),
     recordBackup: vi.fn(async (_at: string): Promise<void> => undefined),
     countAllNodes: vi.fn(async () => 0),
+    prepareRestore: vi.fn(async (): Promise<void> => undefined),
     restoreNodeBatch: vi.fn(async () => 0),
     restoreRelationshipBatch: vi.fn(async () => 0),
     clearBackupKeys: vi.fn(async () => 0),
