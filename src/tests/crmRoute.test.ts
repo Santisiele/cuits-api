@@ -221,7 +221,7 @@ describe("crm action, task and agenda routes", () => {
     dueDate: "2026-11-02",
     status: "open",
     cancelReason: null,
-    assignee: "flavia",
+    assignee: "Flavia",
     createdBy: "flavia",
     contactIds: [],
     createdAt: expect.any(String),
@@ -253,7 +253,8 @@ describe("crm action, task and agenda routes", () => {
         companyTaxId: COMPANY,
         date: "2026-10-29",
         description: "Lo llamé",
-        doneBy: "flavia",
+        doneBy: "Flavia",
+        recordedBy: "flavia",
         contactIds: [],
         createdTaskId: expect.any(String),
         completedTaskIds: [],
@@ -358,5 +359,26 @@ describe("the Nosis pending list", () => {
       command: "pnpm crm:nosis",
       items: [{ taxId: "30798765432", businessName: "OTRA SA", sources: ["Poseidon"], addedBy: "flavia", addedAt: expect.any(String) }],
     })
+  })
+})
+
+describe("responsible routes", () => {
+  it("lists them to anyone with every field", async () => {
+    const response = await app.inject({ method: "GET", url: "/crm/responsibles" })
+    expect(response.json().responsibles[0]).toEqual({ name: "santi", color: "orange", users: ["santi"], disabled: false })
+  })
+
+  it("lets only admins add or change them", async () => {
+    const member = await app.inject({ method: "POST", url: "/crm/responsibles", payload: { name: "Raul", color: "sky-500" } })
+    expect(member.statusCode).toBe(403)
+    const admin = await buildApp("admin")
+    const created = await admin.inject({ method: "POST", url: "/crm/responsibles", payload: { name: "Raul", color: "sky-500" } })
+    expect(created.statusCode).toBe(201)
+    expect(created.json()).toEqual({ name: "Raul", color: "sky-500", users: [], disabled: false })
+    const taken = await admin.inject({ method: "POST", url: "/crm/responsibles", payload: { name: "raul", color: "red" } })
+    expect(taken.statusCode).toBe(409)
+    expect(taken.json().error).toBe("name_taken")
+    const changed = await admin.inject({ method: "PATCH", url: "/crm/responsibles/Raul", payload: { color: "blue-900" } })
+    expect(changed.json().color).toBe("blue-900")
   })
 })

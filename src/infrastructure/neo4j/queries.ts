@@ -1271,7 +1271,8 @@ export const Queries = {
   CRM_FIND_ACTION: `
     MATCH (a:Action {id: $id})-[:ABOUT]->(c:CUIT)
     RETURN a, c.id AS companyTaxId,
-           coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(u:User) RETURN u.username }), a.doneBy) AS doneBy,
+           coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(r:Responsible) RETURN r.name }), a.doneBy) AS doneBy,
+           coalesce(a.recordedBy, a.doneBy) AS recordedBy,
            COLLECT { MATCH (a)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds,
            head(COLLECT { MATCH (a)-[:CREATES]->(t:Task) RETURN t.id }) AS createdTaskId,
            COLLECT { MATCH (a)-[:COMPLETES]->(t:Task) RETURN t.id ORDER BY t.id } AS completedTaskIds
@@ -1281,7 +1282,8 @@ export const Queries = {
     MATCH (c:CUIT {id: $taxId})<-[:ABOUT]-(a:Action)
     WHERE a.archivedAt IS NULL
     RETURN a, c.id AS companyTaxId,
-           coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(u:User) RETURN u.username }), a.doneBy) AS doneBy,
+           coalesce(head(COLLECT { MATCH (a)-[:DONE_BY]->(r:Responsible) RETURN r.name }), a.doneBy) AS doneBy,
+           coalesce(a.recordedBy, a.doneBy) AS recordedBy,
            COLLECT { MATCH (a)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds,
            head(COLLECT { MATCH (a)-[:CREATES]->(t:Task) RETURN t.id }) AS createdTaskId,
            COLLECT { MATCH (a)-[:COMPLETES]->(t:Task) RETURN t.id ORDER BY t.id } AS completedTaskIds
@@ -1295,13 +1297,14 @@ export const Queries = {
       date: $date,
       description: $description,
       doneBy: $doneBy,
+      recordedBy: $recordedBy,
       createdAt: $createdAt,
       archivedAt: $archivedAt
     })-[:ABOUT]->(c)
     WITH a
     CALL (a) {
-      MATCH (u:User {usernameKey: $doneByKey})
-      CREATE (a)-[:DONE_BY]->(u)
+      MATCH (r:Responsible {nameKey: $doneByKey})
+      CREATE (a)-[:DONE_BY]->(r)
     }
     CALL (a) {
       UNWIND $contactIds AS contactId
@@ -1342,7 +1345,7 @@ export const Queries = {
   CRM_FIND_TASK: `
     MATCH (t:Task {id: $id})-[:ABOUT]->(c:CUIT)
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName,
-           coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(u:User) RETURN u.username }), t.assignee) AS assignee,
+           coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
   `,
 
@@ -1350,7 +1353,7 @@ export const Queries = {
     MATCH (c:CUIT {id: $taxId})<-[:ABOUT]-(t:Task)
     WHERE t.archivedAt IS NULL
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName,
-           coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(u:User) RETURN u.username }), t.assignee) AS assignee,
+           coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
     ORDER BY t.dueDate, t.createdAt
   `,
@@ -1358,8 +1361,8 @@ export const Queries = {
   CRM_LIST_AGENDA: `
     MATCH (t:Task {status: "open"})-[:ABOUT]->(c:CUIT)
     WHERE t.archivedAt IS NULL AND c.crmArchivedAt IS NULL AND c.crmClosedAt IS NULL
-    WITH t, c, coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(u:User) RETURN u.username }), t.assignee) AS assignee
-    WHERE $assigneeKey IS NULL OR toLower(assignee) = $assigneeKey
+    WITH t, c, coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee
+    WHERE $assigneeKeys IS NULL OR toLower(assignee) IN $assigneeKeys
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName, assignee,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
   `,
@@ -1380,8 +1383,8 @@ export const Queries = {
     })-[:ABOUT]->(c)
     WITH t
     CALL (t) {
-      MATCH (u:User {usernameKey: $assigneeKey})
-      CREATE (t)-[:ASSIGNED_TO]->(u)
+      MATCH (r:Responsible {nameKey: $assigneeKey})
+      CREATE (t)-[:ASSIGNED_TO]->(r)
     }
     CALL (t) {
       UNWIND $contactIds AS contactId
@@ -1401,13 +1404,13 @@ export const Queries = {
         t.archivedAt = $archivedAt
     WITH t
     CALL (t) {
-      MATCH (t)-[r:ASSIGNED_TO]->(u:User)
-      WHERE u.usernameKey <> $assigneeKey
-      DELETE r
+      MATCH (t)-[link:ASSIGNED_TO]->(old)
+      WHERE NOT old:Responsible OR old.nameKey <> $assigneeKey
+      DELETE link
     }
     CALL (t) {
-      MATCH (u:User {usernameKey: $assigneeKey})
-      MERGE (t)-[:ASSIGNED_TO]->(u)
+      MATCH (r:Responsible {nameKey: $assigneeKey})
+      MERGE (t)-[:ASSIGNED_TO]->(r)
     }
     CALL (t) {
       MATCH (t)-[w:WITH]->(k:Contact)
@@ -1450,5 +1453,53 @@ export const Queries = {
     MATCH (:CUIT {id: $taxId})<-[:ABOUT]-(t:Task {status: "open"})
     WHERE t.archivedAt IS NULL
     SET t.status = "cancelled", t.cancelReason = $cancelReason, t.closedAt = $at
+  `,
+
+  RESPONSIBLE_CONSTRAINT: `
+    CREATE CONSTRAINT responsible_key_unique IF NOT EXISTS FOR (r:Responsible) REQUIRE r.nameKey IS UNIQUE
+  `,
+
+  LIST_RESPONSIBLES: `
+    MATCH (r:Responsible)
+    RETURN r
+    ORDER BY r.nameKey
+  `,
+
+  CREATE_RESPONSIBLE: `
+    OPTIONAL MATCH (existing:Responsible {nameKey: $nameKey})
+    WITH existing
+    WHERE existing IS NULL
+    CREATE (r:Responsible {
+      name: $name,
+      nameKey: $nameKey,
+      color: $color,
+      users: $users,
+      disabledAt: null,
+      createdAt: $at,
+      createdBy: $by
+    })
+    RETURN r.name AS name
+  `,
+
+  UPDATE_RESPONSIBLE: `
+    MATCH (r:Responsible {nameKey: $key})
+    OPTIONAL MATCH (other:Responsible {nameKey: $nameKey})
+    WITH r, other
+    WHERE other IS NULL OR other = r
+    SET r.name = $name,
+        r.nameKey = $nameKey,
+        r.color = $color,
+        r.users = $users,
+        r.disabledAt = CASE WHEN $disabled THEN coalesce(r.disabledAt, $at) ELSE null END
+    WITH r
+    CALL (r) {
+      MATCH (t:Task)-[:ASSIGNED_TO]->(r)
+      SET t.assignee = r.name
+    }
+    CALL (r) {
+      MATCH (a:Action)-[:DONE_BY]->(r)
+      SET a.doneBy = r.name
+    }
+    RETURN r.name AS name
   `,
 } as const

@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import type { ICrmRepository } from "@ports/interfaces.js"
+import { ownResponsible, responsiblesOf, sameResponsible, type Responsible } from "@domain/responsibles.js"
 import {
   COMPANY_REMOVED_REASON,
   MAX_NAME_LENGTH,
@@ -107,6 +108,7 @@ interface TaskBody {
 
 interface ActionBody {
   companyTaxId?: unknown
+  doneBy?: unknown
   date?: unknown
   description?: unknown
   contactIds?: unknown
@@ -147,6 +149,8 @@ const MESSAGES: Record<CrmRejection, string> = {
   company_closed: "That company is closed",
   not_closed: "That company is not closed",
   source_not_found: "That source does not exist",
+  responsible_not_found: "That responsible does not exist",
+  responsible_required: "Pick who is responsible",
 }
 
 export class CrmService {
@@ -327,6 +331,8 @@ export class CrmService {
   async recordAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
     const companyTaxId = this.requireCuit(body.companyTaxId)
     await this.requireOpenCompany(companyTaxId)
+    const responsibles = await this.repository.listResponsibles()
+    const doneBy = this.responsibleFor(responsibles, body.doneBy, actor.username)
     const date = this.calendarDate(body.date)
     const description = this.description(body.description)
     const contactIds = await this.requireContacts(companyTaxId, body.contactIds)
@@ -334,7 +340,7 @@ export class CrmService {
     if (completesTaskIds === null) this.fail("task_not_found")
     const toClose = await Promise.all(completesTaskIds.map((id) => this.requireOpenTaskOf(id, companyTaxId)))
     if (!body.nextTask) this.fail("next_task_required")
-    const nextTask = await this.newTask({ ...body.nextTask, companyTaxId }, actor.username)
+    const nextTask = await this.newTask({ ...body.nextTask, companyTaxId }, actor.username, responsibles)
 
     const at = this.now().toISOString()
     const action: Action = {
@@ -342,7 +348,8 @@ export class CrmService {
       companyTaxId,
       date,
       description,
-      doneBy: actor.username,
+      doneBy,
+      recordedBy: actor.username,
       contactIds,
       createdTaskId: nextTask?.id ?? null,
       completedTaskIds: completesTaskIds,
@@ -398,7 +405,7 @@ export class CrmService {
   async createTask(body: TaskBody, actor: Actor): Promise<Task> {
     const companyTaxId = this.requireCuit(body.companyTaxId)
     await this.requireOpenCompany(companyTaxId)
-    const task = await this.newTask({ ...body, companyTaxId }, actor.username)
+    const task = await this.newTask({ ...body, companyTaxId }, actor.username, await this.repository.listResponsibles())
     await this.repository.createTask(task, this.change(task.createdAt, actor.username, "Task", task.id, "create", {}, this.taskView(task)))
     return task
   }
@@ -411,7 +418,8 @@ export class CrmService {
       ...task,
       description: body.description === undefined ? task.description : this.description(body.description),
       dueDate: body.dueDate === undefined ? task.dueDate : this.calendarDate(body.dueDate),
-      assignee: body.assignee === undefined ? task.assignee : await this.requireUser(body.assignee),
+      assignee:
+        body.assignee === undefined ? task.assignee : this.responsibleFor(await this.repository.listResponsibles(), body.assignee, null),
       contactIds: body.contactIds === undefined ? task.contactIds : await this.requireContacts(task.companyTaxId, body.contactIds),
     }
     let operation: ChangeOperation = "update"
@@ -451,9 +459,14 @@ export class CrmService {
   }
 
   async agenda(query: AgendaQuery, actor: Actor): Promise<AgendaItem[]> {
-    const assignee = query.assignee === "all" ? null : !query.assignee || query.assignee === "me" ? actor.username : query.assignee
+    const assignees =
+      query.assignee === "all"
+        ? null
+        : !query.assignee || query.assignee === "me"
+          ? responsiblesOf(await this.repository.listResponsibles(), actor.username)
+          : [query.assignee]
     const today = todayInBuenosAires(this.now())
-    const items = (await this.repository.listAgenda(assignee)).map((item) => ({ ...item, overdue: isOverdue(item.dueDate, today) }))
+    const items = (await this.repository.listAgenda(assignees)).map((item) => ({ ...item, overdue: isOverdue(item.dueDate, today) }))
     return sortAgenda(query.overdueOnly === "true" ? items.filter((item) => item.overdue) : items)
   }
 
@@ -463,7 +476,7 @@ export class CrmService {
     return this.repository.listChanges(entityType, entityId)
   }
 
-  private async newTask(body: TaskBody & { companyTaxId: string }, createdBy: string): Promise<Task> {
+  private async newTask(body: TaskBody & { companyTaxId: string }, createdBy: string, responsibles: readonly Responsible[]): Promise<Task> {
     return {
       id: this.newId(),
       companyTaxId: body.companyTaxId,
@@ -471,7 +484,7 @@ export class CrmService {
       dueDate: this.calendarDate(body.dueDate),
       status: "open",
       cancelReason: null,
-      assignee: body.assignee === undefined || body.assignee === null || body.assignee === "" ? createdBy : await this.requireUser(body.assignee),
+      assignee: this.responsibleFor(responsibles, body.assignee, createdBy),
       createdBy,
       contactIds: await this.requireContacts(body.companyTaxId, body.contactIds),
       createdAt: this.now().toISOString(),
@@ -583,23 +596,32 @@ export class CrmService {
   private async requireChangeableAction(id: string, actor: Actor): Promise<Action> {
     const action = isValidCrmId(id) ? await this.repository.findAction(id) : null
     if (!action) this.fail("action_not_found")
-    if (!canChangeAction(actor, action)) this.fail("forbidden")
+    if (!canChangeAction(await this.withResponsibles(actor), action)) this.fail("forbidden")
     return action
   }
 
   private async requireChangeableTask(id: string, actor: Actor): Promise<Task> {
     const task = isValidCrmId(id) ? await this.repository.findTask(id) : null
     if (!task) this.fail("task_not_found")
-    if (!canChangeTask(actor, task)) this.fail("forbidden")
+    if (!canChangeTask(await this.withResponsibles(actor), task)) this.fail("forbidden")
     return task
   }
 
-  private async requireUser(value: unknown): Promise<string> {
-    const username = cleanText(value)
-    const users = (await this.repository.listActiveUsers()).map((user) => user.username)
-    const match = username === null ? undefined : users.find((user) => user.toLowerCase() === username.toLowerCase())
-    if (!match) this.fail("user_not_found")
-    return match
+  private async withResponsibles(actor: Actor): Promise<Actor> {
+    if (actor.canAdminister) return actor
+    return { ...actor, responsibles: responsiblesOf(await this.repository.listResponsibles(), actor.username) }
+  }
+
+  private responsibleFor(responsibles: readonly Responsible[], value: unknown, fallbackUser: string | null): string {
+    const name = cleanText(value)
+    if (name === null) {
+      const own = fallbackUser === null ? null : ownResponsible(responsibles, fallbackUser)
+      if (own === null) this.fail("responsible_required")
+      return own
+    }
+    const match = responsibles.find((responsible) => !responsible.disabled && sameResponsible(responsible.name, name))
+    if (!match) this.fail("responsible_not_found")
+    return match.name
   }
 
   private async requireCompanies(value: unknown): Promise<string[]> {

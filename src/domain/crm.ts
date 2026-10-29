@@ -1,4 +1,5 @@
 import { isSameUser } from "@domain/users.js"
+import { sameResponsible } from "@domain/responsibles.js"
 
 export const LEGACY_CRM_SOURCE_NAME = "CRM Excel"
 
@@ -35,6 +36,8 @@ export type CrmRejection =
   | "company_closed"
   | "not_closed"
   | "source_not_found"
+  | "responsible_not_found"
+  | "responsible_required"
 
 export type RemovalOutcome = "unlinked" | "archived" | "deleted"
 
@@ -96,6 +99,7 @@ export interface Action {
   date: string
   description: string
   doneBy: string
+  recordedBy: string
   contactIds: string[]
   createdTaskId: string | null
   completedTaskIds: string[]
@@ -136,6 +140,7 @@ export interface CrmUser {
 export interface Actor {
   username: string
   canAdminister: boolean
+  responsibles?: readonly string[]
 }
 
 export const COMPANY_REMOVED_REASON = "company_removed"
@@ -253,12 +258,16 @@ export function taskStatusRejection(task: Task, next: unknown, cancelReason: str
   return null
 }
 
+function holds(actor: Actor, responsible: string): boolean {
+  return (actor.responsibles ?? []).some((name) => sameResponsible(name, responsible))
+}
+
 export function canChangeAction(actor: Actor, action: Action): boolean {
-  return actor.canAdminister || isSameUser(actor.username, action.doneBy)
+  return actor.canAdminister || isSameUser(actor.username, action.recordedBy) || holds(actor, action.doneBy)
 }
 
 export function canChangeTask(actor: Actor, task: Task): boolean {
-  return actor.canAdminister || isSameUser(actor.username, task.createdBy) || isSameUser(actor.username, task.assignee)
+  return actor.canAdminister || isSameUser(actor.username, task.createdBy) || holds(actor, task.assignee)
 }
 
 export function sortAgenda(items: AgendaItem[]): AgendaItem[] {

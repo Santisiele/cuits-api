@@ -1,7 +1,8 @@
 import neo4j, { type ManagedTransaction, type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
-import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository } from "@ports/interfaces.js"
+import type { CrmCuitAdd, ICrmRepository, INosisPendingRepository, IResponsibleRepository } from "@ports/interfaces.js"
+import { isResponsibleColor, responsibleKey, type Responsible } from "@domain/responsibles.js"
 import { usernameKey } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
 import {
@@ -105,6 +106,7 @@ function toAction(record: { get(key: string): unknown }): Action {
     date: toText(action["date"]),
     description: toText(action["description"]),
     doneBy: toText(record.get("doneBy")),
+    recordedBy: toText(record.get("recordedBy")),
     contactIds: toIds(record.get("contactIds")),
     createdTaskId: toNullableText(record.get("createdTaskId")),
     completedTaskIds: toIds(record.get("completedTaskIds")),
@@ -133,7 +135,17 @@ function toTask(record: { get(key: string): unknown }): Task {
 }
 
 function taskParams(task: Task): Record<string, unknown> {
-  return { ...task, assigneeKey: usernameKey(task.assignee) }
+  return { ...task, assigneeKey: responsibleKey(task.assignee) }
+}
+
+function toResponsible(properties: Record<string, unknown>): Responsible {
+  const color = properties["color"]
+  return {
+    name: toText(properties["name"]),
+    color: isResponsibleColor(color) ? color : "slate",
+    users: toIds(properties["users"]),
+    disabled: toNullableText(properties["disabledAt"]) !== null,
+  }
 }
 
 function toChange(properties: Record<string, unknown>): Change {
@@ -164,7 +176,7 @@ export async function writeChange(tx: ManagedTransaction, change: Change): Promi
   )
 }
 
-export class Neo4jCrmRepository implements ICrmRepository, INosisPendingRepository {
+export class Neo4jCrmRepository implements ICrmRepository, INosisPendingRepository, IResponsibleRepository {
   private session(): Session {
     return Neo4jDriver.instance.session()
   }
@@ -195,6 +207,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
       await session.run(Queries.CRM_ACTION_CONSTRAINT)
       await session.run(Queries.CRM_TASK_CONSTRAINT)
       await session.run(Queries.CRM_TASK_DUE_DATE_INDEX)
+      await session.run(Queries.RESPONSIBLE_CONSTRAINT)
     })
   }
 
@@ -230,6 +243,51 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
+  listResponsibles(): Promise<Responsible[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.LIST_RESPONSIBLES)
+      return result.records.map((record) => toResponsible((record.get("r") as { properties: Record<string, unknown> }).properties))
+    })
+  }
+
+  async createResponsible(responsible: Responsible, at: string, by: string): Promise<"created" | "taken"> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.CREATE_RESPONSIBLE, {
+        name: responsible.name,
+        nameKey: responsibleKey(responsible.name),
+        color: responsible.color,
+        users: responsible.users,
+        at,
+        by,
+      })
+      return result.records.length > 0 ? "created" : "taken"
+    } catch (err) {
+      if (String((err as { code?: unknown }).code ?? "").includes("ConstraintValidationFailed")) return "taken"
+      throw err
+    } finally {
+      await session.close()
+    }
+  }
+
+  async updateResponsible(name: string, responsible: Responsible): Promise<"updated" | "taken"> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.UPDATE_RESPONSIBLE, {
+        key: responsibleKey(name),
+        name: responsible.name,
+        nameKey: responsibleKey(responsible.name),
+        color: responsible.color,
+        users: responsible.users,
+        disabled: responsible.disabled,
+        at: new Date().toISOString(),
+      })
+      return result.records.length > 0 ? "updated" : "taken"
+    } finally {
+      await session.close()
+    }
+  }
+
   listActiveUsers(): Promise<CrmUser[]> {
     return this.read(async (session) => {
       const result = await session.run(Queries.CRM_LIST_ACTIVE_USERNAMES)
@@ -263,7 +321,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
     return this.write(async (tx) => {
-      await tx.run(Queries.CRM_CREATE_ACTION, { ...action, doneByKey: usernameKey(action.doneBy) })
+      await tx.run(Queries.CRM_CREATE_ACTION, { ...action, doneByKey: responsibleKey(action.doneBy) })
       for (const task of closedTasks) await tx.run(Queries.CRM_SET_TASK, taskParams(task))
       if (nextTask) await tx.run(Queries.CRM_CREATE_TASK, taskParams(nextTask))
       await tx.run(Queries.CRM_LINK_ACTION_TASKS, action)
@@ -306,9 +364,11 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]> {
+  listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]> {
     return this.read(async (session) => {
-      const result = await session.run(Queries.CRM_LIST_AGENDA, { assigneeKey: assignee === null ? null : usernameKey(assignee) })
+      const result = await session.run(Queries.CRM_LIST_AGENDA, {
+        assigneeKeys: assignees === null ? null : assignees.map(responsibleKey),
+      })
       return result.records.map((record) => ({ ...toTask(record), businessName: toText(record.get("businessName")) }))
     })
   }

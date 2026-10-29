@@ -252,7 +252,8 @@ describe("actions and tasks", () => {
     )
     expect(result.action).toMatchObject({
       description: "Lo llamé, pidió propuesta",
-      doneBy: "flavia",
+      doneBy: "Flavia",
+      recordedBy: "flavia",
       contactIds: [anaId],
       completedTaskIds: [first.id],
       createdTaskId: result.nextTask?.id,
@@ -285,7 +286,7 @@ describe("actions and tasks", () => {
     expect(await rejection(service.recordAction({ ...base, completesTaskIds: [id(999)] }, flavia))).toBe("task_not_found")
     expect(
       await rejection(service.recordAction({ ...base, nextTask: { description: "y", dueDate: "2026-11-02", assignee: "nadie" } }, flavia))
-    ).toBe("user_not_found")
+    ).toBe("responsible_not_found")
   })
 
   it("only closes open tasks of the same company", async () => {
@@ -321,7 +322,7 @@ describe("actions and tasks", () => {
     expect((await service.updateTask(task.id, { dueDate: "2026-11-05", contactIds: [anaId] }, flavia)).dueDate).toBe("2026-11-05")
     expect(await rejection(service.updateTask(task.id, { description: "z" }, pedro))).toBe("forbidden")
     expect((await service.updateTask(task.id, { assignee: "pedro" }, santi)).assignee).toBe("pedro")
-    expect(await rejection(service.updateTask(task.id, { assignee: "nadie" }, santi))).toBe("user_not_found")
+    expect(await rejection(service.updateTask(task.id, { assignee: "nadie" }, santi))).toBe("responsible_not_found")
   })
 
   it("cancels a task only with a reason and never twice", async () => {
