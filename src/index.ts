@@ -19,6 +19,7 @@ import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
 import { KeepAliveService, type KeepAliveEvent } from "@application/KeepAliveService.js"
 import { BackupService, type BackupEvent } from "@application/BackupService.js"
+import { NosisPendingMailService } from "@application/NosisPendingService.js"
 import { ResendMailer } from "@infrastructure/mail/ResendMailer.js"
 import { packBackup } from "@helpers/backupArchive.js"
 import { config } from "@config.js"
@@ -140,6 +141,19 @@ function startBackups(): void {
   service.start({ report: logBackup })
 }
 
+function startNosisPendingMail(): void {
+  const { resendApiKey, from } = config.backup
+  const { to } = config.nosisPendingMail
+  if (!resendApiKey || !from || !to) {
+    console.log("Nosis pending mail off: set RESEND_API_KEY, BACKUP_EMAIL_FROM and NOSIS_PENDING_EMAIL_TO")
+    return
+  }
+  new NosisPendingMailService(new Neo4jCrmRepository(), new ResendMailer(resendApiKey, from, to)).start((event) => {
+    if (event.kind === "sent") console.log(`Nosis pending mail sent for ${event.day}: ${event.count} CUITs`)
+    else server.log.error(`Nosis pending mail failed: ${event.message}`)
+  })
+}
+
 function logKeepAlive(event: KeepAliveEvent): void {
   if (event.kind === "pulsed") console.log(`Aura keep-alive at ${event.pingedAt}`)
   else server.log.error(`Aura keep-alive failed: ${event.message}`)
@@ -152,6 +166,7 @@ try {
   new KeepAliveService(new Neo4jRepository()).start({ report: logKeepAlive })
   new Neo4jCrmRepository().ensureSetup().catch((err: unknown) => server.log.error(`CRM setup failed: ${String(err)}`))
   startBackups()
+  startNosisPendingMail()
 } catch (err) {
   server.log.error(err)
   await Neo4jDriver.close()

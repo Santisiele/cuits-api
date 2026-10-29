@@ -20,6 +20,9 @@ export const config = {
     to: process.env["BACKUP_EMAIL_TO"] ?? "",
     passphrase: process.env["BACKUP_PASSPHRASE"] ?? "",
   },
+  nosisPendingMail: {
+    to: process.env["NOSIS_PENDING_EMAIL_TO"] ?? "",
+  },
   anthropic: {
     apiKey: process.env["ANTHROPIC_API_KEY"] ?? "",
   },
