@@ -73,6 +73,82 @@ const contactSchema = {
   },
 } as const
 
+const idList = { type: "array", items: { type: "string" } } as const
+
+const actionSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    companyTaxId: { type: "string" },
+    date: { type: "string" },
+    description: { type: "string" },
+    doneBy: { type: "string" },
+    contactIds: idList,
+    createdTaskId: nullableString,
+    completedTaskIds: idList,
+    createdAt: { type: "string" },
+    archivedAt: nullableString,
+  },
+} as const
+
+const taskProperties = {
+  id: { type: "string" },
+  companyTaxId: { type: "string" },
+  description: { type: "string" },
+  dueDate: { type: "string" },
+  status: { type: "string" },
+  cancelReason: nullableString,
+  assignee: { type: "string" },
+  createdBy: { type: "string" },
+  contactIds: idList,
+  createdAt: { type: "string" },
+  closedAt: nullableString,
+  archivedAt: nullableString,
+} as const
+
+const taskSchema = { type: "object", properties: taskProperties } as const
+
+const agendaItemSchema = {
+  type: "object",
+  properties: { ...taskProperties, businessName: { type: "string" }, overdue: { type: "boolean" } },
+} as const
+
+const changeSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    at: { type: "string" },
+    by: { type: "string" },
+    entityType: { type: "string" },
+    entityId: { type: "string" },
+    operation: { type: "string" },
+    before: { type: "object", additionalProperties: true },
+    after: { type: "object", additionalProperties: true },
+  },
+} as const
+
+const taskBodyProperties = {
+  companyTaxId: { type: "string" },
+  description: { type: "string" },
+  dueDate: { type: "string" },
+  assignee: nullableString,
+  contactIds: idList,
+  status: { type: "string" },
+  cancelReason: nullableString,
+} as const
+
+const actionBodySchema = {
+  type: "object",
+  properties: {
+    companyTaxId: { type: "string" },
+    date: { type: "string" },
+    description: { type: "string" },
+    contactIds: idList,
+    completesTaskIds: idList,
+    nextTask: { type: ["object", "null"], properties: taskBodyProperties },
+  },
+} as const
+
 const companyBodySchema = {
   type: "object",
   properties: {
@@ -101,7 +177,7 @@ const errorSchema = {
   properties: { error: { type: "string" }, message: { type: "string" } },
 } as const
 
-const errors = { 400: errorSchema, 404: errorSchema, 409: errorSchema } as const
+const errors = { 400: errorSchema, 403: errorSchema, 404: errorSchema, 409: errorSchema } as const
 
 const taxIdParams = { type: "object", properties: { taxId: { type: "string" } } } as const
 
@@ -116,6 +192,25 @@ type ContactBody = {
   email?: string | null
   birthday?: string | null
   cuil?: string | null
+}
+
+type TaskBody = {
+  companyTaxId?: string
+  description?: string
+  dueDate?: string
+  assignee?: string | null
+  contactIds?: string[]
+  status?: string
+  cancelReason?: string | null
+}
+
+type ActionBody = {
+  companyTaxId?: string
+  date?: string
+  description?: string
+  contactIds?: string[]
+  completesTaskIds?: string[]
+  nextTask?: TaskBody | null
 }
 
 export default async function crmRoutes(server: FastifyInstance) {
@@ -167,12 +262,17 @@ export default async function crmRoutes(server: FastifyInstance) {
     "/crm/companies/:taxId",
     {
       schema: {
-        summary: "A CRM company with its contacts",
+        summary: "A CRM company with its contacts, actions and tasks",
         params: taxIdParams,
         response: {
           200: {
             type: "object",
-            properties: { company: companySchema, contacts: { type: "array", items: contactSchema } },
+            properties: {
+              company: companySchema,
+              contacts: { type: "array", items: contactSchema },
+              actions: { type: "array", items: actionSchema },
+              tasks: { type: "array", items: taskSchema },
+            },
           },
           ...errors,
         },
@@ -217,7 +317,10 @@ export default async function crmRoutes(server: FastifyInstance) {
         params: taxIdParams,
         querystring: { type: "object", properties: { dryRun: { type: "string" } } },
         response: {
-          200: { type: "object", properties: { outcome: { type: "string" }, dryRun: { type: "boolean" } } },
+          200: {
+            type: "object",
+            properties: { outcome: { type: "string" }, cancelledTaskCount: { type: "number" }, dryRun: { type: "boolean" } },
+          },
           ...errors,
         },
       },
@@ -292,6 +395,191 @@ export default async function crmRoutes(server: FastifyInstance) {
         const contact = await service.restoreContact(request.params.id, request.username)
         logCrmOperation(request.username, "restore", "Contact", contact.id)
         return contact
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.get(
+    "/crm/users",
+    {
+      schema: {
+        summary: "The active users a task can be assigned to",
+        response: { 200: { type: "object", properties: { users: { type: "array", items: { type: "string" } } } } },
+      },
+    },
+    async () => ({ users: await service.listUsers() })
+  )
+
+  server.post<{ Body: ActionBody }>(
+    "/crm/actions",
+    {
+      schema: {
+        summary: "Record an action, close the tasks it fulfils and open the next one, in one transaction",
+        body: actionBodySchema,
+        response: {
+          201: {
+            type: "object",
+            properties: {
+              action: actionSchema,
+              closedTasks: { type: "array", items: taskSchema },
+              nextTask: { anyOf: [taskSchema, { type: "null" }] },
+            },
+          },
+          ...errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const result = await service.recordAction(request.body ?? {}, actorOf(request))
+        logCrmOperation(request.username, "create", "Action", result.action.id)
+        return reply.code(201).send(result)
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.patch<{ Params: { id: string }; Body: ActionBody }>(
+    "/crm/actions/:id",
+    {
+      schema: { summary: "Change an action", params: idParams, body: actionBodySchema, response: { 200: actionSchema, ...errors } },
+    },
+    async (request, reply) => {
+      try {
+        const action = await service.updateAction(request.params.id, request.body ?? {}, actorOf(request))
+        logCrmOperation(request.username, "update", "Action", action.id)
+        return action
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.delete<{ Params: { id: string } }>(
+    "/crm/actions/:id",
+    { schema: { summary: "Archive an action", params: idParams, response: { 200: actionSchema, ...errors } } },
+    async (request, reply) => {
+      try {
+        const action = await service.archiveAction(request.params.id, actorOf(request))
+        logCrmOperation(request.username, "archive", "Action", action.id)
+        return action
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.post<{ Params: { id: string } }>(
+    "/crm/actions/:id/restore",
+    { schema: { summary: "Restore an archived action", params: idParams, response: { 200: actionSchema, ...errors } } },
+    async (request, reply) => {
+      try {
+        const action = await service.restoreAction(request.params.id, actorOf(request))
+        logCrmOperation(request.username, "restore", "Action", action.id)
+        return action
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.post<{ Body: TaskBody }>(
+    "/crm/tasks",
+    {
+      schema: {
+        summary: "Add a task to a company",
+        body: { type: "object", properties: taskBodyProperties },
+        response: { 201: taskSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const task = await service.createTask(request.body ?? {}, actorOf(request))
+        logCrmOperation(request.username, "create", "Task", task.id)
+        return reply.code(201).send(task)
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.patch<{ Params: { id: string }; Body: TaskBody }>(
+    "/crm/tasks/:id",
+    {
+      schema: {
+        summary: "Change, reassign, complete or cancel a task",
+        params: idParams,
+        body: { type: "object", properties: taskBodyProperties },
+        response: { 200: taskSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const task = await service.updateTask(request.params.id, request.body ?? {}, actorOf(request))
+        logCrmOperation(request.username, task.status === "open" ? "update" : task.status, "Task", task.id)
+        return task
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.delete<{ Params: { id: string } }>(
+    "/crm/tasks/:id",
+    { schema: { summary: "Archive a task", params: idParams, response: { 200: taskSchema, ...errors } } },
+    async (request, reply) => {
+      try {
+        const task = await service.archiveTask(request.params.id, actorOf(request))
+        logCrmOperation(request.username, "archive", "Task", task.id)
+        return task
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.post<{ Params: { id: string } }>(
+    "/crm/tasks/:id/restore",
+    { schema: { summary: "Restore an archived task", params: idParams, response: { 200: taskSchema, ...errors } } },
+    async (request, reply) => {
+      try {
+        const task = await service.restoreTask(request.params.id, actorOf(request))
+        logCrmOperation(request.username, "restore", "Task", task.id)
+        return task
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.get<{ Querystring: AgendaQuery }>(
+    "/crm/agenda",
+    {
+      schema: {
+        summary: "Open tasks by due date",
+        description: "assignee is me (default), all or a username. Overdue is computed in Buenos Aires time.",
+        querystring: { type: "object", properties: { assignee: { type: "string" }, overdueOnly: { type: "string" } } },
+        response: { 200: { type: "object", properties: { tasks: { type: "array", items: agendaItemSchema } } } },
+      },
+    },
+    async (request) => ({ tasks: await service.agenda(request.query, actorOf(request)) })
+  )
+
+  server.get<{ Querystring: { entityType?: string; entityId?: string } }>(
+    "/crm/changes",
+    {
+      schema: {
+        summary: "The change history of one CRM entity",
+        querystring: { type: "object", properties: { entityType: { type: "string" }, entityId: { type: "string" } } },
+        response: { 200: { type: "object", properties: { changes: { type: "array", items: changeSchema } } }, ...errors },
+      },
+    },
+    async (request, reply) => {
+      try {
+        return { changes: await service.changes(request.query.entityType, request.query.entityId) }
       } catch (err) {
         return handleError(err, reply)
       }
