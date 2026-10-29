@@ -98,7 +98,7 @@ describe("GET /activity", () => {
         request.username = "admin"
         request.role = role
       })
-      await instance.register(activityRoutes, { lines })
+      await instance.register(activityRoutes, { lines, manualRuns: async () => [] })
     })
     return server
   }
