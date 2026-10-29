@@ -15,6 +15,7 @@ import type {
 import type { Role, StoredUser, UserColor } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
 import type { Responsible } from "@domain/responsibles.js"
+import type { ManualRun, ManualRunStatus } from "@domain/manualRun.js"
 import type {
   Action,
   AgendaItem,
@@ -402,6 +403,12 @@ export interface INosisPendingRepository {
   markNosisSearched(taxId: string, businessName: string, at: string): Promise<void>
   lastPendingMailDay(): Promise<string | null>
   recordPendingMail(day: string, at: string): Promise<void>
+}
+
+export interface IManualRunRepository {
+  start(run: ManualRun): Promise<void>
+  finish(id: string, status: ManualRunStatus, exitCode: number, finishedAt: string): Promise<void>
+  list(): Promise<ManualRun[]>
 }
 
 export interface ITextMailer {

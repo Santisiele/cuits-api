@@ -4,7 +4,9 @@ import type { FastifyInstance } from "fastify"
 import { ActivityLogService } from "@application/ActivityLogService.js"
 import { requireCreator } from "@middleware/requireCreator.js"
 import { LOG_FILE } from "@auth/activityLogger.js"
-import { parseActivityFilters, rotatedLogNames } from "@domain/activityLog.js"
+import { parseActivityFilters, rotatedLogNames, type ActivityEntry } from "@domain/activityLog.js"
+import { manualRunEntry } from "@domain/manualRun.js"
+import { Neo4jManualRunRepository } from "@infrastructure/neo4j/Neo4jManualRunRepository.js"
 
 async function* logLines(): AsyncIterable<string> {
   for (const file of [...rotatedLogNames(LOG_FILE).reverse(), LOG_FILE]) {
@@ -25,8 +27,15 @@ const entrySchema = {
   },
 } as const
 
-export default async function activityRoutes(server: FastifyInstance, options: { lines?: () => AsyncIterable<string> } = {}) {
-  const service = new ActivityLogService(options.lines ?? logLines)
+async function manualRunEntries(): Promise<ActivityEntry[]> {
+  return (await new Neo4jManualRunRepository().list()).map(manualRunEntry)
+}
+
+export default async function activityRoutes(
+  server: FastifyInstance,
+  options: { lines?: () => AsyncIterable<string>; manualRuns?: () => Promise<ActivityEntry[]> } = {}
+) {
+  const service = new ActivityLogService(options.lines ?? logLines, options.manualRuns ?? manualRunEntries)
 
   server.get<{ Querystring: { limit?: string; before?: string; seen?: string; username?: string; event?: string } }>(
     "/activity",
