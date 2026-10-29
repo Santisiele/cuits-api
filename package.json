@@ -40,7 +40,8 @@
     "crm:nosis": "tsx src/scripts/crmNosis.ts",
     "crm:import": "tsx src/scripts/crmImport.ts",
     "crm:import-history": "tsx src/scripts/crmImportHistory.ts",
-    "migrate:crmSource": "tsx src/scripts/migrateCrmSource.ts"
+    "migrate:crmSource": "tsx src/scripts/migrateCrmSource.ts",
+    "migrate:responsibles": "tsx src/scripts/migrateResponsibles.ts"
   },
   "keywords": [],
   "author": "",
