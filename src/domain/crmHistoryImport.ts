@@ -1,5 +1,5 @@
 import { MAX_TEXT_LENGTH } from "@domain/crm.js"
-import { isValidUsername } from "@domain/users.js"
+import { cleanResponsibleName } from "@domain/responsibles.js"
 
 export const NO_DETAIL = "(sin detalle)"
 
@@ -44,21 +44,20 @@ export function excelDate(value: unknown): string | null {
 }
 
 export function nameKey(name: string): string {
-  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().replace(/\s+/g, " ").toLowerCase()
+  return name.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().replace(/\s+/g, " ").toLowerCase()
 }
 
-export function usernameFor(name: string, aliases: ReadonlyMap<string, string>): string | null {
+export function responsibleFor(name: string, aliases: ReadonlyMap<string, string>): string | null {
   const key = nameKey(name)
   if (key === "") return null
-  const username = aliases.get(key) ?? key.replace(/ /g, ".")
-  return isValidUsername(username) ? username : null
+  return cleanResponsibleName(aliases.get(key) ?? name)
 }
 
 export function parseAliases(values: string[]): Map<string, string> {
   const aliases = new Map<string, string>()
   for (const value of values) {
-    const [name, username] = value.split("=")
-    if (name && username) aliases.set(nameKey(name), username.trim().toLowerCase())
+    const [name, responsible] = value.split("=")
+    if (name && responsible?.trim()) aliases.set(nameKey(name), responsible.trim())
   }
   return aliases
 }
@@ -91,9 +90,9 @@ export function parseHistory(
   const user = (raw: unknown): string | null => {
     const name = text(raw)
     if (name === "") return null
-    const username = usernameFor(name, aliases)
-    if (username === null) result.invalidNames.add(name)
-    return username
+    const responsible = responsibleFor(name, aliases)
+    if (responsible === null) result.invalidNames.add(name)
+    return responsible
   }
 
   rows.forEach((row, index) => {
@@ -142,7 +141,7 @@ export function parseHistory(
   return result
 }
 
-export function usersIn(history: ParsedHistory): Set<string> {
+export function responsiblesIn(history: ParsedHistory): Set<string> {
   const users = new Set<string>()
   for (const steps of history.byCompany.values()) {
     for (const step of steps) {
