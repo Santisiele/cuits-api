@@ -1,12 +1,16 @@
 import { describe, it, expect } from "vitest"
+import neo4j from "neo4j-driver"
 import {
   chunk,
+  dateTimePartsOf,
+  dateTimeSentinel,
   groupByLabels,
   groupByType,
   isIntSentinel,
   isSafeGraphName,
   intSentinel,
   parseBackup,
+  readDateTimeParts,
   summarise,
   type BackupNode,
   type BackupRelationship,
@@ -91,6 +95,62 @@ describe("the integer marker", () => {
     expect(isIntSentinel({ low: 4, high: 0 })).toBe(false)
     expect(isIntSentinel(4)).toBe(false)
     expect(isIntSentinel(null)).toBe(false)
+  })
+})
+
+describe("the date-time marker", () => {
+  const parts = {
+    year: 2026,
+    month: 5,
+    day: 6,
+    hour: 14,
+    minute: 42,
+    second: 21,
+    nanosecond: 871000000,
+    timeZoneOffsetSeconds: 0,
+    timeZoneId: null,
+  }
+
+  it("recognises what it writes", () => {
+    expect(dateTimePartsOf(dateTimeSentinel(parts))).toEqual(parts)
+  })
+
+  it("reads the shape older backups wrote, with every field as a low/high integer", () => {
+    const legacy = {
+      year: { low: 2026, high: 0 },
+      month: { low: 5, high: 0 },
+      day: { low: 6, high: 0 },
+      hour: { low: 14, high: 0 },
+      minute: { low: 42, high: 0 },
+      second: { low: 21, high: 0 },
+      nanosecond: { low: 871000000, high: 0 },
+      timeZoneOffsetSeconds: { low: 0, high: 0 },
+    }
+    expect(dateTimePartsOf(legacy)).toEqual(parts)
+  })
+
+  it("reads a date-time straight from the driver", () => {
+    const fromDriver = new neo4j.types.DateTime(
+      neo4j.int(2026), neo4j.int(5), neo4j.int(6), neo4j.int(14), neo4j.int(42), neo4j.int(21), neo4j.int(871000000), neo4j.int(0)
+    )
+    expect(readDateTimeParts(fromDriver)).toEqual(parts)
+  })
+
+  it("keeps a negative offset and a zone name", () => {
+    expect(readDateTimeParts({ ...parts, timeZoneOffsetSeconds: { low: -10800, high: -1 } })?.timeZoneOffsetSeconds).toBe(-10800)
+    expect(readDateTimeParts({ ...parts, timeZoneOffsetSeconds: null, timeZoneId: "America/Argentina/Buenos_Aires" })).toEqual({
+      ...parts,
+      timeZoneOffsetSeconds: null,
+      timeZoneId: "America/Argentina/Buenos_Aires",
+    })
+  })
+
+  it("does not mistake other values for a date-time", () => {
+    expect(dateTimePartsOf(intSentinel("4"))).toBeNull()
+    expect(dateTimePartsOf("2026-05-06")).toBeNull()
+    expect(dateTimePartsOf(null)).toBeNull()
+    expect(dateTimePartsOf({ ...parts, day: "seis" })).toBeNull()
+    expect(dateTimePartsOf({ ...parts, timeZoneOffsetSeconds: null })).toBeNull()
   })
 })
 

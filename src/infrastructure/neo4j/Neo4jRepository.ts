@@ -9,9 +9,12 @@ import type {
   IKeepAliveRepository,
 } from "@ports/interfaces.js"
 import {
+  dateTimePartsOf,
+  dateTimeSentinel,
   intSentinel,
   isIntSentinel,
   isSafeGraphName,
+  readDateTimeParts,
   type BackupNode,
   type BackupRelationship,
   type GraphBackup,
@@ -70,6 +73,10 @@ interface Neo4jSegment {
  */
 function toPlainValue(value: unknown): unknown {
   if (neo4j.isInt(value)) return intSentinel(value.toString())
+  if (neo4j.isDateTime(value)) {
+    const parts = readDateTimeParts(value)
+    if (parts) return dateTimeSentinel(parts)
+  }
   if (Array.isArray(value)) return value.map(toPlainValue)
   return value
 }
@@ -81,6 +88,20 @@ function toPlainProperties(properties: Record<string, unknown>): Record<string, 
 function toGraphValue(value: unknown): unknown {
   if (isIntSentinel(value)) return neo4j.int(value.$int)
   if (Array.isArray(value)) return value.map(toGraphValue)
+  const parts = dateTimePartsOf(value)
+  if (parts) {
+    return new neo4j.types.DateTime(
+      parts.year,
+      parts.month,
+      parts.day,
+      parts.hour,
+      parts.minute,
+      parts.second,
+      parts.nanosecond,
+      parts.timeZoneId === null ? (parts.timeZoneOffsetSeconds ?? undefined) : undefined,
+      parts.timeZoneId
+    )
+  }
   return value
 }
 

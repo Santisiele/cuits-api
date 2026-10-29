@@ -21,7 +21,25 @@ export interface IntSentinel {
   $int: string
 }
 
+export interface DateTimeParts {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+  nanosecond: number
+  timeZoneOffsetSeconds: number | null
+  timeZoneId: string | null
+}
+
+export interface DateTimeSentinel {
+  $datetime: DateTimeParts
+}
+
 const NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_]*$/
+
+const DATE_TIME_FIELDS = ["year", "month", "day", "hour", "minute", "second", "nanosecond"] as const
 
 export function intSentinel(value: string): IntSentinel {
   return { $int: value }
@@ -34,6 +52,40 @@ export function isIntSentinel(value: unknown): value is IntSentinel {
     typeof (value as IntSentinel).$int === "string" &&
     /^-?\d+$/.test((value as IntSentinel).$int)
   )
+}
+
+function toWholeNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value)) return value
+  if (typeof value !== "object" || value === null) return null
+  const { low, high } = value as { low?: unknown; high?: unknown }
+  if (typeof low !== "number" || typeof high !== "number") return null
+  return high * 2 ** 32 + (low >>> 0)
+}
+
+export function readDateTimeParts(value: unknown): DateTimeParts | null {
+  if (typeof value !== "object" || value === null) return null
+  const fields = value as Record<string, unknown>
+  const parts: Partial<Record<(typeof DATE_TIME_FIELDS)[number], number>> = {}
+  for (const field of DATE_TIME_FIELDS) {
+    const number = toWholeNumber(fields[field])
+    if (number === null) return null
+    parts[field] = number
+  }
+  const offset = fields["timeZoneOffsetSeconds"] == null ? null : toWholeNumber(fields["timeZoneOffsetSeconds"])
+  const zone = typeof fields["timeZoneId"] === "string" ? fields["timeZoneId"] : null
+  if (offset === null && zone === null) return null
+  return { ...(parts as Omit<DateTimeParts, "timeZoneOffsetSeconds" | "timeZoneId">), timeZoneOffsetSeconds: offset, timeZoneId: zone }
+}
+
+export function dateTimeSentinel(parts: DateTimeParts): DateTimeSentinel {
+  return { $datetime: parts }
+}
+
+export function dateTimePartsOf(value: unknown): DateTimeParts | null {
+  if (typeof value === "object" && value !== null && "$datetime" in value) {
+    return readDateTimeParts((value as DateTimeSentinel).$datetime)
+  }
+  return readDateTimeParts(value)
 }
 
 export function isSafeGraphName(name: string): boolean {
