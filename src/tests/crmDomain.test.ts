@@ -100,9 +100,10 @@ describe("dates in Buenos Aires", () => {
     expect(todayInBuenosAires(new Date("2026-10-30T03:00:00.000Z"))).toBe("2026-10-30")
   })
 
-  it("calls a task overdue only after its day", () => {
+  it("calls a task overdue from its own day on", () => {
     expect(isOverdue("2026-10-29", "2026-10-30")).toBe(true)
-    expect(isOverdue("2026-10-30", "2026-10-30")).toBe(false)
+    expect(isOverdue("2026-10-30", "2026-10-30")).toBe(true)
+    expect(isOverdue("2026-10-31", "2026-10-30")).toBe(false)
   })
 
   it("accepts real yyyy-mm-dd days only", () => {
