@@ -102,9 +102,13 @@ async function main(): Promise<void> {
     await session.run(Queries.RESPONSIBLE_CONSTRAINT)
     for (const entry of mapping) {
       const params = { name: entry.name, nameKey: responsibleKey(entry.name), color: entry.color, users: entry.users, from: entry.from, at }
-      await session.run(UPSERT, params)
-      const tasks = Number((await session.run(REPOINT_TASKS, params)).records[0]?.get("moved") ?? 0)
-      const actions = Number((await session.run(REPOINT_ACTIONS, params)).records[0]?.get("moved") ?? 0)
+      const { tasks, actions } = await session.executeWrite(async (tx) => {
+        await tx.run(UPSERT, params)
+        return {
+          tasks: Number((await tx.run(REPOINT_TASKS, params)).records[0]?.get("moved") ?? 0),
+          actions: Number((await tx.run(REPOINT_ACTIONS, params)).records[0]?.get("moved") ?? 0),
+        }
+      })
       logger.info(`  ${entry.name}: ${tasks} tasks, ${actions} actions`)
     }
     for (const username of toDisable) {

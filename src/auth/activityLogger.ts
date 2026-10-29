@@ -2,6 +2,8 @@ import pino from "pino"
 import path from "path"
 import fs from "fs"
 import type { OperationSummary, TrustLevelOperationSummary } from "@domain/entities.js"
+import { MAX_LOG_BYTES } from "@domain/activityLog.js"
+import { rotateLogIfLarge } from "@infrastructure/logRotation.js"
 
 /**
  * Resolves LOG_ROUTE into an absolute directory path.
@@ -23,6 +25,8 @@ export const LOG_FILE = path.join(LOGS_DIR, process.env["LOG_DOC"] ?? "activity.
 if (!fs.existsSync(LOGS_DIR)) {
   fs.mkdirSync(LOGS_DIR, { recursive: true })
 }
+
+rotateLogIfLarge(LOG_FILE, MAX_LOG_BYTES)
 
 console.log("Log file path:", LOG_FILE)
 

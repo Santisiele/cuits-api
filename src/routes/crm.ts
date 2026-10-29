@@ -743,7 +743,7 @@ export default async function crmRoutes(server: FastifyInstance) {
     async (request, reply) => {
       try {
         const task = await service.updateTask(request.params.id, request.body ?? {}, actorOf(request))
-        logCrmOperation(request.username, task.status === "open" ? "update" : task.status, "Task", task.id, taskDetails(task))
+        logCrmOperation(request.username, task.status === "open" ? "update" : task.status === "done" ? "complete" : "cancel", "Task", task.id, taskDetails(task))
         return task
       } catch (err) {
         return handleError(err, reply)

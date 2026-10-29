@@ -42,10 +42,11 @@ describe("parseActivityLine", () => {
 
 describe("filters", () => {
   it("reads the query safely", () => {
-    expect(parseActivityFilters({})).toEqual({ limit: 200, before: null, username: null, event: null })
-    expect(parseActivityFilters({ limit: "5000", before: "2026-10-29T13:00:00Z", username: " SOL ", event: "login" })).toEqual({
+    expect(parseActivityFilters({})).toEqual({ limit: 200, before: null, seenAtBefore: 0, username: null, event: null })
+    expect(parseActivityFilters({ limit: "5000", before: "2026-10-29T13:00:00Z", seen: "2", username: " SOL ", event: "login" })).toEqual({
       limit: 1000,
       before: "2026-10-29T13:00:00.000Z",
+      seenAtBefore: 2,
       username: "sol",
       event: "login",
     })
@@ -57,7 +58,7 @@ describe("filters", () => {
     expect(matchesActivity(entry, parseActivityFilters({ username: "SOL" }))).toBe(true)
     expect(matchesActivity(entry, parseActivityFilters({ username: "luchi" }))).toBe(false)
     expect(matchesActivity(entry, parseActivityFilters({ event: "login" }))).toBe(false)
-    expect(matchesActivity(entry, parseActivityFilters({ before: "2026-10-29T13:00:00Z" }))).toBe(false)
+    expect(matchesActivity(entry, parseActivityFilters({ before: "2026-10-29T12:59:59Z" }))).toBe(false)
   })
 })
 
@@ -68,10 +69,24 @@ describe("ActivityLogService", () => {
     expect(page.hasMore).toBe(true)
   })
 
-  it("pages back from a time", async () => {
-    const page = await new ActivityLogService(lines).read(parseActivityFilters({ limit: "2", before: "2026-10-29T14:00:00Z" }))
+  it("pages back from the last entry already shown", async () => {
+    const page = await new ActivityLogService(lines).read(parseActivityFilters({ limit: "2", before: "2026-10-29T14:00:00Z", seen: "1" }))
     expect(page.entries.map((entry) => entry.event)).toEqual(["crm_operation", "login"])
     expect(page.hasMore).toBe(false)
+  })
+
+  it("skips no entry that shares the millisecond where a page ended", async () => {
+    const at = Date.UTC(2026, 9, 29, 16)
+    const same = ["a", "b", "c"].map((username) => JSON.stringify({ level: 30, time: at, event: "login", username }))
+    async function* burst(): AsyncIterable<string> {
+      for (const line of same) yield line
+    }
+    const service = new ActivityLogService(burst)
+    const first = await service.read(parseActivityFilters({ limit: "2" }))
+    expect(first.entries.map((entry) => entry.username)).toEqual(["c", "b"])
+    const second = await service.read(parseActivityFilters({ limit: "2", before: first.entries[1]!.time, seen: "2" }))
+    expect(second.entries.map((entry) => entry.username)).toEqual(["a"])
+    expect(second.hasMore).toBe(false)
   })
 })
 

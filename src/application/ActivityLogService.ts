@@ -9,15 +9,23 @@ export class ActivityLogService {
   constructor(private readonly lines: () => AsyncIterable<string>) {}
 
   async read(filters: ActivityFilters): Promise<ActivityPage> {
-    const kept: ActivityEntry[] = []
-    let matched = 0
+    const older: ActivityEntry[] = []
+    const atBefore: ActivityEntry[] = []
+    let olderCount = 0
     for await (const line of this.lines()) {
       const entry = parseActivityLine(line)
       if (!entry || !matchesActivity(entry, filters)) continue
-      matched++
-      kept.push(entry)
-      if (kept.length > filters.limit) kept.shift()
+      if (entry.time === filters.before) {
+        atBefore.push(entry)
+        continue
+      }
+      olderCount++
+      older.push(entry)
+      if (older.length > filters.limit) older.shift()
     }
-    return { entries: kept.reverse(), hasMore: matched > filters.limit }
+    const unseen = atBefore.slice(0, Math.max(0, atBefore.length - filters.seenAtBefore))
+    const matched = [...older, ...unseen]
+    const total = olderCount + unseen.length
+    return { entries: matched.slice(-filters.limit).reverse(), hasMore: total > filters.limit }
   }
 }
