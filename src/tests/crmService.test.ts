@@ -32,9 +32,9 @@ beforeEach(() => {
 })
 
 describe("adding a company", () => {
-  it("creates a CUIT the graph does not have and queues it for Nosis", async () => {
+  it("creates a CUIT the graph does not have, off the Nosis queue while it is in no known source", async () => {
     const result = await service.addCompany({ taxId: COMPANY, businessName: " ACME SA ", crmBrand: "Acme" }, "santi")
-    expect(result).toEqual({ taxId: COMPANY, created: true, restored: false, nosisPending: true })
+    expect(result).toEqual({ taxId: COMPANY, created: true, restored: false, nosisPending: false })
     expect(repository.cuits.get(COMPANY)).toMatchObject({ businessName: "ACME SA", company: true, addedBy: "santi" })
     expect(repository.changes[0]).toMatchObject({
       entityType: "CrmCompany",
@@ -47,6 +47,19 @@ describe("adding a company", () => {
 
   it("needs a business name for a CUIT the graph does not have", async () => {
     expect(await rejection(service.addCompany({ taxId: COMPANY }, "santi"))).toBe("business_name_required")
+  })
+
+  it("queues it for Nosis when its origin is a known source", async () => {
+    expect(await service.addCompany({ taxId: COMPANY, businessName: "ACME", originSource: "Poseidon" }, "santi")).toMatchObject({
+      nosisPending: true,
+    })
+    expect((await service.listCompanies())[0]?.nosisPending).toBe(true)
+  })
+
+  it("does not queue it when its origin is a source of people to know", async () => {
+    expect(await service.addCompany({ taxId: COMPANY, businessName: "ACME", originSource: "Bolsa" }, "santi")).toMatchObject({
+      nosisPending: false,
+    })
   })
 
   it("takes an existing CUIT without a name and keeps it off the Nosis queue when a known source has it", async () => {
@@ -157,7 +170,7 @@ describe("contacts", () => {
   it("adds the CUIL to the CRM as a person, not as a company", async () => {
     const contact = await service.createContact({ fullName: "Ana", companyTaxIds: [COMPANY], cuil: PERSON }, "santi")
     expect(contact.cuil).toBe(PERSON)
-    expect(repository.cuits.get(PERSON)).toMatchObject({ company: false, nosisPending: true, sources: [] })
+    expect(repository.cuits.get(PERSON)).toMatchObject({ company: false, nosisPending: false, sources: [] })
     expect((await service.listCompanies()).map((company) => company.taxId)).not.toContain(PERSON)
   })
 
@@ -412,6 +425,14 @@ describe("origin and closing", () => {
     expect(repository.cuits.get(COMPANY)?.sources).toEqual(["Bolsa"])
     await service.updateCompany(COMPANY, { crmOrigin: "Conocido" }, "santi")
     expect(repository.cuits.get(COMPANY)).toMatchObject({ sources: [], fields: { crmOrigin: "Conocido", originSource: null } })
+  })
+
+  it("queues the CUIT when a later edit points the origin to a known source, and not when it was searched", async () => {
+    await service.addCompany({ taxId: COMPANY, businessName: "ACME" }, "santi")
+    expect((await service.updateCompany(COMPANY, { originSource: "Poseidon" }, "santi")).nosisPending).toBe(true)
+    await service.addCompany({ taxId: OTHER, businessName: "OTRA" }, "santi")
+    repository.cuits.get(OTHER)!.nosisSearched = true
+    expect((await service.updateCompany(OTHER, { originSource: "Poseidon" }, "santi")).nosisPending).toBe(false)
   })
 
   it("lists the sources an origin can point to", async () => {

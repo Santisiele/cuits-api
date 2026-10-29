@@ -207,9 +207,8 @@ export function isTooLong(value: string | null, max: number): boolean {
   return value !== null && value.length > max
 }
 
-export function shouldMarkNosisPending(state: CrmCuitState): boolean {
-  if (!state.exists) return true
-  return !state.nosisSearched && !state.inKnownSource
+export function shouldMarkNosisPending(state: CrmCuitState, joinsKnownSource: boolean): boolean {
+  return joinsKnownSource && !state.inKnownSource && !state.nosisSearched
 }
 
 export function removalOutcome(facts: RemovalFacts): RemovalOutcome {

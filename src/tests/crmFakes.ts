@@ -88,7 +88,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       inCrm: cuit?.company === true,
       archived: cuit?.archivedAt != null,
       nosisSearched: cuit?.nosisSearched === true,
-      inKnownSource: (cuit?.knownSources.length ?? 0) > 0,
+      inKnownSource: cuit !== undefined && this.inKnownSource(cuit),
     }
   }
 
@@ -115,8 +115,15 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return (await this.listCompanies()).find((company) => company.taxId === taxId) ?? null
   }
 
-  async updateCompany(taxId: string, fields: CrmCompanyFields, previousSource: string | null, change: Change): Promise<void> {
+  async updateCompany(
+    taxId: string,
+    fields: CrmCompanyFields,
+    previousSource: string | null,
+    markNosisPending: boolean,
+    change: Change
+  ): Promise<void> {
     const cuit = this.cuits.get(taxId)!
+    if (markNosisPending) cuit.nosisPending = true
     cuit.fields = fields
     if (previousSource && previousSource !== fields.originSource) cuit.sources = cuit.sources.filter((name) => name !== previousSource)
     if (fields.originSource && !cuit.sources.includes(fields.originSource)) cuit.sources.push(fields.originSource)
@@ -142,8 +149,8 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     this.changes.push(change)
   }
 
-  async sourceExists(name: string): Promise<boolean> {
-    return this.availableSources.some((source) => source.name === name)
+  async findSource(name: string): Promise<CrmSource | null> {
+    return this.availableSources.find((source) => source.name === name) ?? null
   }
 
   async listSources(): Promise<CrmSource[]> {
@@ -212,8 +219,8 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
 
   async listNosisPending(): Promise<NosisPendingItem[]> {
     return [...this.cuits.values()]
-      .filter((cuit) => cuit.nosisPending)
-      .map((cuit) => ({ taxId: cuit.taxId, businessName: cuit.businessName, sources: [], addedBy: cuit.addedBy, addedAt: cuit.addedAt }))
+      .filter((cuit) => cuit.nosisPending && this.inKnownSource(cuit))
+      .map((cuit) => ({ taxId: cuit.taxId, businessName: cuit.businessName, sources: cuit.sources, addedBy: cuit.addedBy, addedAt: cuit.addedAt }))
   }
 
   async markNosisSearched(taxId: string, businessName: string, at: string): Promise<void> {
@@ -290,12 +297,19 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       .map((task) => ({ ...task, businessName: this.cuits.get(task.companyTaxId)?.businessName ?? "" }))
   }
 
+  private inKnownSource(cuit: StoredCuit): boolean {
+    return (
+      cuit.knownSources.length > 0 ||
+      cuit.sources.some((name) => this.availableSources.some((source) => source.name === name && source.category === "known"))
+    )
+  }
+
   private toCompany(cuit: StoredCuit): CrmCompany {
     return {
       taxId: cuit.taxId,
       businessName: cuit.businessName,
       ...cuit.fields,
-      nosisPending: cuit.nosisPending,
+      nosisPending: cuit.nosisPending && this.inKnownSource(cuit),
       addedAt: cuit.addedAt,
       addedBy: cuit.addedBy,
       lastActionDate: null,

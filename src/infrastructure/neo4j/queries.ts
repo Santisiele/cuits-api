@@ -1061,7 +1061,7 @@ export const Queries = {
            c.crmProduct AS crmProduct,
            c.crmOrigin AS crmOrigin,
            c.crmOriginSource AS originSource,
-           coalesce(c.nosisPending, false) AS nosisPending,
+           coalesce(c.nosisPending, false) AND EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source {category: "known"}) } AS nosisPending,
            c.crmAddedAt AS addedAt,
            c.crmAddedBy AS addedBy,
            c.crmClosedAt AS closedAt,
@@ -1088,7 +1088,7 @@ export const Queries = {
            c.crmProduct AS crmProduct,
            c.crmOrigin AS crmOrigin,
            c.crmOriginSource AS originSource,
-           coalesce(c.nosisPending, false) AS nosisPending,
+           coalesce(c.nosisPending, false) AND EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source {category: "known"}) } AS nosisPending,
            c.crmAddedAt AS addedAt,
            c.crmAddedBy AS addedBy,
            c.crmClosedAt AS closedAt,
@@ -1114,7 +1114,8 @@ export const Queries = {
 
   CRM_UPDATE_COMPANY: `
     MATCH (c:CUIT {id: $taxId})
-    SET c.crmBrand = $crmBrand, c.crmProduct = $crmProduct, c.crmOrigin = $crmOrigin, c.crmOriginSource = $originSource
+    SET c.crmBrand = $crmBrand, c.crmProduct = $crmProduct, c.crmOrigin = $crmOrigin, c.crmOriginSource = $originSource,
+        c.nosisPending = CASE WHEN $markNosisPending THEN true ELSE c.nosisPending END
   `,
 
   CRM_FIND_REMOVAL_FACTS: `
@@ -1162,9 +1163,10 @@ export const Queries = {
     REMOVE c.crmClosedAt, c.crmClosedReason, c.crmClosedBy
   `,
 
-  CRM_SOURCE_EXISTS: `
-    OPTIONAL MATCH (s:Source {name: $sourceName})
-    RETURN s IS NOT NULL AND s.name <> $legacySource AS exists
+  CRM_FIND_SOURCE: `
+    MATCH (s:Source {name: $sourceName})
+    WHERE s.name <> $legacySource
+    RETURN s.name AS name, s.category AS category
   `,
 
   CRM_CREATE_CONTACT: `
@@ -1421,7 +1423,7 @@ export const Queries = {
 
   CRM_LIST_NOSIS_PENDING: `
     MATCH (c:CUIT)
-    WHERE c.nosisPending = true
+    WHERE c.nosisPending = true AND EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source {category: "known"}) }
     RETURN c.id AS taxId, c.businessName AS businessName, coalesce(c.sources, []) AS sources,
            c.crmAddedBy AS addedBy, c.crmAddedAt AS addedAt
     ORDER BY c.crmAddedAt, c.id

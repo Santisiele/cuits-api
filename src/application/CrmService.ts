@@ -176,13 +176,13 @@ export class CrmService {
 
   async addCompany(body: CompanyBody, by: string): Promise<CompanyAddResult> {
     const taxId = this.requireCuit(body.taxId)
-    const fields = await this.companyFields(body)
+    const { fields, joinsKnownSource } = await this.companyFields(body)
     const businessName = this.name(body.businessName)
     const state = await this.repository.findCuitState(taxId)
     if (state.inCrm) this.fail("already_in_crm")
     if (!state.exists && businessName === null) this.fail("business_name_required")
 
-    const markNosisPending = shouldMarkNosisPending(state)
+    const markNosisPending = shouldMarkNosisPending(state, joinsKnownSource)
     const at = this.now().toISOString()
     await this.repository.addToCrm(
       { taxId, businessName, ...fields, asCompany: true, markNosisPending, at, by },
@@ -193,16 +193,20 @@ export class CrmService {
 
   async updateCompany(taxId: string, body: CompanyBody, by: string): Promise<CrmCompany> {
     const company = await this.requireCompany(taxId)
-    const fields = await this.companyFields(body)
+    const { fields, joinsKnownSource } = await this.companyFields(body)
+    const changesSource = fields.originSource !== company.originSource
+    const markNosisPending =
+      changesSource && joinsKnownSource && shouldMarkNosisPending(await this.repository.findCuitState(taxId), joinsKnownSource)
     const at = this.now().toISOString()
     const diff = changedFields(company as unknown as Record<string, unknown>, { ...fields })
     await this.repository.updateCompany(
       taxId,
       fields,
       company.originSource,
+      markNosisPending,
       this.change(at, by, "CrmCompany", taxId, "update", diff.before, diff.after)
     )
-    return { ...company, ...fields }
+    return { ...company, ...fields, nosisPending: company.nosisPending || markNosisPending }
   }
 
   async closeCompany(taxId: string, reasonValue: unknown, by: string): Promise<CompanyCloseResult> {
@@ -477,8 +481,6 @@ export class CrmService {
   }
 
   private async addPerson(taxId: string, businessName: string, at: string, by: string): Promise<void> {
-    const state = await this.repository.findCuitState(taxId)
-    const markNosisPending = shouldMarkNosisPending(state)
     await this.repository.addToCrm(
       {
         taxId,
@@ -488,7 +490,7 @@ export class CrmService {
         crmOrigin: null,
         originSource: null,
         asCompany: false,
-        markNosisPending,
+        markNosisPending: false,
         at,
         by,
       },
@@ -631,14 +633,18 @@ export class CrmService {
     return description
   }
 
-  private async companyFields(body: CompanyBody): Promise<CrmCompanyFields> {
+  private async companyFields(body: CompanyBody): Promise<{ fields: CrmCompanyFields; joinsKnownSource: boolean }> {
     const originSource = cleanText(body.originSource)
-    if (originSource !== null && !(await this.repository.sourceExists(originSource))) this.fail("source_not_found")
+    const source = originSource === null ? null : await this.repository.findSource(originSource)
+    if (originSource !== null && source === null) this.fail("source_not_found")
     return {
-      crmBrand: this.name(body.crmBrand),
-      crmProduct: this.name(body.crmProduct),
-      crmOrigin: originSource === null ? this.name(body.crmOrigin) : null,
-      originSource,
+      fields: {
+        crmBrand: this.name(body.crmBrand),
+        crmProduct: this.name(body.crmProduct),
+        crmOrigin: originSource === null ? this.name(body.crmOrigin) : null,
+        originSource,
+      },
+      joinsKnownSource: source?.category === "known",
     }
   }
 
