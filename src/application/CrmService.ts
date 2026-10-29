@@ -1,16 +1,30 @@
 import { randomUUID } from "crypto"
 import type { ICrmRepository } from "@ports/interfaces.js"
 import {
+  COMPANY_REMOVED_REASON,
   MAX_NAME_LENGTH,
+  MAX_TEXT_LENGTH,
+  canChangeAction,
+  canChangeTask,
   changedFields,
   cleanText,
+  isChangeEntityType,
+  isOverdue,
   isTooLong,
   isValidBirthday,
+  isValidCalendarDate,
   isValidCrmCuit,
   isValidCrmId,
   removalOutcome,
   shouldMarkNosisPending,
+  sortAgenda,
+  taskStatusRejection,
+  todayInBuenosAires,
+  uniqueIds,
   uniqueTaxIds,
+  type Action,
+  type Actor,
+  type AgendaItem,
   type Change,
   type ChangeEntityType,
   type ChangeOperation,
@@ -19,6 +33,7 @@ import {
   type CrmCompanyFields,
   type CrmRejection,
   type RemovalOutcome,
+  type Task,
 } from "@domain/crm.js"
 
 export class CrmError extends Error {
@@ -37,12 +52,21 @@ export interface CompanyAddResult {
 
 export interface CompanyRemovalResult {
   outcome: RemovalOutcome
+  cancelledTaskCount: number
   dryRun: boolean
 }
 
 export interface CompanyDetail {
   company: CrmCompany
   contacts: Contact[]
+  actions: Action[]
+  tasks: Task[]
+}
+
+export interface ActionResult {
+  action: Action
+  closedTasks: Task[]
+  nextTask: Task | null
 }
 
 interface CompanyBody {
@@ -62,6 +86,30 @@ interface ContactBody {
   cuil?: unknown
 }
 
+interface TaskBody {
+  companyTaxId?: unknown
+  description?: unknown
+  dueDate?: unknown
+  assignee?: unknown
+  contactIds?: unknown
+  status?: unknown
+  cancelReason?: unknown
+}
+
+interface ActionBody {
+  companyTaxId?: unknown
+  date?: unknown
+  description?: unknown
+  contactIds?: unknown
+  completesTaskIds?: unknown
+  nextTask?: TaskBody | null
+}
+
+export interface AgendaQuery {
+  assignee?: string
+  overdueOnly?: string
+}
+
 const MESSAGES: Record<CrmRejection, string> = {
   invalid_cuit: "The CUIT must be 11 digits without dashes",
   business_name_required: "A business name is required for a CUIT that is not in the graph",
@@ -75,6 +123,16 @@ const MESSAGES: Record<CrmRejection, string> = {
   already_archived: "It is already archived",
   not_archived: "It is not archived",
   cuil_already_set: "The contact already has a CUIL",
+  description_required: "A description is required",
+  cancel_reason_required: "A reason is required to cancel a task",
+  invalid_status: "A task can only be marked done or cancelled",
+  task_not_open: "That task is no longer open",
+  task_other_company: "That task belongs to another company",
+  forbidden: "You are not allowed to do this",
+  action_not_found: "That action does not exist",
+  task_not_found: "That task does not exist",
+  user_not_found: "That user does not exist",
+  invalid_entity: "Unknown history entry type",
 }
 
 export class CrmService {
@@ -88,9 +146,18 @@ export class CrmService {
     return this.repository.listCompanies()
   }
 
+  listUsers(): Promise<string[]> {
+    return this.repository.listActiveUsernames()
+  }
+
   async companyDetail(taxId: string): Promise<CompanyDetail> {
     const company = await this.requireCompany(taxId)
-    return { company, contacts: await this.repository.listContacts(taxId) }
+    const [contacts, actions, tasks] = await Promise.all([
+      this.repository.listContacts(taxId),
+      this.repository.listActions(taxId),
+      this.repository.listTasks(taxId),
+    ])
+    return { company, contacts, actions, tasks }
   }
 
   async addCompany(body: CompanyBody, by: string): Promise<CompanyAddResult> {
@@ -121,11 +188,19 @@ export class CrmService {
 
   async removeCompany(taxId: string, dryRun: boolean, by: string): Promise<CompanyRemovalResult> {
     await this.requireCompany(taxId)
-    const outcome = removalOutcome(await this.repository.findRemovalFacts(taxId))
-    if (dryRun) return { outcome, dryRun }
+    const facts = await this.repository.findRemovalFacts(taxId)
+    const outcome = removalOutcome(facts)
+    const cancelledTaskIds = outcome === "archived" ? facts.openTaskIds : []
+    const result = { outcome, cancelledTaskCount: cancelledTaskIds.length, dryRun }
+    if (dryRun) return result
     const at = this.now().toISOString()
-    await this.repository.removeCompany(taxId, outcome, at, this.change(at, by, "CrmCompany", taxId, "crm_remove", {}, { outcome }))
-    return { outcome, dryRun }
+    await this.repository.removeCompany(taxId, outcome, at, [
+      this.change(at, by, "CrmCompany", taxId, "crm_remove", {}, { outcome }),
+      ...cancelledTaskIds.map((id) =>
+        this.change(at, by, "Task", id, "cancel", { status: "open" }, { status: "cancelled", cancelReason: COMPANY_REMOVED_REASON })
+      ),
+    ])
+    return result
   }
 
   async createContact(body: ContactBody, by: string): Promise<Contact> {
@@ -191,6 +266,161 @@ export class CrmService {
     return restored
   }
 
+  async recordAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
+    const companyTaxId = this.requireCuit(body.companyTaxId)
+    await this.requireCompany(companyTaxId)
+    const date = this.calendarDate(body.date)
+    const description = this.description(body.description)
+    const contactIds = await this.requireContacts(companyTaxId, body.contactIds)
+    const completesTaskIds = uniqueIds(body.completesTaskIds)
+    if (completesTaskIds === null) this.fail("task_not_found")
+    const toClose = await Promise.all(completesTaskIds.map((id) => this.requireOpenTaskOf(id, companyTaxId)))
+    const nextTask = body.nextTask ? await this.newTask({ ...body.nextTask, companyTaxId }, actor.username) : null
+
+    const at = this.now().toISOString()
+    const action: Action = {
+      id: this.newId(),
+      companyTaxId,
+      date,
+      description,
+      doneBy: actor.username,
+      contactIds,
+      createdTaskId: nextTask?.id ?? null,
+      completedTaskIds: completesTaskIds,
+      createdAt: at,
+      archivedAt: null,
+    }
+    const closedTasks = toClose.map((task) => ({ ...task, status: "done" as const, closedAt: at }))
+    await this.repository.recordAction(action, closedTasks, nextTask && { ...nextTask, createdAt: at }, [
+      this.change(at, actor.username, "Action", action.id, "create", {}, this.actionView(action)),
+      ...closedTasks.map((task) =>
+        this.change(at, actor.username, "Task", task.id, "complete", { status: "open" }, { status: "done", byAction: action.id })
+      ),
+      ...(nextTask ? [this.change(at, actor.username, "Task", nextTask.id, "create", {}, this.taskView(nextTask))] : []),
+    ])
+    return { action, closedTasks, nextTask: nextTask && { ...nextTask, createdAt: at } }
+  }
+
+  async updateAction(id: string, body: ActionBody, actor: Actor): Promise<Action> {
+    const action = await this.requireChangeableAction(id, actor)
+    const updated: Action = {
+      ...action,
+      date: body.date === undefined ? action.date : this.calendarDate(body.date),
+      description: body.description === undefined ? action.description : this.description(body.description),
+      contactIds: body.contactIds === undefined ? action.contactIds : await this.requireContacts(action.companyTaxId, body.contactIds),
+    }
+    const at = this.now().toISOString()
+    const diff = changedFields(this.actionView(action), this.actionView(updated))
+    await this.repository.updateAction(updated, this.change(at, actor.username, "Action", id, "update", diff.before, diff.after))
+    return updated
+  }
+
+  async archiveAction(id: string, actor: Actor): Promise<Action> {
+    const action = await this.requireChangeableAction(id, actor)
+    if (action.archivedAt !== null) this.fail("already_archived")
+    const at = this.now().toISOString()
+    const archived = { ...action, archivedAt: at }
+    await this.repository.updateAction(archived, this.change(at, actor.username, "Action", id, "archive", { archivedAt: null }, { archivedAt: at }))
+    return archived
+  }
+
+  async restoreAction(id: string, actor: Actor): Promise<Action> {
+    const action = await this.requireChangeableAction(id, actor)
+    if (action.archivedAt === null) this.fail("not_archived")
+    const at = this.now().toISOString()
+    const restored = { ...action, archivedAt: null }
+    await this.repository.updateAction(
+      restored,
+      this.change(at, actor.username, "Action", id, "restore", { archivedAt: action.archivedAt }, { archivedAt: null })
+    )
+    return restored
+  }
+
+  async createTask(body: TaskBody, actor: Actor): Promise<Task> {
+    const companyTaxId = this.requireCuit(body.companyTaxId)
+    await this.requireCompany(companyTaxId)
+    const task = await this.newTask({ ...body, companyTaxId }, actor.username)
+    await this.repository.createTask(task, this.change(task.createdAt, actor.username, "Task", task.id, "create", {}, this.taskView(task)))
+    return task
+  }
+
+  async updateTask(id: string, body: TaskBody, actor: Actor): Promise<Task> {
+    const task = await this.requireChangeableTask(id, actor)
+    if (task.status !== "open") this.fail("task_not_open")
+    const at = this.now().toISOString()
+    const updated: Task = {
+      ...task,
+      description: body.description === undefined ? task.description : this.description(body.description),
+      dueDate: body.dueDate === undefined ? task.dueDate : this.calendarDate(body.dueDate),
+      assignee: body.assignee === undefined ? task.assignee : await this.requireUser(body.assignee),
+      contactIds: body.contactIds === undefined ? task.contactIds : await this.requireContacts(task.companyTaxId, body.contactIds),
+    }
+    let operation: ChangeOperation = "update"
+    if (body.status !== undefined) {
+      const cancelReason = this.text(body.cancelReason)
+      const reason = taskStatusRejection(task, body.status, cancelReason)
+      if (reason) this.fail(reason)
+      updated.status = body.status as Task["status"]
+      updated.closedAt = at
+      updated.cancelReason = updated.status === "cancelled" ? cancelReason : null
+      operation = updated.status === "done" ? "complete" : "cancel"
+    }
+    const diff = changedFields(this.taskView(task), this.taskView(updated))
+    await this.repository.updateTask(updated, this.change(at, actor.username, "Task", id, operation, diff.before, diff.after))
+    return updated
+  }
+
+  async archiveTask(id: string, actor: Actor): Promise<Task> {
+    const task = await this.requireChangeableTask(id, actor)
+    if (task.archivedAt !== null) this.fail("already_archived")
+    const at = this.now().toISOString()
+    const archived = { ...task, archivedAt: at }
+    await this.repository.updateTask(archived, this.change(at, actor.username, "Task", id, "archive", { archivedAt: null }, { archivedAt: at }))
+    return archived
+  }
+
+  async restoreTask(id: string, actor: Actor): Promise<Task> {
+    const task = await this.requireChangeableTask(id, actor)
+    if (task.archivedAt === null) this.fail("not_archived")
+    const at = this.now().toISOString()
+    const restored = { ...task, archivedAt: null }
+    await this.repository.updateTask(
+      restored,
+      this.change(at, actor.username, "Task", id, "restore", { archivedAt: task.archivedAt }, { archivedAt: null })
+    )
+    return restored
+  }
+
+  async agenda(query: AgendaQuery, actor: Actor): Promise<AgendaItem[]> {
+    const assignee = query.assignee === "all" ? null : !query.assignee || query.assignee === "me" ? actor.username : query.assignee
+    const today = todayInBuenosAires(this.now())
+    const items = (await this.repository.listAgenda(assignee)).map((item) => ({ ...item, overdue: isOverdue(item.dueDate, today) }))
+    return sortAgenda(query.overdueOnly === "true" ? items.filter((item) => item.overdue) : items)
+  }
+
+  async changes(entityType: unknown, entityId: unknown): Promise<Change[]> {
+    if (!isChangeEntityType(entityType)) this.fail("invalid_entity")
+    if (typeof entityId !== "string" || entityId === "") this.fail("invalid_entity")
+    return this.repository.listChanges(entityType, entityId)
+  }
+
+  private async newTask(body: TaskBody & { companyTaxId: string }, createdBy: string): Promise<Task> {
+    return {
+      id: this.newId(),
+      companyTaxId: body.companyTaxId,
+      description: this.description(body.description),
+      dueDate: this.calendarDate(body.dueDate),
+      status: "open",
+      cancelReason: null,
+      assignee: body.assignee === undefined || body.assignee === null || body.assignee === "" ? createdBy : await this.requireUser(body.assignee),
+      createdBy,
+      contactIds: await this.requireContacts(body.companyTaxId, body.contactIds),
+      createdAt: this.now().toISOString(),
+      closedAt: null,
+      archivedAt: null,
+    }
+  }
+
   private async addPerson(taxId: string, businessName: string, at: string, by: string): Promise<void> {
     const state = await this.repository.findCuitState(taxId)
     const markNosisPending = shouldMarkNosisPending(state)
@@ -221,6 +451,29 @@ export class CrmService {
     }
   }
 
+  private actionView(action: Action): Record<string, unknown> {
+    return {
+      companyTaxId: action.companyTaxId,
+      date: action.date,
+      description: action.description,
+      contactIds: action.contactIds,
+      completedTaskIds: action.completedTaskIds,
+      createdTaskId: action.createdTaskId,
+    }
+  }
+
+  private taskView(task: Task): Record<string, unknown> {
+    return {
+      companyTaxId: task.companyTaxId,
+      description: task.description,
+      dueDate: task.dueDate,
+      assignee: task.assignee,
+      contactIds: task.contactIds,
+      status: task.status,
+      cancelReason: task.cancelReason,
+    }
+  }
+
   private change(
     at: string,
     by: string,
@@ -246,6 +499,45 @@ export class CrmService {
     return contact
   }
 
+  private async requireContacts(companyTaxId: string, value: unknown): Promise<string[]> {
+    const ids = uniqueIds(value)
+    if (ids === null) this.fail("contact_not_found")
+    if (ids.length === 0) return []
+    const found = await this.repository.contactsAtCompany(companyTaxId, ids)
+    if (found.length !== ids.length) this.fail("contact_not_found")
+    return ids
+  }
+
+  private async requireOpenTaskOf(id: string, companyTaxId: string): Promise<Task> {
+    const task = await this.repository.findTask(id)
+    if (!task || task.archivedAt !== null) this.fail("task_not_found")
+    if (task.companyTaxId !== companyTaxId) this.fail("task_other_company")
+    if (task.status !== "open") this.fail("task_not_open")
+    return task
+  }
+
+  private async requireChangeableAction(id: string, actor: Actor): Promise<Action> {
+    const action = isValidCrmId(id) ? await this.repository.findAction(id) : null
+    if (!action) this.fail("action_not_found")
+    if (!canChangeAction(actor, action)) this.fail("forbidden")
+    return action
+  }
+
+  private async requireChangeableTask(id: string, actor: Actor): Promise<Task> {
+    const task = isValidCrmId(id) ? await this.repository.findTask(id) : null
+    if (!task) this.fail("task_not_found")
+    if (!canChangeTask(actor, task)) this.fail("forbidden")
+    return task
+  }
+
+  private async requireUser(value: unknown): Promise<string> {
+    const username = cleanText(value)
+    const users = await this.repository.listActiveUsernames()
+    const match = username === null ? undefined : users.find((user) => user.toLowerCase() === username.toLowerCase())
+    if (!match) this.fail("user_not_found")
+    return match
+  }
+
   private async requireCompanies(value: unknown): Promise<string[]> {
     const taxIds = uniqueTaxIds(value)
     if (taxIds === null) this.fail("invalid_cuit")
@@ -266,6 +558,17 @@ export class CrmService {
     return fullName
   }
 
+  private calendarDate(value: unknown): string {
+    if (!isValidCalendarDate(value)) this.fail("invalid_date")
+    return value
+  }
+
+  private description(value: unknown): string {
+    const description = this.text(value)
+    if (description === null) this.fail("description_required")
+    return description
+  }
+
   private companyFields(body: CompanyBody): CrmCompanyFields {
     return {
       crmBrand: this.name(body.crmBrand),
@@ -283,6 +586,12 @@ export class CrmService {
   private name(value: unknown): string | null {
     const text = cleanText(value)
     if (isTooLong(text, MAX_NAME_LENGTH)) this.fail("text_too_long")
+    return text
+  }
+
+  private text(value: unknown): string | null {
+    const text = cleanText(value)
+    if (isTooLong(text, MAX_TEXT_LENGTH)) this.fail("text_too_long")
     return text
   }
 

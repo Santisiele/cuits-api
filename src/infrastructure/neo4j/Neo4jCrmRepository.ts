@@ -4,7 +4,11 @@ import { Queries } from "@infrastructure/neo4j/queries.js"
 import type { CrmCuitAdd, ICrmRepository } from "@ports/interfaces.js"
 import { usernameKey } from "@domain/users.js"
 import {
+  COMPANY_REMOVED_REASON,
   CRM_SOURCE_NAME,
+  type Action,
+  type AgendaItem,
+  type Task,
   type Change,
   type ChangeEntityType,
   type ChangeOperation,
@@ -77,6 +81,53 @@ function toContact(record: { get(key: string): unknown }): Contact {
   }
 }
 
+function properties(record: { get(key: string): unknown }, key: string): Record<string, unknown> {
+  return (record.get(key) as { properties: Record<string, unknown> }).properties
+}
+
+function toIds(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(toText) : []
+}
+
+function toAction(record: { get(key: string): unknown }): Action {
+  const action = properties(record, "a")
+  return {
+    id: toText(action["id"]),
+    companyTaxId: toText(record.get("companyTaxId")),
+    date: toText(action["date"]),
+    description: toText(action["description"]),
+    doneBy: toText(record.get("doneBy")),
+    contactIds: toIds(record.get("contactIds")),
+    createdTaskId: toNullableText(record.get("createdTaskId")),
+    completedTaskIds: toIds(record.get("completedTaskIds")),
+    createdAt: toText(action["createdAt"]),
+    archivedAt: toNullableText(action["archivedAt"]),
+  }
+}
+
+function toTask(record: { get(key: string): unknown }): Task {
+  const task = properties(record, "t")
+  const status = task["status"]
+  return {
+    id: toText(task["id"]),
+    companyTaxId: toText(record.get("companyTaxId")),
+    description: toText(task["description"]),
+    dueDate: toText(task["dueDate"]),
+    status: status === "done" || status === "cancelled" ? status : "open",
+    cancelReason: toNullableText(task["cancelReason"]),
+    assignee: toText(record.get("assignee")),
+    createdBy: toText(task["createdBy"]),
+    contactIds: toIds(record.get("contactIds")),
+    createdAt: toText(task["createdAt"]),
+    closedAt: toNullableText(task["closedAt"]),
+    archivedAt: toNullableText(task["archivedAt"]),
+  }
+}
+
+function taskParams(task: Task): Record<string, unknown> {
+  return { ...task, assigneeKey: usernameKey(task.assignee) }
+}
+
 function toChange(properties: Record<string, unknown>): Change {
   return {
     id: toText(properties["id"]),
@@ -134,6 +185,89 @@ export class Neo4jCrmRepository implements ICrmRepository {
       await session.run(Queries.CRM_CONTACT_CONSTRAINT)
       await session.run(Queries.CRM_CHANGE_CONSTRAINT)
       await session.run(Queries.CRM_CHANGE_ENTITY_INDEX)
+      await session.run(Queries.CRM_ACTION_CONSTRAINT)
+      await session.run(Queries.CRM_TASK_CONSTRAINT)
+      await session.run(Queries.CRM_TASK_DUE_DATE_INDEX)
+    })
+  }
+
+  listActiveUsernames(): Promise<string[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_ACTIVE_USERNAMES)
+      return result.records.map((record) => toText(record.get("username")))
+    })
+  }
+
+  contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_CONTACTS_AT_COMPANY, { taxId, contactIds })
+      return result.records.map((record) => toText(record.get("id")))
+    })
+  }
+
+  findAction(id: string): Promise<Action | null> {
+    return this.read(async (session) => {
+      const record = (await session.run(Queries.CRM_FIND_ACTION, { id })).records[0]
+      return record ? toAction(record) : null
+    })
+  }
+
+  findTask(id: string): Promise<Task | null> {
+    return this.read(async (session) => {
+      const record = (await session.run(Queries.CRM_FIND_TASK, { id })).records[0]
+      return record ? toTask(record) : null
+    })
+  }
+
+  recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_CREATE_ACTION, { ...action, doneByKey: usernameKey(action.doneBy) })
+      for (const task of closedTasks) await tx.run(Queries.CRM_SET_TASK, taskParams(task))
+      if (nextTask) await tx.run(Queries.CRM_CREATE_TASK, taskParams(nextTask))
+      await tx.run(Queries.CRM_LINK_ACTION_TASKS, action)
+      for (const change of changes) await writeChange(tx, change)
+    })
+  }
+
+  updateAction(action: Action, change: Change): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_SET_ACTION, action)
+      await writeChange(tx, change)
+    })
+  }
+
+  createTask(task: Task, change: Change): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_CREATE_TASK, taskParams(task))
+      await writeChange(tx, change)
+    })
+  }
+
+  updateTask(task: Task, change: Change): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_SET_TASK, taskParams(task))
+      await writeChange(tx, change)
+    })
+  }
+
+  listActions(taxId: string): Promise<Action[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_ACTIONS, { taxId })
+      return result.records.map(toAction)
+    })
+  }
+
+  listTasks(taxId: string): Promise<Task[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_TASKS, { taxId })
+      return result.records.map(toTask)
+    })
+  }
+
+  listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_AGENDA, { assigneeKey: assignee === null ? null : usernameKey(assignee) })
+      return result.records.map((record) => ({ ...toTask(record), businessName: toText(record.get("businessName")) }))
     })
   }
 
@@ -185,13 +319,17 @@ export class Neo4jCrmRepository implements ICrmRepository {
         hasHistory: record?.get("hasHistory") === true,
         hasOtherSource: record?.get("hasOtherSource") === true,
         relatedToBase: record?.get("relatedToBase") === true,
+        openTaskIds: ((record?.get("openTaskIds") as unknown[] | undefined) ?? []).map(toText),
       }
     })
   }
 
-  removeCompany(taxId: string, outcome: RemovalOutcome, at: string, change: Change): Promise<void> {
+  removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void> {
     return this.write(async (tx) => {
-      await writeChange(tx, change)
+      for (const change of changes) await writeChange(tx, change)
+      if (outcome === "archived") {
+        await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: COMPANY_REMOVED_REASON, at })
+      }
       await tx.run(Queries.CRM_UNLINK_COMPANY, { taxId, sourceName: CRM_SOURCE_NAME, archive: outcome === "archived", at })
       if (outcome === "deleted") await tx.run(Queries.CRM_DELETE_COMPANY, { taxId })
     })

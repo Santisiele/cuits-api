@@ -1,8 +1,9 @@
-import type { FastifyInstance, FastifyReply } from "fastify"
-import { CrmService, CrmError } from "@application/CrmService.js"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
+import { CrmService, CrmError, type AgendaQuery } from "@application/CrmService.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
 import { logCrmOperation } from "@auth/activityLogger.js"
-import type { CrmRejection } from "@domain/crm.js"
+import { canAdminister } from "@domain/users.js"
+import type { Actor, CrmRejection } from "@domain/crm.js"
 
 const STATUS_BY_REASON: Record<CrmRejection, number> = {
   invalid_cuit: 400,
@@ -17,6 +18,20 @@ const STATUS_BY_REASON: Record<CrmRejection, number> = {
   already_archived: 409,
   not_archived: 409,
   cuil_already_set: 409,
+  description_required: 400,
+  cancel_reason_required: 400,
+  invalid_status: 400,
+  task_not_open: 400,
+  task_other_company: 400,
+  invalid_entity: 400,
+  forbidden: 403,
+  action_not_found: 404,
+  task_not_found: 404,
+  user_not_found: 404,
+}
+
+function actorOf(request: FastifyRequest): Actor {
+  return { username: request.username, canAdminister: canAdminister(request.role) }
 }
 
 function handleError(err: unknown, reply: FastifyReply) {

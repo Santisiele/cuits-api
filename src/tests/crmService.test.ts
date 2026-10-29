@@ -81,7 +81,12 @@ describe("company data", () => {
 
   it("lists the companies and shows one with its contacts", async () => {
     expect(await service.listCompanies()).toHaveLength(1)
-    expect(await service.companyDetail(COMPANY)).toMatchObject({ company: { taxId: COMPANY, crmBrand: "Acme" }, contacts: [] })
+    expect(await service.companyDetail(COMPANY)).toMatchObject({
+      company: { taxId: COMPANY, crmBrand: "Acme" },
+      contacts: [],
+      actions: [],
+      tasks: [],
+    })
   })
 
   it("says when a company is not in the CRM", async () => {
@@ -106,13 +111,13 @@ describe("removing a company", () => {
   })
 
   it("previews without writing", async () => {
-    expect(await service.removeCompany(COMPANY, true, "santi")).toEqual({ outcome: "deleted", dryRun: true })
+    expect(await service.removeCompany(COMPANY, true, "santi")).toEqual({ outcome: "deleted", cancelledTaskCount: 0, dryRun: true })
     expect(repository.cuits.has(COMPANY)).toBe(true)
     expect(repository.changes).toHaveLength(1)
   })
 
   it("deletes one left with nothing", async () => {
-    expect(await service.removeCompany(COMPANY, false, "santi")).toEqual({ outcome: "deleted", dryRun: false })
+    expect(await service.removeCompany(COMPANY, false, "santi")).toEqual({ outcome: "deleted", cancelledTaskCount: 0, dryRun: false })
     expect(repository.deleted).toEqual([COMPANY])
     expect(repository.changes.at(-1)).toMatchObject({ operation: "crm_remove", after: { outcome: "deleted" } })
   })
@@ -198,5 +203,169 @@ describe("contacts", () => {
   it("says when a contact does not exist", async () => {
     expect(await rejection(service.updateContact(id(999), {}, "santi"))).toBe("contact_not_found")
     expect(await rejection(service.archiveContact("nope", "santi"))).toBe("contact_not_found")
+  })
+})
+
+describe("actions and tasks", () => {
+  const santi = { username: "santi", canAdminister: true }
+  const flavia = { username: "flavia", canAdminister: false }
+  const pedro = { username: "pedro", canAdminister: false }
+  let anaId: string
+
+  beforeEach(async () => {
+    await service.addCompany({ taxId: COMPANY, businessName: "ACME" }, "santi")
+    await service.addCompany({ taxId: OTHER, businessName: "OTRA" }, "santi")
+    anaId = (await service.createContact({ fullName: "Ana", companyTaxIds: [COMPANY] }, "santi")).id
+  })
+
+  async function openTask(actor = flavia, body: Record<string, unknown> = {}) {
+    return service.createTask({ companyTaxId: COMPANY, description: "Llamar", dueDate: "2026-10-30", ...body }, actor)
+  }
+
+  it("records an action that closes a task and opens the next one, all in one write", async () => {
+    const first = await openTask()
+    const result = await service.recordAction(
+      {
+        companyTaxId: COMPANY,
+        date: "2026-10-29",
+        description: " Lo llamé, pidió propuesta ",
+        contactIds: [anaId],
+        completesTaskIds: [first.id],
+        nextTask: { description: "Mandar propuesta", dueDate: "2026-11-02", assignee: "FLAVIA" },
+      },
+      flavia
+    )
+    expect(result.action).toMatchObject({
+      description: "Lo llamé, pidió propuesta",
+      doneBy: "flavia",
+      contactIds: [anaId],
+      completedTaskIds: [first.id],
+      createdTaskId: result.nextTask?.id,
+    })
+    expect(result.closedTasks).toEqual([expect.objectContaining({ id: first.id, status: "done", closedAt: NOW.toISOString() })])
+    expect(result.nextTask).toMatchObject({ assignee: "Flavia", createdBy: "flavia", status: "open", dueDate: "2026-11-02" })
+    expect(repository.changes.slice(-3).map((change) => [change.entityType, change.operation])).toEqual([
+      ["Action", "create"],
+      ["Task", "complete"],
+      ["Task", "create"],
+    ])
+  })
+
+  it("assigns the next task to whoever records the action by default", async () => {
+    const result = await service.recordAction(
+      { companyTaxId: COMPANY, date: "2026-10-29", description: "x", nextTask: { description: "y", dueDate: "2026-11-02" } },
+      pedro
+    )
+    expect(result.nextTask?.assignee).toBe("pedro")
+  })
+
+  it("validates the action", async () => {
+    const base = { companyTaxId: COMPANY, date: "2026-10-29", description: "x" }
+    expect(await rejection(service.recordAction({ ...base, date: "29/10/2026" }, flavia))).toBe("invalid_date")
+    expect(await rejection(service.recordAction({ ...base, description: " " }, flavia))).toBe("description_required")
+    expect(await rejection(service.recordAction({ ...base, description: "x".repeat(2001) }, flavia))).toBe("text_too_long")
+    expect(await rejection(service.recordAction({ ...base, companyTaxId: PERSON }, flavia))).toBe("company_not_in_crm")
+    expect(await rejection(service.recordAction({ ...base, contactIds: [id(999)] }, flavia))).toBe("contact_not_found")
+    expect(await rejection(service.recordAction({ ...base, completesTaskIds: ["x"] }, flavia))).toBe("task_not_found")
+    expect(await rejection(service.recordAction({ ...base, completesTaskIds: [id(999)] }, flavia))).toBe("task_not_found")
+    expect(
+      await rejection(service.recordAction({ ...base, nextTask: { description: "y", dueDate: "2026-11-02", assignee: "nadie" } }, flavia))
+    ).toBe("user_not_found")
+  })
+
+  it("only closes open tasks of the same company", async () => {
+    const other = await service.createTask({ companyTaxId: OTHER, description: "x", dueDate: "2026-10-30" }, flavia)
+    const base = { companyTaxId: COMPANY, date: "2026-10-29", description: "x" }
+    expect(await rejection(service.recordAction({ ...base, completesTaskIds: [other.id] }, flavia))).toBe("task_other_company")
+    const done = await openTask()
+    await service.updateTask(done.id, { status: "done" }, flavia)
+    expect(await rejection(service.recordAction({ ...base, completesTaskIds: [done.id] }, flavia))).toBe("task_not_open")
+  })
+
+  it("lets members change only their own actions", async () => {
+    const { action } = await service.recordAction({ companyTaxId: COMPANY, date: "2026-10-29", description: "x" }, flavia)
+    expect((await service.updateAction(action.id, { description: "y", date: "2026-10-28" }, flavia)).description).toBe("y")
+    expect(await rejection(service.updateAction(action.id, { description: "z" }, pedro))).toBe("forbidden")
+    expect((await service.updateAction(action.id, { contactIds: [anaId] }, santi)).contactIds).toEqual([anaId])
+    expect(await rejection(service.updateAction(id(999), {}, santi))).toBe("action_not_found")
+    expect(repository.changes.at(-1)).toMatchObject({ operation: "update", before: { contactIds: [] }, after: { contactIds: [anaId] } })
+  })
+
+  it("archives and restores an action", async () => {
+    const { action } = await service.recordAction({ companyTaxId: COMPANY, date: "2026-10-29", description: "x" }, flavia)
+    await service.archiveAction(action.id, flavia)
+    expect((await service.companyDetail(COMPANY)).actions).toEqual([])
+    expect(await rejection(service.archiveAction(action.id, flavia))).toBe("already_archived")
+    await service.restoreAction(action.id, flavia)
+    expect(await rejection(service.restoreAction(action.id, flavia))).toBe("not_archived")
+    expect((await service.companyDetail(COMPANY)).actions).toHaveLength(1)
+  })
+
+  it("lets the creator or the assignee change a task, and nobody else", async () => {
+    const task = await openTask(santi, { assignee: "flavia" })
+    expect((await service.updateTask(task.id, { dueDate: "2026-11-05", contactIds: [anaId] }, flavia)).dueDate).toBe("2026-11-05")
+    expect(await rejection(service.updateTask(task.id, { description: "z" }, pedro))).toBe("forbidden")
+    expect((await service.updateTask(task.id, { assignee: "pedro" }, santi)).assignee).toBe("pedro")
+    expect(await rejection(service.updateTask(task.id, { assignee: "nadie" }, santi))).toBe("user_not_found")
+  })
+
+  it("cancels a task only with a reason and never twice", async () => {
+    const task = await openTask()
+    expect(await rejection(service.updateTask(task.id, { status: "cancelled" }, flavia))).toBe("cancel_reason_required")
+    const cancelled = await service.updateTask(task.id, { status: "cancelled", cancelReason: "Ya no compra" }, flavia)
+    expect(cancelled).toMatchObject({ status: "cancelled", cancelReason: "Ya no compra", closedAt: NOW.toISOString() })
+    expect(repository.changes.at(-1)?.operation).toBe("cancel")
+    expect(await rejection(service.updateTask(task.id, { description: "x" }, flavia))).toBe("task_not_open")
+    expect(await rejection(service.updateTask(id(999), {}, flavia))).toBe("task_not_found")
+  })
+
+  it("marks a task done without an action", async () => {
+    const task = await openTask()
+    expect(await service.updateTask(task.id, { status: "done" }, flavia)).toMatchObject({ status: "done", cancelReason: null })
+    expect(repository.changes.at(-1)?.operation).toBe("complete")
+    expect(await rejection(service.updateTask((await openTask()).id, { status: "open" }, flavia))).toBe("invalid_status")
+  })
+
+  it("archives and restores a task", async () => {
+    const task = await openTask()
+    await service.archiveTask(task.id, flavia)
+    expect(await rejection(service.archiveTask(task.id, flavia))).toBe("already_archived")
+    await service.restoreTask(task.id, flavia)
+    expect(await rejection(service.restoreTask(task.id, flavia))).toBe("not_archived")
+  })
+
+  it("builds the agenda for me, someone else or everybody, flagging overdue in Buenos Aires time", async () => {
+    await openTask(flavia, { dueDate: "2026-10-28" })
+    await openTask(flavia, { dueDate: "2026-11-02" })
+    await openTask(santi, { dueDate: "2026-10-29", assignee: "pedro" })
+
+    const mine = await service.agenda({}, flavia)
+    expect(mine.map((item) => [item.dueDate, item.overdue, item.businessName])).toEqual([
+      ["2026-10-28", true, "ACME"],
+      ["2026-11-02", false, "ACME"],
+    ])
+    expect(await service.agenda({ assignee: "pedro" }, flavia)).toHaveLength(1)
+    expect(await service.agenda({ assignee: "all" }, flavia)).toHaveLength(3)
+    expect(await service.agenda({ assignee: "all", overdueOnly: "true" }, flavia)).toHaveLength(1)
+  })
+
+  it("cancels the open tasks of a company that is archived", async () => {
+    const task = await openTask()
+    expect(await service.removeCompany(COMPANY, true, "santi")).toEqual({ outcome: "archived", cancelledTaskCount: 1, dryRun: true })
+    await service.removeCompany(COMPANY, false, "santi")
+    expect(repository.tasks.get(task.id)).toMatchObject({ status: "cancelled", cancelReason: "company_removed" })
+    expect(repository.changes.at(-1)).toMatchObject({ entityType: "Task", entityId: task.id, operation: "cancel" })
+  })
+
+  it("shows the history of an entity, newest first", async () => {
+    const task = await openTask()
+    await service.updateTask(task.id, { status: "done" }, flavia)
+    expect((await service.changes("Task", task.id)).map((change) => change.operation)).toEqual(["complete", "create"])
+    expect(await rejection(service.changes("CUIT", task.id))).toBe("invalid_entity")
+    expect(await rejection(service.changes("Task", ""))).toBe("invalid_entity")
+  })
+
+  it("lists the users a task can go to", async () => {
+    expect(await service.listUsers()).toEqual(["santi", "Flavia", "pedro"])
   })
 })

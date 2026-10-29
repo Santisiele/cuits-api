@@ -14,6 +14,9 @@ import type {
 } from "@domain/backup.js"
 import type { Role, StoredUser } from "@domain/users.js"
 import type {
+  Action,
+  AgendaItem,
+  Task,
   Change,
   ChangeEntityType,
   Contact,
@@ -340,13 +343,24 @@ export interface ICrmRepository {
   findCompany(taxId: string): Promise<CrmCompany | null>
   updateCompany(taxId: string, fields: CrmCompanyFields, change: Change): Promise<void>
   findRemovalFacts(taxId: string): Promise<RemovalFacts>
-  removeCompany(taxId: string, outcome: RemovalOutcome, at: string, change: Change): Promise<void>
+  removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void>
   companiesInCrm(taxIds: string[]): Promise<string[]>
   createContact(contact: Contact, change: Change): Promise<void>
   findContact(id: string): Promise<Contact | null>
   updateContact(contact: Contact, change: Change): Promise<void>
   listContacts(taxId: string): Promise<Contact[]>
   listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]>
+  listActiveUsernames(): Promise<string[]>
+  contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]>
+  findAction(id: string): Promise<Action | null>
+  findTask(id: string): Promise<Task | null>
+  recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void>
+  updateAction(action: Action, change: Change): Promise<void>
+  createTask(task: Task, change: Change): Promise<void>
+  updateTask(task: Task, change: Change): Promise<void>
+  listActions(taxId: string): Promise<Action[]>
+  listTasks(taxId: string): Promise<Task[]>
+  listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]>
 }
 
 export interface IBackupMailer {

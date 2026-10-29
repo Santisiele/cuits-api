@@ -1,5 +1,8 @@
 import type { CrmCuitAdd, ICrmRepository } from "@ports/interfaces"
 import type {
+  Action,
+  AgendaItem,
+  Task,
   Change,
   ChangeEntityType,
   Contact,
@@ -31,6 +34,9 @@ export class InMemoryCrmRepository implements ICrmRepository {
   readonly contacts = new Map<string, Contact>()
   readonly changes: Change[] = []
   readonly deleted: string[] = []
+  readonly actions = new Map<string, Action>()
+  readonly tasks = new Map<string, Task>()
+  users = ["santi", "Flavia", "pedro"]
   setupCalls = 0
 
   seedCuit(taxId: string, partial: Partial<StoredCuit> = {}): void {
@@ -97,15 +103,27 @@ export class InMemoryCrmRepository implements ICrmRepository {
 
   async findRemovalFacts(taxId: string): Promise<RemovalFacts> {
     const cuit = this.cuits.get(taxId)!
+    const tasks = [...this.tasks.values()].filter((task) => task.companyTaxId === taxId)
     return {
-      hasHistory: [...this.contacts.values()].some((contact) => contact.companyTaxIds.includes(taxId) || contact.cuil === taxId),
+      hasHistory:
+        [...this.contacts.values()].some((contact) => contact.companyTaxIds.includes(taxId) || contact.cuil === taxId) ||
+        [...this.actions.values()].some((action) => action.companyTaxId === taxId) ||
+        tasks.length > 0,
       hasOtherSource: cuit.otherSources.length > 0,
       relatedToBase: cuit.relatedToBase,
+      openTaskIds: tasks.filter((task) => task.status === "open" && task.archivedAt === null).map((task) => task.id),
     }
   }
 
-  async removeCompany(taxId: string, outcome: RemovalOutcome, at: string, change: Change): Promise<void> {
-    this.changes.push(change)
+  async removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void> {
+    this.changes.push(...changes)
+    if (outcome === "archived") {
+      for (const task of this.tasks.values()) {
+        if (task.companyTaxId === taxId && task.status === "open" && task.archivedAt === null) {
+          Object.assign(task, { status: "cancelled", cancelReason: "company_removed", closedAt: at })
+        }
+      }
+    }
     const cuit = this.cuits.get(taxId)!
     cuit.inSource = false
     cuit.company = false
@@ -142,6 +160,64 @@ export class InMemoryCrmRepository implements ICrmRepository {
 
   async listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]> {
     return this.changes.filter((change) => change.entityType === entityType && change.entityId === entityId).reverse()
+  }
+
+  async listActiveUsernames(): Promise<string[]> {
+    return this.users
+  }
+
+  async contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]> {
+    return contactIds.filter((id) => {
+      const contact = this.contacts.get(id)
+      return contact !== undefined && contact.archivedAt === null && contact.companyTaxIds.includes(taxId)
+    })
+  }
+
+  async findAction(id: string): Promise<Action | null> {
+    const action = this.actions.get(id)
+    return action ? { ...action } : null
+  }
+
+  async findTask(id: string): Promise<Task | null> {
+    const task = this.tasks.get(id)
+    return task ? { ...task } : null
+  }
+
+  async recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
+    this.actions.set(action.id, { ...action })
+    for (const task of closedTasks) this.tasks.set(task.id, { ...task })
+    if (nextTask) this.tasks.set(nextTask.id, { ...nextTask })
+    this.changes.push(...changes)
+  }
+
+  async updateAction(action: Action, change: Change): Promise<void> {
+    this.actions.set(action.id, { ...action })
+    this.changes.push(change)
+  }
+
+  async createTask(task: Task, change: Change): Promise<void> {
+    this.tasks.set(task.id, { ...task })
+    this.changes.push(change)
+  }
+
+  async updateTask(task: Task, change: Change): Promise<void> {
+    this.tasks.set(task.id, { ...task })
+    this.changes.push(change)
+  }
+
+  async listActions(taxId: string): Promise<Action[]> {
+    return [...this.actions.values()].filter((action) => action.companyTaxId === taxId && action.archivedAt === null)
+  }
+
+  async listTasks(taxId: string): Promise<Task[]> {
+    return [...this.tasks.values()].filter((task) => task.companyTaxId === taxId && task.archivedAt === null)
+  }
+
+  async listAgenda(assignee: string | null): Promise<Omit<AgendaItem, "overdue">[]> {
+    return [...this.tasks.values()]
+      .filter((task) => task.status === "open" && task.archivedAt === null)
+      .filter((task) => assignee === null || task.assignee.toLowerCase() === assignee.toLowerCase())
+      .map((task) => ({ ...task, businessName: this.cuits.get(task.companyTaxId)?.businessName ?? "" }))
   }
 
   private toCompany(cuit: StoredCuit): CrmCompany {
