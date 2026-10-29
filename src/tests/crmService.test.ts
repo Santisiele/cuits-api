@@ -371,6 +371,22 @@ describe("actions and tasks", () => {
     expect(await service.agenda({ assignee: "all", overdueOnly: "true" }, flavia)).toHaveLength(2)
   })
 
+  it("shows next to each task the action that left it, or the company's last one for a loose task", async () => {
+    const { nextTask } = await service.recordAction(
+      { companyTaxId: COMPANY, date: "2026-10-20", description: "Lo llamé", contactIds: [anaId], nextTask: { description: "Seguir", dueDate: "2026-11-02" } },
+      flavia
+    )
+    const loose = await openTask(flavia, { dueDate: "2026-11-03" })
+    const agenda = await service.agenda({}, flavia)
+    expect(agenda.find((item) => item.id === nextTask!.id)?.lastAction).toEqual({
+      date: "2026-10-20",
+      description: "Lo llamé",
+      doneBy: "Flavia",
+      contacts: ["Ana"],
+    })
+    expect(agenda.find((item) => item.id === loose.id)?.lastAction?.description).toBe("Lo llamé")
+  })
+
   it("cancels the open tasks of a company that is archived", async () => {
     const task = await openTask()
     expect(await service.removeCompany(COMPANY, true, "santi")).toEqual({ outcome: "archived", cancelledTaskCount: 1, dryRun: true })

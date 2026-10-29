@@ -21,6 +21,7 @@ import {
   type CrmCuitState,
   type CrmSource,
   type CrmUser,
+  type LastAction,
   type RemovalFacts,
   type RemovalOutcome,
 } from "@domain/crm.js"
@@ -131,6 +132,17 @@ function toTask(record: { get(key: string): unknown }): Task {
     createdAt: toText(task["createdAt"]),
     closedAt: toNullableText(task["closedAt"]),
     archivedAt: toNullableText(task["archivedAt"]),
+  }
+}
+
+function toLastAction(value: unknown): LastAction | null {
+  if (typeof value !== "object" || value === null) return null
+  const action = value as Record<string, unknown>
+  return {
+    date: toText(action["date"]),
+    description: toText(action["description"]),
+    doneBy: toText(action["doneBy"]),
+    contacts: toIds(action["contacts"]),
   }
 }
 
@@ -369,7 +381,11 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
       const result = await session.run(Queries.CRM_LIST_AGENDA, {
         assigneeKeys: assignees === null ? null : assignees.map(responsibleKey),
       })
-      return result.records.map((record) => ({ ...toTask(record), businessName: toText(record.get("businessName")) }))
+      return result.records.map((record) => ({
+        ...toTask(record),
+        businessName: toText(record.get("businessName")),
+        lastAction: toLastAction(record.get("lastAction")),
+      }))
     })
   }
 

@@ -157,7 +157,7 @@ describe("permissions", () => {
 
 describe("sortAgenda", () => {
   it("orders by due date, then company, then id", () => {
-    const item = (id: string, dueDate: string, businessName: string) => ({ ...TASK, id, dueDate, businessName, overdue: false })
+    const item = (id: string, dueDate: string, businessName: string) => ({ ...TASK, id, dueDate, businessName, overdue: false, lastAction: null })
     expect(
       sortAgenda([item("3", "2026-11-01", "A"), item("2", "2026-10-30", "B"), item("1", "2026-10-30", "B"), item("4", "2026-10-30", "A")]).map(
         (entry) => entry.id
