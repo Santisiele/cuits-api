@@ -24,6 +24,8 @@ import {
   type LastAction,
   type RemovalFacts,
   type RemovalOutcome,
+  CompanyClosedError,
+  TaskChangedError,
   TaskNoLongerOpenError,
 } from "@domain/crm.js"
 
@@ -147,6 +149,11 @@ function toLastAction(value: unknown): LastAction | null {
   }
 }
 
+async function lockOpenCompany(tx: ManagedTransaction, taxId: string, at: string): Promise<void> {
+  const result = await tx.run(Queries.CRM_LOCK_OPEN_COMPANY, { taxId, at })
+  if (result.records[0]?.get("open") !== true) throw new CompanyClosedError(taxId)
+}
+
 function taskParams(task: Task): Record<string, unknown> {
   return { ...task, assigneeKey: responsibleKey(task.assignee) }
 }
@@ -221,6 +228,8 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
       await session.run(Queries.CRM_TASK_CONSTRAINT)
       await session.run(Queries.CRM_TASK_DUE_DATE_INDEX)
       await session.run(Queries.RESPONSIBLE_CONSTRAINT)
+      await session.run(Queries.CRM_COMPANY_FLAG_INDEX)
+      await session.run(Queries.CRM_NOSIS_PENDING_INDEX)
     })
   }
 
@@ -334,6 +343,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
     return this.write(async (tx) => {
+      await lockOpenCompany(tx, action.companyTaxId, action.createdAt)
       await tx.run(Queries.CRM_CREATE_ACTION, { ...action, doneByKey: responsibleKey(action.doneBy) })
       for (const task of closedTasks) {
         const result = await tx.run(Queries.CRM_COMPLETE_TASK, { id: task.id, closedAt: task.closedAt })
@@ -354,14 +364,20 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   createTask(task: Task, change: Change): Promise<void> {
     return this.write(async (tx) => {
+      await lockOpenCompany(tx, task.companyTaxId, task.createdAt)
       await tx.run(Queries.CRM_CREATE_TASK, taskParams(task))
       await writeChange(tx, change)
     })
   }
 
-  updateTask(task: Task, change: Change): Promise<void> {
+  updateTask(task: Task, change: Change, previous: Task): Promise<void> {
     return this.write(async (tx) => {
-      await tx.run(Queries.CRM_SET_TASK, taskParams(task))
+      const result = await tx.run(Queries.CRM_SET_TASK, {
+        ...taskParams(task),
+        expectedStatus: previous.status,
+        expectedArchivedAt: previous.archivedAt,
+      })
+      if (toNumber(result.records[0]?.get("updated")) !== 1) throw new TaskChangedError(task.id)
       await writeChange(tx, change)
     })
   }
@@ -447,16 +463,25 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }> {
+  closeCompany(
+    taxId: string,
+    reason: string,
+    at: string,
+    by: string,
+    change: Change,
+    taskChange: (taskId: string) => Change
+  ): Promise<{ inservible: boolean; cancelledTaskIds: string[] }> {
     const session = this.session()
     return session
       .executeWrite(async (tx) => {
-        await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: reason, at })
         const record = (
           await tx.run(Queries.CRM_CLOSE_COMPANY, { taxId, reason, at, by, inservibleLabel: INSERVIBLE_LEVEL_LABEL })
         ).records[0]
-        for (const change of changes) await writeChange(tx, change)
-        return { inservible: record?.get("inservible") === true }
+        const cancelled = await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: reason, at })
+        const cancelledTaskIds = cancelled.records.map((row) => toText(row.get("id")))
+        await writeChange(tx, change)
+        for (const id of cancelledTaskIds) await writeChange(tx, taskChange(id))
+        return { inservible: record?.get("inservible") === true, cancelledTaskIds }
       })
       .finally(() => session.close())
   }
@@ -497,6 +522,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
   removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void> {
     return this.write(async (tx) => {
       for (const change of changes) await writeChange(tx, change)
+      await tx.run(Queries.CRM_DETACH_CRM_SOURCES, { taxId })
       if (outcome === "archived") {
         await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: COMPANY_REMOVED_REASON, at })
       }

@@ -20,6 +20,8 @@ import {
   shouldMarkNosisPending,
   sortAgenda,
   taskStatusRejection,
+  CompanyClosedError,
+  TaskChangedError,
   TaskNoLongerOpenError,
   withCurrentFields,
   todayInBuenosAires,
@@ -140,6 +142,7 @@ const MESSAGES: Record<CrmRejection, string> = {
   cancel_reason_required: "A reason is required to cancel a task",
   invalid_status: "A task can only be marked done or cancelled",
   task_not_open: "That task is no longer open",
+  task_changed: "That task changed meanwhile, reload it",
   task_other_company: "That task belongs to another company",
   forbidden: "You are not allowed to do this",
   action_not_found: "That action does not exist",
@@ -220,17 +223,18 @@ export class CrmService {
     if (company.closedAt !== null) this.fail("company_closed")
     const reason = this.text(reasonValue)
     if (reason === null) this.fail("close_reason_required")
-    const openTaskIds = (await this.repository.findRemovalFacts(taxId)).openTaskIds
     const at = this.now().toISOString()
-    const { inservible } = await this.repository.closeCompany(taxId, reason, at, by, [
+    const { inservible, cancelledTaskIds } = await this.repository.closeCompany(
+      taxId,
+      reason,
+      at,
+      by,
       this.change(at, by, "CrmCompany", taxId, "close", { closedAt: null }, { closedAt: at, closedReason: reason }),
-      ...openTaskIds.map((id) =>
-        this.change(at, by, "Task", id, "cancel", { status: "open" }, { status: "cancelled", cancelReason: reason })
-      ),
-    ])
+      (id) => this.change(at, by, "Task", id, "cancel", { status: "open" }, { status: "cancelled", cancelReason: reason })
+    )
     return {
       company: { ...company, closedAt: at, closedReason: reason, closedBy: by, nextDueDate: null, openTaskCount: 0 },
-      cancelledTaskCount: openTaskIds.length,
+      cancelledTaskCount: cancelledTaskIds.length,
       inservible,
     }
   }
@@ -367,7 +371,7 @@ export class CrmService {
       archivedAt: null,
     }
     const closedTasks = toClose.map((task) => ({ ...task, status: "done" as const, closedAt: at }))
-    await this.completingTasks(() => this.repository.recordAction(action, closedTasks, nextTask && { ...nextTask, createdAt: at }, [
+    await this.guarded(() => this.repository.recordAction(action, closedTasks, nextTask && { ...nextTask, createdAt: at }, [
       this.change(at, actor.username, "Action", action.id, "create", {}, this.actionView(action)),
       ...closedTasks.map((task) =>
         this.change(at, actor.username, "Task", task.id, "complete", { status: "open" }, { status: "done", byAction: action.id })
@@ -416,7 +420,9 @@ export class CrmService {
     const companyTaxId = this.requireCuit(body.companyTaxId)
     await this.requireOpenCompany(companyTaxId)
     const task = await this.newTask({ ...body, companyTaxId }, actor.username, await this.repository.listResponsibles())
-    await this.repository.createTask(task, this.change(task.createdAt, actor.username, "Task", task.id, "create", {}, this.taskView(task)))
+    await this.guarded(() =>
+      this.repository.createTask(task, this.change(task.createdAt, actor.username, "Task", task.id, "create", {}, this.taskView(task)))
+    )
     return task
   }
 
@@ -444,7 +450,9 @@ export class CrmService {
       operation = updated.status === "done" ? "complete" : "cancel"
     }
     const diff = changedFields(this.taskView(task), this.taskView(updated))
-    await this.repository.updateTask(updated, this.change(at, actor.username, "Task", id, operation, diff.before, diff.after))
+    await this.guarded(() =>
+      this.repository.updateTask(updated, this.change(at, actor.username, "Task", id, operation, diff.before, diff.after), task)
+    )
     return updated
   }
 
@@ -453,7 +461,9 @@ export class CrmService {
     if (task.archivedAt !== null) this.fail("already_archived")
     const at = this.now().toISOString()
     const archived = { ...task, archivedAt: at }
-    await this.repository.updateTask(archived, this.change(at, actor.username, "Task", id, "archive", { archivedAt: null }, { archivedAt: at }))
+    await this.guarded(() =>
+      this.repository.updateTask(archived, this.change(at, actor.username, "Task", id, "archive", { archivedAt: null }, { archivedAt: at }), task)
+    )
     return archived
   }
 
@@ -463,9 +473,12 @@ export class CrmService {
     if (task.status === "open") await this.requireOpenCompany(task.companyTaxId)
     const at = this.now().toISOString()
     const restored = { ...task, archivedAt: null }
-    await this.repository.updateTask(
-      restored,
-      this.change(at, actor.username, "Task", id, "restore", { archivedAt: task.archivedAt }, { archivedAt: null })
+    await this.guarded(() =>
+      this.repository.updateTask(
+        restored,
+        this.change(at, actor.username, "Task", id, "restore", { archivedAt: task.archivedAt }, { archivedAt: null }),
+        task
+      )
     )
     return restored
   }
@@ -605,11 +618,13 @@ export class CrmService {
     return [...kept, ...added]
   }
 
-  private async completingTasks(write: () => Promise<void>): Promise<void> {
+  private async guarded(write: () => Promise<void>): Promise<void> {
     try {
       await write()
     } catch (err) {
       if (err instanceof TaskNoLongerOpenError) this.fail("task_not_open")
+      if (err instanceof TaskChangedError) this.fail("task_changed")
+      if (err instanceof CompanyClosedError) this.fail("company_closed")
       throw err
     }
   }

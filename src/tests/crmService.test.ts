@@ -358,6 +358,21 @@ describe("actions and tasks", () => {
     expect(repository.tasks.get(task.id)?.status).toBe("done")
   })
 
+  it("never reopens a task an action completed while someone was editing it", async () => {
+    const task = await openTask()
+    const action = { companyTaxId: COMPANY, date: "2026-10-29", description: "x", completesTaskIds: [task.id], nextTask: NEXT }
+    await Promise.allSettled([service.updateTask(task.id, { description: "Otra" }, flavia), service.recordAction(action, flavia)])
+    expect(repository.tasks.get(task.id)?.status).toBe("done")
+  })
+
+  it("leaves no open task on a company closed while an action was being recorded", async () => {
+    const action = { companyTaxId: COMPANY, date: "2026-10-29", description: "x", nextTask: NEXT }
+    const [recorded] = await Promise.allSettled([service.recordAction(action, flavia), service.closeCompany(COMPANY, "No va", "santi")])
+    const open = [...repository.tasks.values()].filter((task) => task.companyTaxId === COMPANY && task.status === "open")
+    expect(open).toEqual([])
+    if (recorded.status === "rejected") expect((recorded.reason as CrmError).reason).toBe("company_closed")
+  })
+
   it("completes a task only once when two actions race for it", async () => {
     const task = await openTask()
     const body = { companyTaxId: COMPANY, date: "2026-10-29", description: "x", completesTaskIds: [task.id], nextTask: NEXT }
@@ -471,6 +486,24 @@ describe("origin and closing", () => {
     await service.addCompany({ taxId: COMPANY, originSource: "Bolsa" }, "santi")
     await service.updateCompany(COMPANY, { crmOrigin: "Conocido" }, "santi")
     expect(repository.cuits.get(COMPANY)?.sources).toEqual(["Bolsa"])
+  })
+
+  it("gives back the trust level a company had when it is reopened", async () => {
+    repository.seedCuit(COMPANY, { businessName: "ACME", sources: ["Bolsa"], levelOfTrust: 3, trustReason: "Buen pagador" })
+    await service.addCompany({ taxId: COMPANY }, "santi")
+    expect((await service.closeCompany(COMPANY, "No va", "santi")).inservible).toBe(true)
+    expect(repository.cuits.get(COMPANY)).toMatchObject({ levelOfTrust: 1, trustReason: "No va" })
+    await service.reopenCompany(COMPANY, "santi")
+    expect(repository.cuits.get(COMPANY)).toMatchObject({ levelOfTrust: 3, trustReason: "Buen pagador" })
+  })
+
+  it("takes the CUIT out of the source the CRM put it in when it leaves the CRM, and keeps sources it had before", async () => {
+    await service.addCompany({ taxId: COMPANY, businessName: "ACME", originSource: "Bolsa" }, "santi")
+    expect((await service.removeCompany(COMPANY, false, "santi")).outcome).toBe("deleted")
+    repository.seedCuit(OTHER, { businessName: "OTRA", sources: ["Bolsa"] })
+    await service.addCompany({ taxId: OTHER, originSource: "Bolsa" }, "santi")
+    expect((await service.removeCompany(OTHER, false, "santi")).outcome).toBe("unlinked")
+    expect(repository.cuits.get(OTHER)?.sources).toEqual(["Bolsa"])
   })
 
   it("keeps the fields an edit does not send", async () => {

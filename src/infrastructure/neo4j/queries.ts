@@ -1126,9 +1126,33 @@ export const Queries = {
     RETURN (EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
               OR EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
               OR EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }) AS hasHistory,
-           EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) } AS hasSource,
+           EXISTS { MATCH (c)-[link:HAS_SOURCE]->(:Source) WHERE link.viaCrm IS NULL } AS hasSource,
            EXISTS { MATCH (c)-[:RELATED_TO]-(:CUIT {inMyBase: true}) } AS relatedToBase,
            COLLECT { MATCH (c)<-[:ABOUT]-(t:Task {status: "open"}) WHERE t.archivedAt IS NULL RETURN t.id } AS openTaskIds
+  `,
+
+  CRM_DETACH_CRM_SOURCES: `
+    MATCH (c:CUIT {id: $taxId})
+    CALL (c) {
+      MATCH (c)-[r:HAS_SOURCE {viaCrm: true}]->(s:Source)
+      DELETE r
+      RETURN collect(s.name) AS detached
+    }
+    SET c.sources = [x IN coalesce(c.sources, []) WHERE NOT x IN detached]
+    WITH c
+    OPTIONAL MATCH (c)-[:HAS_SOURCE]->(remaining:Source)
+    WITH c, collect(remaining.category) AS categories
+    SET c.isKnown  = "known"  IN categories,
+        c.isToKnow = "toKnow" IN categories,
+        c.inMyBase = size(categories) > 0
+  `,
+
+  CRM_COMPANY_FLAG_INDEX: `
+    CREATE INDEX cuit_crm_company IF NOT EXISTS FOR (c:CUIT) ON (c.crmCompany)
+  `,
+
+  CRM_NOSIS_PENDING_INDEX: `
+    CREATE INDEX cuit_nosis_pending IF NOT EXISTS FOR (c:CUIT) ON (c.nosisPending)
   `,
 
   CRM_UNLINK_COMPANY: `
@@ -1156,14 +1180,21 @@ export const Queries = {
     WITH c, level, EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) } AS inBase
     WITH c, level, inBase AND level IS NOT NULL AS inservible
     FOREACH (_ IN CASE WHEN inservible THEN [1] ELSE [] END |
-      SET c.levelOfTrust = level.value, c.trustReason = $reason
+      SET c.crmLevelBeforeClose = c.levelOfTrust,
+          c.crmTrustReasonBeforeClose = c.trustReason,
+          c.crmClosedLevel = level.value,
+          c.levelOfTrust = level.value,
+          c.trustReason = $reason
     )
     RETURN inservible
   `,
 
   CRM_REOPEN_COMPANY: `
     MATCH (c:CUIT {id: $taxId})
-    REMOVE c.crmClosedAt, c.crmClosedReason, c.crmClosedBy
+    FOREACH (_ IN CASE WHEN c.crmClosedLevel IS NOT NULL AND c.levelOfTrust = c.crmClosedLevel THEN [1] ELSE [] END |
+      SET c.levelOfTrust = c.crmLevelBeforeClose, c.trustReason = c.crmTrustReasonBeforeClose
+    )
+    REMOVE c.crmClosedAt, c.crmClosedReason, c.crmClosedBy, c.crmClosedLevel, c.crmLevelBeforeClose, c.crmTrustReasonBeforeClose
   `,
 
   CRM_FIND_SOURCE: `
@@ -1417,6 +1448,7 @@ export const Queries = {
 
   CRM_SET_TASK: `
     MATCH (t:Task {id: $id})
+    WHERE t.status = $expectedStatus AND coalesce(t.archivedAt, "") = coalesce($expectedArchivedAt, "")
     SET t.description = $description,
         t.dueDate = $dueDate,
         t.status = $status,
@@ -1444,6 +1476,13 @@ export const Queries = {
       MATCH (k:Contact {id: contactId})
       MERGE (t)-[:WITH]->(k)
     }
+    RETURN count(t) AS updated
+  `,
+
+  CRM_LOCK_OPEN_COMPANY: `
+    MATCH (c:CUIT {id: $taxId})
+    SET c.crmTouchedAt = $at
+    RETURN c.crmClosedAt IS NULL AS open
   `,
 
   CRM_LIST_NOSIS_PENDING: `
@@ -1482,6 +1521,7 @@ export const Queries = {
     MATCH (:CUIT {id: $taxId})<-[:ABOUT]-(t:Task {status: "open"})
     WHERE t.archivedAt IS NULL
     SET t.status = "cancelled", t.cancelReason = $cancelReason, t.closedAt = $at
+    RETURN t.id AS id
   `,
 
   RESPONSIBLE_CONSTRAINT: `

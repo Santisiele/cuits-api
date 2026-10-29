@@ -91,12 +91,12 @@ export function logCrmOperation(
   details: Record<string, unknown> = {}
 ): void {
   activityLogger.info({
+    ...details,
     event: "crm_operation",
     username,
     operation,
     entityType,
     entityId,
-    ...details,
     message: `${username} ran ${operation} on ${entityType} ${entityId}`,
   })
 }

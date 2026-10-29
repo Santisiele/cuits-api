@@ -17,7 +17,7 @@ import type {
   RemovalFacts,
   RemovalOutcome,
 } from "@domain/crm"
-import { TaskNoLongerOpenError } from "@domain/crm"
+import { CompanyClosedError, TaskChangedError, TaskNoLongerOpenError } from "@domain/crm"
 
 interface StoredCuit {
   taxId: string
@@ -35,6 +35,7 @@ interface StoredCuit {
   crmSources: string[]
   knownSources: string[]
   relatedToBase: boolean
+  trustBeforeClose: { level: number | null; reason: string | null; closedLevel: number } | null
   fields: CrmCompanyFields
   addedAt: string | null
   addedBy: string | null
@@ -78,6 +79,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       nosisSearched: false,
       sources: [],
       crmSources: [],
+      trustBeforeClose: null,
       knownSources: [],
       relatedToBase: false,
       fields: { crmBrand: null, crmProduct: null, crmOrigin: null, originSource: null },
@@ -149,22 +151,37 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     cuit.crmSources.push(source)
   }
 
-  async closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }> {
+  async closeCompany(
+    taxId: string,
+    reason: string,
+    at: string,
+    by: string,
+    change: Change,
+    taskChange: (taskId: string) => Change
+  ): Promise<{ inservible: boolean; cancelledTaskIds: string[] }> {
     const cuit = this.cuits.get(taxId)!
+    const cancelledTaskIds: string[] = []
     for (const task of this.tasks.values()) {
       if (task.companyTaxId === taxId && task.status === "open" && task.archivedAt === null) {
         Object.assign(task, { status: "cancelled", cancelReason: reason, closedAt: at })
+        cancelledTaskIds.push(task.id)
       }
     }
     Object.assign(cuit, { closedAt: at, closedReason: reason, closedBy: by })
     const inservible = this.inservibleLevel !== null && cuit.sources.length + cuit.knownSources.length > 0
-    if (inservible) Object.assign(cuit, { levelOfTrust: this.inservibleLevel, trustReason: reason })
-    this.changes.push(...changes)
-    return { inservible }
+    if (inservible) {
+      cuit.trustBeforeClose = { level: cuit.levelOfTrust, reason: cuit.trustReason, closedLevel: this.inservibleLevel! }
+      Object.assign(cuit, { levelOfTrust: this.inservibleLevel, trustReason: reason })
+    }
+    this.changes.push(change, ...cancelledTaskIds.map(taskChange))
+    return { inservible, cancelledTaskIds }
   }
 
   async reopenCompany(taxId: string, change: Change): Promise<void> {
-    Object.assign(this.cuits.get(taxId)!, { closedAt: null, closedReason: null, closedBy: null })
+    const cuit = this.cuits.get(taxId)!
+    const before = cuit.trustBeforeClose
+    if (before && cuit.levelOfTrust === before.closedLevel) Object.assign(cuit, { levelOfTrust: before.level, trustReason: before.reason })
+    Object.assign(cuit, { closedAt: null, closedReason: null, closedBy: null, trustBeforeClose: null })
     this.changes.push(change)
   }
 
@@ -184,7 +201,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
         [...this.contacts.values()].some((contact) => contact.companyTaxIds.includes(taxId) || contact.cuil === taxId) ||
         [...this.actions.values()].some((action) => action.companyTaxId === taxId) ||
         tasks.length > 0,
-      hasSource: cuit.sources.length + cuit.knownSources.length > 0,
+      hasSource: cuit.sources.length - cuit.crmSources.length + cuit.knownSources.length > 0,
       relatedToBase: cuit.relatedToBase,
       openTaskIds: tasks.filter((task) => task.status === "open" && task.archivedAt === null).map((task) => task.id),
     }
@@ -192,6 +209,9 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
 
   async removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void> {
     this.changes.push(...changes)
+    const removed = this.cuits.get(taxId)!
+    removed.sources = removed.sources.filter((name) => !removed.crmSources.includes(name))
+    removed.crmSources = []
     if (outcome === "archived") {
       for (const task of this.tasks.values()) {
         if (task.companyTaxId === taxId && task.status === "open" && task.archivedAt === null) {
@@ -299,6 +319,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
+    this.lockOpenCompany(action.companyTaxId)
     for (const task of closedTasks) {
       const stored = this.tasks.get(task.id)
       if (stored?.status !== "open" || stored.archivedAt !== null) throw new TaskNoLongerOpenError(task.id)
@@ -315,13 +336,20 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async createTask(task: Task, change: Change): Promise<void> {
+    this.lockOpenCompany(task.companyTaxId)
     this.tasks.set(task.id, { ...task })
     this.changes.push(change)
   }
 
-  async updateTask(task: Task, change: Change): Promise<void> {
+  async updateTask(task: Task, change: Change, previous: Task): Promise<void> {
+    const stored = this.tasks.get(task.id)
+    if (stored?.status !== previous.status || stored.archivedAt !== previous.archivedAt) throw new TaskChangedError(task.id)
     this.tasks.set(task.id, { ...task })
     this.changes.push(change)
+  }
+
+  private lockOpenCompany(taxId: string): void {
+    if (this.cuits.get(taxId)?.closedAt != null) throw new CompanyClosedError(taxId)
   }
 
   async listActions(taxId: string): Promise<Action[]> {
