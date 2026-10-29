@@ -1,7 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { CrmService, CrmError, type AgendaQuery } from "@application/CrmService.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
+import { NosisPendingService } from "@application/NosisPendingService.js"
+import { requireCreator } from "@middleware/requireCreator.js"
 import { logCrmOperation } from "@auth/activityLogger.js"
+import { NOSIS_PENDING_COMMAND } from "@domain/nosisPending.js"
 import { canAdminister } from "@domain/users.js"
 import type { Actor, CrmRejection } from "@domain/crm.js"
 
@@ -214,7 +217,9 @@ type ActionBody = {
 }
 
 export default async function crmRoutes(server: FastifyInstance) {
-  const service = new CrmService(new Neo4jCrmRepository())
+  const repository = new Neo4jCrmRepository()
+  const service = new CrmService(repository)
+  const nosisPending = new NosisPendingService(repository)
 
   server.get(
     "/crm/companies",
@@ -566,6 +571,39 @@ export default async function crmRoutes(server: FastifyInstance) {
       },
     },
     async (request) => ({ tasks: await service.agenda(request.query, actorOf(request)) })
+  )
+
+  server.get(
+    "/crm/nosis-pending",
+    {
+      preHandler: requireCreator,
+      schema: {
+        hide: true,
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              command: { type: "string" },
+              items: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    taxId: { type: "string" },
+                    businessName: { type: "string" },
+                    sources: { type: "array", items: { type: "string" } },
+                    addedBy: nullableString,
+                    addedAt: nullableString,
+                  },
+                },
+              },
+            },
+          },
+          403: errorSchema,
+        },
+      },
+    },
+    async () => ({ command: NOSIS_PENDING_COMMAND, items: await nosisPending.list() })
   )
 
   server.get<{ Querystring: { entityType?: string; entityId?: string } }>(

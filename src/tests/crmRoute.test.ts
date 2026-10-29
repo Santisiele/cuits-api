@@ -21,18 +21,18 @@ vi.mock("@infrastructure/neo4j/Neo4jCrmRepository.js", () => ({
   },
 }))
 
-vi.mock("@auth/activityLogger.js", () => ({ logCrmOperation: vi.fn() }))
+vi.mock("@auth/activityLogger.js", () => ({ logCrmOperation: vi.fn(), logForbidden: vi.fn() }))
 
 const { default: crmRoutes } = await import("@routes/crm")
 const { logCrmOperation } = await import("@auth/activityLogger.js")
 
-async function buildApp(): Promise<FastifyInstance> {
+async function buildApp(role: "creator" | "admin" | "member" = "member"): Promise<FastifyInstance> {
   const app = Fastify()
   for (const schema of Object.values(schemas)) app.addSchema(schema)
   await app.register(async (instance) => {
     instance.addHook("preHandler", async (request) => {
       request.username = "flavia"
-      request.role = "member"
+      request.role = role
     })
     await instance.register(crmRoutes)
   })
@@ -294,5 +294,24 @@ describe("crm action, task and agenda routes", () => {
   it("lists the users a task can be assigned to", async () => {
     state.repository.users = ["flavia", "santi"]
     expect((await app.inject({ method: "GET", url: "/crm/users" })).json()).toEqual({ users: ["flavia", "santi"] })
+  })
+})
+
+describe("the Nosis pending list", () => {
+  it("is only for the creator", async () => {
+    for (const role of ["member", "admin"] as const) {
+      const other = await buildApp(role)
+      expect((await other.inject({ method: "GET", url: "/crm/nosis-pending" })).statusCode).toBe(403)
+    }
+  })
+
+  it("lists every pending CUIT with who added it and the command", async () => {
+    await addCompany()
+    const creator = await buildApp("creator")
+    const response = await creator.inject({ method: "GET", url: "/crm/nosis-pending" })
+    expect(response.json()).toEqual({
+      command: "pnpm crm:nosis",
+      items: [{ taxId: COMPANY, businessName: "ACME SA", sources: [], addedBy: "flavia", addedAt: expect.any(String) }],
+    })
   })
 })
