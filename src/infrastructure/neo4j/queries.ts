@@ -1005,7 +1005,7 @@ export const Queries = {
 
   CRM_ADD_CUIT: `
     MERGE (c:CUIT {id: $taxId})
-    ON CREATE SET c.businessName = $businessName, c.inMyBase = false
+    ON CREATE SET c.businessName = $businessName, c.inMyBase = false, c.crmCreated = true
     SET c.businessName = CASE WHEN coalesce(c.businessName, "") = "" THEN coalesce($businessName, "") ELSE c.businessName END,
         c.crmCompany = CASE WHEN $asCompany THEN true ELSE coalesce(c.crmCompany, false) END,
         c.crmBrand = CASE WHEN $asCompany THEN $crmBrand ELSE c.crmBrand END,
@@ -1123,7 +1123,8 @@ export const Queries = {
 
   CRM_FIND_REMOVAL_FACTS: `
     MATCH (c:CUIT {id: $taxId})
-    RETURN (EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
+    RETURN coalesce(c.crmCreated, false) AS createdByCrm,
+           (EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
               OR EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
               OR EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }) AS hasHistory,
            EXISTS { MATCH (c)-[link:HAS_SOURCE]->(:Source) WHERE link.viaCrm IS NULL } AS hasSource,
@@ -1164,7 +1165,8 @@ export const Queries = {
 
   CRM_DELETE_COMPANY: `
     MATCH (c:CUIT {id: $taxId})
-    WHERE NOT EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) }
+    WHERE c.crmCreated = true
+      AND NOT EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) }
       AND NOT EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
       AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
       AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }

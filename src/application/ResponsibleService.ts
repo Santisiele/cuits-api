@@ -1,4 +1,6 @@
+import { randomUUID } from "crypto"
 import type { IResponsibleRepository } from "@ports/interfaces.js"
+import { changedFields, type Change, type ChangeOperation } from "@domain/crm.js"
 import {
   cleanResponsibleName,
   isResponsibleColor,
@@ -20,6 +22,7 @@ const MESSAGES: Record<ResponsibleRejection, string> = {
   invalid_name: "The name must be 2 to 40 characters",
   invalid_color: "That color is not available",
   invalid_users: "The linked users must be a list of usernames",
+  invalid_disabled: "Disabled must be true or false",
   name_taken: "Another responsible already has that name",
   responsible_not_found: "That responsible does not exist",
   user_not_found: "That user does not exist",
@@ -35,7 +38,8 @@ interface ResponsibleBody {
 export class ResponsibleService {
   constructor(
     private readonly repository: IResponsibleRepository,
-    private readonly now: () => Date = () => new Date()
+    private readonly now: () => Date = () => new Date(),
+    private readonly newId: () => string = randomUUID
   ) {}
 
   list(): Promise<Responsible[]> {
@@ -49,22 +53,38 @@ export class ResponsibleService {
       users: await this.requireUsers(body.users),
       disabled: false,
     }
-    if ((await this.repository.createResponsible(responsible, this.now().toISOString(), by)) === "taken") this.fail("name_taken")
+    const at = this.now().toISOString()
+    const change = this.change(at, by, responsible.name, "create", {}, { ...responsible })
+    if ((await this.repository.createResponsible(responsible, at, by, change)) === "taken") this.fail("name_taken")
     return responsible
   }
 
-  async update(name: string, body: ResponsibleBody): Promise<Responsible> {
+  async update(name: string, body: ResponsibleBody, by: string): Promise<Responsible> {
     const existing = (await this.repository.listResponsibles()).find((responsible) => sameResponsible(responsible.name, name))
     if (!existing) this.fail("responsible_not_found")
-    if (body.disabled !== undefined && typeof body.disabled !== "boolean") this.fail("invalid_users")
+    if (body.disabled !== undefined && typeof body.disabled !== "boolean") this.fail("invalid_disabled")
     const updated: Responsible = {
       name: body.name === undefined ? existing.name : this.requireName(body.name),
       color: body.color === undefined ? existing.color : this.requireColor(body.color),
       users: body.users === undefined ? existing.users : await this.requireUsers(body.users),
       disabled: body.disabled === undefined ? existing.disabled : (body.disabled as boolean),
     }
-    if ((await this.repository.updateResponsible(existing.name, updated)) === "taken") this.fail("name_taken")
+    const at = this.now().toISOString()
+    const diff = changedFields({ ...existing }, { ...updated })
+    const change = this.change(at, by, updated.name, "update", diff.before, diff.after)
+    if ((await this.repository.updateResponsible(existing.name, updated, at, change)) === "taken") this.fail("name_taken")
     return updated
+  }
+
+  private change(
+    at: string,
+    by: string,
+    name: string,
+    operation: ChangeOperation,
+    before: Record<string, unknown>,
+    after: Record<string, unknown>
+  ): Change {
+    return { id: this.newId(), at, by, entityType: "Responsible", entityId: name, operation, before, after }
   }
 
   private requireName(value: unknown): string {

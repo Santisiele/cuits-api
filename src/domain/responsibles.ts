@@ -44,6 +44,7 @@ export type ResponsibleRejection =
   | "invalid_name"
   | "invalid_color"
   | "invalid_users"
+  | "invalid_disabled"
   | "name_taken"
   | "responsible_not_found"
   | "user_not_found"

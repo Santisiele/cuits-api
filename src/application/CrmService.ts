@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import type { ICrmRepository } from "@ports/interfaces.js"
+import type { CrmPersonAdd, ICrmRepository } from "@ports/interfaces.js"
 import { ownResponsible, responsiblesOf, sameResponsible, type Responsible } from "@domain/responsibles.js"
 import {
   COMPANY_REMOVED_REASON,
@@ -287,8 +287,11 @@ export class CrmService {
       createdAt: at,
       archivedAt: null,
     }
-    if (cuil) await this.addPerson(cuil, fullName, at, by)
-    await this.repository.createContact(contact, this.change(at, by, "Contact", contact.id, "create", {}, this.contactView(contact)))
+    await this.repository.createContact(
+      contact,
+      this.change(at, by, "Contact", contact.id, "create", {}, this.contactView(contact)),
+      cuil ? this.personAdd(cuil, fullName, at, by) : null
+    )
     return contact
   }
 
@@ -303,13 +306,14 @@ export class CrmService {
       companyTaxIds: body.companyTaxIds === undefined ? contact.companyTaxIds : await this.requireCompanies(body.companyTaxIds),
     }
     const at = this.now().toISOString()
+    let person: CrmPersonAdd | null = null
     if (body.cuil !== undefined && body.cuil !== null && body.cuil !== "" && body.cuil !== contact.cuil) {
       if (contact.cuil !== null) this.fail("cuil_already_set")
       updated.cuil = this.requireCuit(body.cuil)
-      await this.addPerson(updated.cuil, updated.fullName, at, by)
+      person = this.personAdd(updated.cuil, updated.fullName, at, by)
     }
     const diff = changedFields(this.contactView(contact), this.contactView(updated))
-    await this.repository.updateContact(updated, this.change(at, by, "Contact", id, "update", diff.before, diff.after))
+    await this.repository.updateContact(updated, this.change(at, by, "Contact", id, "update", diff.before, diff.after), person)
     return updated
   }
 
@@ -518,9 +522,9 @@ export class CrmService {
     }
   }
 
-  private async addPerson(taxId: string, businessName: string, at: string, by: string): Promise<void> {
-    await this.repository.addToCrm(
-      {
+  private personAdd(taxId: string, businessName: string, at: string, by: string): CrmPersonAdd {
+    return {
+      add: {
         taxId,
         businessName,
         crmBrand: null,
@@ -532,8 +536,8 @@ export class CrmService {
         at,
         by,
       },
-      this.change(at, by, "CrmCompany", taxId, "crm_add", {}, { businessName, asContact: true })
-    )
+      change: this.change(at, by, "CrmCompany", taxId, "crm_add", {}, { businessName, asContact: true }),
+    }
   }
 
   private contactView(contact: Contact): Record<string, unknown> {

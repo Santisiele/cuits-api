@@ -1,4 +1,5 @@
 import "dotenv/config"
+import { randomUUID } from "crypto"
 import XLSX from "xlsx"
 import { logger } from "@logger.js"
 import { config } from "@config.js"
@@ -79,7 +80,18 @@ async function main(): Promise<void> {
     if (missing.length > 0 && !createResponsibles) throw new Error("Some responsibles are missing. Add --create-responsibles.")
 
     for (const name of missing) {
-      await repository.createResponsible({ name, color: "slate", users: [], disabled: false }, new Date().toISOString(), loader)
+      const responsible = { name, color: "slate" as const, users: [], disabled: false }
+      const at = new Date().toISOString()
+      await repository.createResponsible(responsible, at, loader, {
+        id: randomUUID(),
+        at,
+        by: loader,
+        entityType: "Responsible",
+        entityId: name,
+        operation: "create",
+        before: {},
+        after: { ...responsible },
+      })
       logger.info(`  created responsible ${name} (gray, pick a color in Responsables)`)
     }
 

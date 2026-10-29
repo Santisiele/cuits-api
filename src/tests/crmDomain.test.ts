@@ -46,7 +46,7 @@ describe("shouldMarkNosisPending", () => {
 })
 
 describe("removalOutcome", () => {
-  const NOTHING = { hasHistory: false, hasSource: false, relatedToBase: false, openTaskIds: [] }
+  const NOTHING = { createdByCrm: true, hasHistory: false, hasSource: false, relatedToBase: false, openTaskIds: [] }
 
   it("archives a company with CRM history, whatever else holds it", () => {
     expect(removalOutcome({ ...NOTHING, hasHistory: true })).toBe("archived")
@@ -62,6 +62,10 @@ describe("removalOutcome", () => {
 
   it("only unlinks one related to the base", () => {
     expect(removalOutcome({ ...NOTHING, relatedToBase: true })).toBe("unlinked")
+  })
+
+  it("never deletes a CUIT the CRM did not create, so its Nosis relationships stay", () => {
+    expect(removalOutcome({ ...NOTHING, createdByCrm: false })).toBe("unlinked")
   })
 })
 

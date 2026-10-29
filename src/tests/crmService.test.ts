@@ -174,6 +174,12 @@ describe("contacts", () => {
     expect((await service.listCompanies()).map((company) => company.taxId)).not.toContain(PERSON)
   })
 
+  it("writes the person and the contact together, or neither", async () => {
+    repository.failContactWrites = true
+    await expect(service.createContact({ fullName: "Ana", companyTaxIds: [COMPANY], cuil: PERSON }, "santi")).rejects.toThrow()
+    expect(repository.cuits.has(PERSON)).toBe(false)
+  })
+
   it("validates every field", async () => {
     expect(await rejection(service.createContact({ fullName: " ", companyTaxIds: [COMPANY] }, "santi"))).toBe("full_name_required")
     expect(await rejection(service.createContact({ fullName: "Ana", companyTaxIds: [] }, "santi"))).toBe("company_required")

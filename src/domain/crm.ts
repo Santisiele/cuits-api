@@ -42,7 +42,7 @@ export type CrmRejection =
 
 export type RemovalOutcome = "unlinked" | "archived" | "deleted"
 
-export type ChangeEntityType = "Action" | "Task" | "Contact" | "CrmCompany" | "User"
+export type ChangeEntityType = "Action" | "Task" | "Contact" | "CrmCompany" | "User" | "Responsible"
 
 export type ChangeOperation =
   | "create"
@@ -86,6 +86,7 @@ export interface CrmCuitState {
 }
 
 export interface RemovalFacts {
+  createdByCrm: boolean
   hasHistory: boolean
   hasSource: boolean
   relatedToBase: boolean
@@ -154,7 +155,7 @@ export interface Actor {
 
 export const COMPANY_REMOVED_REASON = "company_removed"
 
-export const CHANGE_ENTITY_TYPES: readonly ChangeEntityType[] = ["Action", "Task", "Contact", "CrmCompany", "User"]
+export const CHANGE_ENTITY_TYPES: readonly ChangeEntityType[] = ["Action", "Task", "Contact", "CrmCompany", "User", "Responsible"]
 
 export interface Contact {
   id: string
@@ -227,7 +228,7 @@ export function shouldMarkNosisPending(state: CrmCuitState, joinsKnownSource: bo
 
 export function removalOutcome(facts: RemovalFacts): RemovalOutcome {
   if (facts.hasHistory) return "archived"
-  if (!facts.hasSource && !facts.relatedToBase) return "deleted"
+  if (facts.createdByCrm && !facts.hasSource && !facts.relatedToBase) return "deleted"
   return "unlinked"
 }
 
