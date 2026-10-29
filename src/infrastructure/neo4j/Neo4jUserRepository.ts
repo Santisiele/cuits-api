@@ -3,6 +3,7 @@ import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import type { IUserRepository } from "@ports/interfaces.js"
 import { isRole, usernameKey, type Role, type StoredUser } from "@domain/users.js"
+import { isTrustLevelColor, type TrustLevelColor } from "@domain/entities.js"
 
 function toStoredUser(properties: Record<string, unknown>): StoredUser {
   const role = properties["role"]
@@ -13,6 +14,7 @@ function toStoredUser(properties: Record<string, unknown>): StoredUser {
     role: isRole(role) ? role : "member",
     createdAt: String(properties["createdAt"] ?? ""),
     disabledAt: typeof disabledAt === "string" && disabledAt !== "" ? disabledAt : null,
+    color: isTrustLevelColor(properties["color"]) ? properties["color"] : null,
   }
 }
 
@@ -78,7 +80,7 @@ export class Neo4jUserRepository implements IUserRepository {
 
   async update(
     username: string,
-    fields: { role?: Role; disabledAt?: string | null }
+    fields: { role?: Role; disabledAt?: string | null; color?: TrustLevelColor | null }
   ): Promise<StoredUser | null> {
     const session = this.session()
     try {
@@ -88,6 +90,8 @@ export class Neo4jUserRepository implements IUserRepository {
         role: fields.role ?? null,
         setDisabledAt: "disabledAt" in fields,
         disabledAt: fields.disabledAt ?? null,
+        setColor: "color" in fields,
+        color: fields.color ?? null,
       })
       const record = result.records[0]
       return record ? toStoredUser(record.get("u").properties) : null

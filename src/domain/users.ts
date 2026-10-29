@@ -1,3 +1,5 @@
+import type { TrustLevelColor } from "@domain/entities.js"
+
 export const ROLES = ["creator", "admin", "member"] as const
 
 export type Role = (typeof ROLES)[number]
@@ -12,6 +14,7 @@ export interface StoredUser {
   role: Role
   createdAt: string
   disabledAt: string | null
+  color?: TrustLevelColor | null
 }
 
 export interface PublicUser {
@@ -19,6 +22,7 @@ export interface PublicUser {
   role: Role
   createdAt: string
   disabled: boolean
+  color: TrustLevelColor | null
 }
 
 export type UserRejection =
@@ -32,6 +36,7 @@ export type UserRejection =
   | "cannot_change_creator"
   | "creator_only"
   | "creator_exists"
+  | "invalid_color"
 
 export const MIN_PASSWORD_LENGTH = 8
 export const MAX_PASSWORD_LENGTH = 72
@@ -93,5 +98,6 @@ export function toPublicUser(user: StoredUser): PublicUser {
     role: user.role,
     createdAt: user.createdAt,
     disabled: !isActive(user),
+    color: user.color ?? null,
   }
 }

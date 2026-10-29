@@ -13,6 +13,7 @@ const STATUS_BY_REASON: Record<UserRejection, number> = {
   invalid_password: 400,
   invalid_role: 400,
   invalid_disabled: 400,
+  invalid_color: 400,
   wrong_password: 400,
   creator_only: 403,
   user_not_found: 404,
@@ -33,6 +34,7 @@ const userSchema = {
     role: { type: "string" },
     createdAt: { type: "string" },
     disabled: { type: "boolean" },
+    color: { type: ["string", "null"] },
   },
 } as const
 
@@ -134,19 +136,20 @@ export default async function userRoutes(server: FastifyInstance) {
     }
   )
 
-  server.patch<{ Params: { username: string }; Body: { role?: string; disabled?: boolean } }>(
+  server.patch<{ Params: { username: string }; Body: { role?: string; disabled?: boolean; color?: string | null } }>(
     "/users/:username",
     {
       preHandler: requireAdmin,
       schema: {
-        summary: "Change a user's role or disable / enable them (admin only)",
-        description: "Users are never deleted, because actions and tasks point at them.",
+        summary: "Change a user's role, color, or disable / enable them (admin only)",
+        description: "Users are never deleted, because actions and tasks point at them. Any admin can change anyone's color.",
         params: { type: "object", properties: { username: { type: "string" } } },
         body: {
           type: "object",
           properties: {
             role: { type: "string" },
             disabled: { type: "boolean" },
+            color: { type: ["string", "null"] },
           },
         },
         response: { 200: userSchema, 400: errorSchema, 403: errorSchema, 404: errorSchema, 409: errorSchema },

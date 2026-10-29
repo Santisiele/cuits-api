@@ -1,4 +1,5 @@
 import type { IPasswordHasher, IUserRepository } from "@ports/interfaces.js"
+import { isTrustLevelColor, type TrustLevelColor } from "@domain/entities.js"
 import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
@@ -26,6 +27,7 @@ export class UserAdminError extends Error {
 export interface UserChanges {
   role?: unknown
   disabled?: unknown
+  color?: unknown
 }
 
 export class UserAdminService {
@@ -87,12 +89,17 @@ export class UserAdminService {
     if (changes.disabled !== undefined && typeof changes.disabled !== "boolean") {
       throw new UserAdminError("invalid_disabled", "disabled must be true or false")
     }
+    if (changes.color !== undefined && changes.color !== null && !isTrustLevelColor(changes.color)) {
+      throw new UserAdminError("invalid_color", "That color is not available")
+    }
     const role = changes.role as AssignableRole | undefined
     const disabled = changes.disabled as boolean | undefined
+    const onlyColor = role === undefined && disabled === undefined
 
-    const existing = await this.requireChangeableUser(actorRole, username)
+    const existing = onlyColor ? await this.requireUser(username) : await this.requireChangeableUser(actorRole, username)
 
-    const fields: { role?: Role; disabledAt?: string | null } = {}
+    const fields: { role?: Role; disabledAt?: string | null; color?: TrustLevelColor | null } = {}
+    if (changes.color !== undefined) fields.color = changes.color as TrustLevelColor | null
     if (role !== undefined) fields.role = role
     if (disabled !== undefined) {
       fields.disabledAt = disabled ? existing.disabledAt ?? this.now().toISOString() : null

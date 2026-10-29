@@ -114,6 +114,7 @@ describe("user routes", () => {
       role: "admin",
       createdAt: "2026-09-29T12:00:00.000Z",
       disabled: false,
+      color: null,
     })
   })
 

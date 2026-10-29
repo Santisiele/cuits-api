@@ -17,6 +17,7 @@ import {
   type CrmCompany,
   type CrmCompanyFields,
   type CrmCuitState,
+  type CrmUser,
   type RemovalFacts,
   type RemovalOutcome,
 } from "@domain/crm.js"
@@ -224,10 +225,13 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  listActiveUsernames(): Promise<string[]> {
+  listActiveUsers(): Promise<CrmUser[]> {
     return this.read(async (session) => {
       const result = await session.run(Queries.CRM_LIST_ACTIVE_USERNAMES)
-      return result.records.map((record) => toText(record.get("username")))
+      return result.records.map((record) => ({
+        username: toText(record.get("username")),
+        color: toNullableText(record.get("color")),
+      }))
     })
   }
 

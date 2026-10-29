@@ -410,8 +410,18 @@ export default async function crmRoutes(server: FastifyInstance) {
     "/crm/users",
     {
       schema: {
-        summary: "The active users a task can be assigned to",
-        response: { 200: { type: "object", properties: { users: { type: "array", items: { type: "string" } } } } },
+        summary: "The active users a task can be assigned to, with their color",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              users: {
+                type: "array",
+                items: { type: "object", properties: { username: { type: "string" }, color: nullableString } },
+              },
+            },
+          },
+        },
       },
     },
     async () => ({ users: await service.listUsers() })

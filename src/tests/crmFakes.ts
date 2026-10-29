@@ -10,6 +10,7 @@ import type {
   CrmCompany,
   CrmCompanyFields,
   CrmCuitState,
+  CrmUser,
   RemovalFacts,
   RemovalOutcome,
 } from "@domain/crm"
@@ -38,6 +39,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   readonly actions = new Map<string, Action>()
   readonly tasks = new Map<string, Task>()
   users = ["santi", "Flavia", "pedro"]
+  readonly colors = new Map<string, string>()
   readonly searchedAt = new Map<string, string>()
   mailDay: string | null = null
   setupCalls = 0
@@ -187,8 +189,8 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     this.mailDay = day
   }
 
-  async listActiveUsernames(): Promise<string[]> {
-    return this.users
+  async listActiveUsers(): Promise<CrmUser[]> {
+    return this.users.map((username) => ({ username, color: this.colors.get(username) ?? null }))
   }
 
   async contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]> {
