@@ -17,6 +17,7 @@ import type {
   RemovalFacts,
   RemovalOutcome,
 } from "@domain/crm"
+import { TaskNoLongerOpenError } from "@domain/crm"
 
 interface StoredCuit {
   taxId: string
@@ -31,6 +32,7 @@ interface StoredCuit {
   nosisPending: boolean
   nosisSearched: boolean
   sources: string[]
+  crmSources: string[]
   knownSources: string[]
   relatedToBase: boolean
   fields: CrmCompanyFields
@@ -75,6 +77,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       nosisPending: false,
       nosisSearched: false,
       sources: [],
+      crmSources: [],
       knownSources: [],
       relatedToBase: false,
       fields: { crmBrand: null, crmProduct: null, crmOrigin: null, originSource: null },
@@ -107,7 +110,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       cuit.company = true
       cuit.archivedAt = null
       cuit.fields = { crmBrand: add.crmBrand, crmProduct: add.crmProduct, crmOrigin: add.crmOrigin, originSource: add.originSource }
-      if (add.originSource && !cuit.sources.includes(add.originSource)) cuit.sources.push(add.originSource)
+      if (add.originSource) this.attachViaCrm(cuit, add.originSource)
       cuit.addedAt = add.at
       cuit.addedBy = add.by
     }
@@ -132,9 +135,18 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     const cuit = this.cuits.get(taxId)!
     if (markNosisPending) cuit.nosisPending = true
     cuit.fields = fields
-    if (previousSource && previousSource !== fields.originSource) cuit.sources = cuit.sources.filter((name) => name !== previousSource)
-    if (fields.originSource && !cuit.sources.includes(fields.originSource)) cuit.sources.push(fields.originSource)
+    if (previousSource && previousSource !== fields.originSource && cuit.crmSources.includes(previousSource)) {
+      cuit.sources = cuit.sources.filter((name) => name !== previousSource)
+      cuit.crmSources = cuit.crmSources.filter((name) => name !== previousSource)
+    }
+    if (fields.originSource && fields.originSource !== previousSource) this.attachViaCrm(cuit, fields.originSource)
     this.changes.push(change)
+  }
+
+  private attachViaCrm(cuit: StoredCuit, source: string): void {
+    if (cuit.sources.includes(source)) return
+    cuit.sources.push(source)
+    cuit.crmSources.push(source)
   }
 
   async closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }> {
@@ -287,8 +299,12 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async recordAction(action: Action, closedTasks: Task[], nextTask: Task | null, changes: Change[]): Promise<void> {
+    for (const task of closedTasks) {
+      const stored = this.tasks.get(task.id)
+      if (stored?.status !== "open" || stored.archivedAt !== null) throw new TaskNoLongerOpenError(task.id)
+    }
     this.actions.set(action.id, { ...action })
-    for (const task of closedTasks) this.tasks.set(task.id, { ...task })
+    for (const task of closedTasks) Object.assign(this.tasks.get(task.id)!, { status: "done", closedAt: task.closedAt })
     if (nextTask) this.tasks.set(nextTask.id, { ...nextTask })
     this.changes.push(...changes)
   }

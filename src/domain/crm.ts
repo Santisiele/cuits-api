@@ -300,3 +300,27 @@ export function uniqueTaxIds(values: unknown): string[] | null {
   const unique = [...new Set(values)]
   return unique.every(isValidCrmCuit) ? unique : null
 }
+
+export class TaskNoLongerOpenError extends Error {
+  constructor(readonly taskId: string) {
+    super(`Task ${taskId} is no longer open`)
+    this.name = "TaskNoLongerOpenError"
+  }
+}
+
+export interface CompanyFieldsInput {
+  crmBrand?: unknown
+  crmProduct?: unknown
+  crmOrigin?: unknown
+  originSource?: unknown
+}
+
+export function withCurrentFields(body: CompanyFieldsInput, current: CrmCompanyFields): CompanyFieldsInput {
+  const touchesOrigin = body.crmOrigin !== undefined || body.originSource !== undefined
+  return {
+    crmBrand: body.crmBrand === undefined ? current.crmBrand : body.crmBrand,
+    crmProduct: body.crmProduct === undefined ? current.crmProduct : body.crmProduct,
+    crmOrigin: touchesOrigin ? body.crmOrigin : current.crmOrigin,
+    originSource: touchesOrigin ? body.originSource : current.originSource,
+  }
+}
