@@ -55,6 +55,11 @@ export function logLoginFailed(username: string, ip: string, reason: string): vo
   activityLogger.warn({ event: "login_failed", username, ip, reason, message: `Failed login attempt for "${username}"` })
 }
 
+/** Logs someone opening the API docs. */
+export function logDocsViewed(username: string, ip: string): void {
+  activityLogger.info({ event: "docs_viewed", username, ip, message: `${username} opened the API docs` })
+}
+
 /** Logs a logout. */
 export function logLogout(username: string, ip: string): void {
   activityLogger.info({ event: "logout", username, ip, message: `${username} logged out` })

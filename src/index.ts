@@ -26,6 +26,9 @@ import { packBackup } from "@helpers/backupArchive.js"
 import { config } from "@config.js"
 import { authMiddleware } from "@middleware/authMiddleware.js"
 import { documentRoute } from "@helpers/openapi.js"
+import { docsGuard } from "@middleware/docsGuard.js"
+import { AuthService } from "@auth/AuthService.js"
+import { logDocsViewed, logLoginFailed } from "@auth/activityLogger.js"
 import type { FastifyInstance } from "fastify"
 
 // ─── Server setup ─────────────────────────────────────────────────────────────
@@ -57,7 +60,17 @@ await server.register(swagger, {
   transform: documentRoute,
 })
 
-await server.register(swaggerUi, { routePrefix: "/docs" })
+const docsAuth = new AuthService()
+await server.register(swaggerUi, {
+  routePrefix: "/docs",
+  uiHooks: {
+    onRequest: docsGuard({
+      login: (username, password) => docsAuth.login(username, password),
+      onFailed: logLoginFailed,
+      onViewed: logDocsViewed,
+    }),
+  },
+})
 
 const allowedOrigins = [
   process.env["FRONT_ROUTE"] ?? "http://localhost:5173",
