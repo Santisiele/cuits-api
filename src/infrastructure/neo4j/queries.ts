@@ -194,11 +194,17 @@ export const Queries = {
     WITH a, b
     FOREACH (_ IN CASE
       WHEN NOT (a)-[:RELATED_TO]-() AND (a.inMyBase IS NULL OR a.inMyBase = false)
+        AND NOT EXISTS { MATCH (a)<-[:WORKS_AT|IS]-(:Contact) }
+        AND NOT EXISTS { MATCH (a)<-[:ABOUT]-(:Action) }
+        AND NOT EXISTS { MATCH (a)<-[:ABOUT]-(:Task) }
       THEN [1] ELSE [] END |
       DETACH DELETE a
     )
     FOREACH (_ IN CASE
       WHEN NOT (b)-[:RELATED_TO]-() AND (b.inMyBase IS NULL OR b.inMyBase = false)
+        AND NOT EXISTS { MATCH (b)<-[:WORKS_AT|IS]-(:Contact) }
+        AND NOT EXISTS { MATCH (b)<-[:ABOUT]-(:Action) }
+        AND NOT EXISTS { MATCH (b)<-[:ABOUT]-(:Task) }
       THEN [1] ELSE [] END |
       DETACH DELETE b
     )
@@ -546,6 +552,9 @@ export const Queries = {
     WHERE c.inMyBase = false
       AND NOT EXISTS { MATCH (c)-[:HAS_SOURCE]->(:Source) }
       AND NOT EXISTS { MATCH (c)-[:RELATED_TO]-(:CUIT {inMyBase: true}) }
+      AND NOT EXISTS { MATCH (c)<-[:WORKS_AT|IS]-(:Contact) }
+      AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Action) }
+      AND NOT EXISTS { MATCH (c)<-[:ABOUT]-(:Task) }
     WITH collect(c) AS orphans
     FOREACH (orphan IN orphans | DETACH DELETE orphan)
     RETURN size(orphans) AS removedCount
