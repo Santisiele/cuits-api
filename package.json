@@ -38,7 +38,8 @@
     "backup:open": "tsx src/scripts/openBackup.ts",
     "restore:backup": "tsx src/scripts/restoreBackup.ts",
     "crm:nosis": "tsx src/scripts/crmNosis.ts",
-    "crm:import": "tsx src/scripts/crmImport.ts"
+    "crm:import": "tsx src/scripts/crmImport.ts",
+    "crm:import-history": "tsx src/scripts/crmImportHistory.ts"
   },
   "keywords": [],
   "author": "",
