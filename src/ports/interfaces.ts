@@ -344,12 +344,18 @@ export interface ICrmRepository {
   addToCrm(add: CrmCuitAdd, change: Change): Promise<void>
   listCompanies(): Promise<CrmCompany[]>
   findCompany(taxId: string): Promise<CrmCompany | null>
-  updateCompany(taxId: string, fields: CrmCompanyFields, previousSource: string | null, change: Change): Promise<void>
+  updateCompany(
+    taxId: string,
+    fields: CrmCompanyFields,
+    previousSource: string | null,
+    markNosisPending: boolean,
+    change: Change
+  ): Promise<void>
   findRemovalFacts(taxId: string): Promise<RemovalFacts>
   removeCompany(taxId: string, outcome: RemovalOutcome, at: string, changes: Change[]): Promise<void>
   closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }>
   reopenCompany(taxId: string, change: Change): Promise<void>
-  sourceExists(name: string): Promise<boolean>
+  findSource(name: string): Promise<CrmSource | null>
   listSources(): Promise<CrmSource[]>
   companiesInCrm(taxIds: string[]): Promise<string[]>
   createContact(contact: Contact, change: Change): Promise<void>

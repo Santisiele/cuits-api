@@ -62,7 +62,7 @@ describe("crm company routes", () => {
   it("lets a member add a company and answers 201 with every field", async () => {
     const response = await app.inject({ method: "POST", url: "/crm/companies", payload: { taxId: COMPANY, businessName: "ACME SA" } })
     expect(response.statusCode).toBe(201)
-    expect(response.json()).toEqual({ taxId: COMPANY, created: true, restored: false, nosisPending: true })
+    expect(response.json()).toEqual({ taxId: COMPANY, created: true, restored: false, nosisPending: false })
     expect(logCrmOperation).toHaveBeenCalledWith("flavia", "crm_add", "CrmCompany", COMPANY)
   })
 
@@ -77,7 +77,7 @@ describe("crm company routes", () => {
         crmProduct: "Seguros",
         crmOrigin: "Referido",
         originSource: null,
-        nosisPending: true,
+        nosisPending: false,
         addedAt: expect.any(String),
         addedBy: "flavia",
         lastActionDate: null,
@@ -345,13 +345,18 @@ describe("the Nosis pending list", () => {
     }
   })
 
-  it("lists every pending CUIT with who added it and the command", async () => {
+  it("lists only the pending CUITs that are in a known source, with who added them and the command", async () => {
     await addCompany()
+    await app.inject({
+      method: "POST",
+      url: "/crm/companies",
+      payload: { taxId: "30798765432", businessName: "OTRA SA", originSource: "Poseidon" },
+    })
     const creator = await buildApp("creator")
     const response = await creator.inject({ method: "GET", url: "/crm/nosis-pending" })
     expect(response.json()).toEqual({
       command: "pnpm crm:nosis",
-      items: [{ taxId: COMPANY, businessName: "ACME SA", sources: [], addedBy: "flavia", addedAt: expect.any(String) }],
+      items: [{ taxId: "30798765432", businessName: "OTRA SA", sources: ["Poseidon"], addedBy: "flavia", addedAt: expect.any(String) }],
     })
   })
 })

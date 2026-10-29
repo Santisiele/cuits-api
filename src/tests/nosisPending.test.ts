@@ -56,7 +56,7 @@ describe("NosisPendingMailService", () => {
 
   beforeEach(() => {
     repository = new InMemoryCrmRepository()
-    repository.seedCuit(FIRST, { nosisPending: true })
+    repository.seedCuit(FIRST, { nosisPending: true, knownSources: ["Poseidon"] })
     sendText.mockReset().mockResolvedValue(undefined)
     report.mockReset()
   })
@@ -117,9 +117,9 @@ describe("NosisPendingService.run", () => {
 
   beforeEach(() => {
     repository = new InMemoryCrmRepository()
-    repository.seedCuit(FIRST, { nosisPending: true, businessName: "" })
-    repository.seedCuit(SECOND, { nosisPending: true })
-    repository.seedCuit(THIRD, { nosisPending: true })
+    repository.seedCuit(FIRST, { nosisPending: true, businessName: "", knownSources: ["Poseidon"] })
+    repository.seedCuit(SECOND, { nosisPending: true, knownSources: ["Poseidon"] })
+    repository.seedCuit(THIRD, { nosisPending: true, knownSources: ["Poseidon"] })
     events = []
     graph.upsertEnrichmentNode.mockReset()
     graph.mergeRelationship.mockReset()
@@ -151,7 +151,7 @@ describe("NosisPendingService.run", () => {
   })
 
   it("stops after three failures in a row", async () => {
-    repository.seedCuit("20999999999", { nosisPending: true })
+    repository.seedCuit("20999999999", { nosisPending: true, knownSources: ["Poseidon"] })
     const tally = await run(enricher({ resolveDocument: vi.fn(async () => Promise.reject(new Error("session dead"))) }))
     expect(tally).toEqual({ searched: 0, notFound: 0, failed: 3 })
     expect(events.at(-1)).toEqual({ kind: "aborted", failures: 3 })

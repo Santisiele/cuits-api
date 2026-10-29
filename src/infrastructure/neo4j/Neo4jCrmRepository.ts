@@ -348,9 +348,15 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  updateCompany(taxId: string, fields: CrmCompanyFields, previousSource: string | null, change: Change): Promise<void> {
+  updateCompany(
+    taxId: string,
+    fields: CrmCompanyFields,
+    previousSource: string | null,
+    markNosisPending: boolean,
+    change: Change
+  ): Promise<void> {
     return this.write(async (tx) => {
-      await tx.run(Queries.CRM_UPDATE_COMPANY, { taxId, ...fields })
+      await tx.run(Queries.CRM_UPDATE_COMPANY, { taxId, ...fields, markNosisPending })
       if (previousSource && previousSource !== fields.originSource) {
         await tx.run(Queries.CRM_DETACH_SOURCE, { taxId, sourceName: previousSource })
       }
@@ -382,10 +388,10 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  sourceExists(name: string): Promise<boolean> {
+  findSource(name: string): Promise<CrmSource | null> {
     return this.read(async (session) => {
-      const record = (await session.run(Queries.CRM_SOURCE_EXISTS, { sourceName: name, legacySource: LEGACY_CRM_SOURCE_NAME })).records[0]
-      return record?.get("exists") === true
+      const record = (await session.run(Queries.CRM_FIND_SOURCE, { sourceName: name, legacySource: LEGACY_CRM_SOURCE_NAME })).records[0]
+      return record ? { name: toText(record.get("name")), category: toText(record.get("category")) } : null
     })
   }
 

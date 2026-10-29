@@ -26,20 +26,22 @@ import {
 const NEVER_SEEN = { exists: false, inCrm: false, archived: false, nosisSearched: false, inKnownSource: false }
 
 describe("shouldMarkNosisPending", () => {
-  it("marks a CUIT that was not in the graph", () => {
-    expect(shouldMarkNosisPending(NEVER_SEEN)).toBe(true)
+  it("queues a CUIT only when it joins a known source", () => {
+    expect(shouldMarkNosisPending(NEVER_SEEN, true)).toBe(true)
+    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true }, true)).toBe(true)
   })
 
-  it("marks one that exists but was never searched and is in no known source", () => {
-    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true })).toBe(true)
+  it("never queues one that joins no known source, new or not", () => {
+    expect(shouldMarkNosisPending(NEVER_SEEN, false)).toBe(false)
+    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true }, false)).toBe(false)
   })
 
   it("leaves one that was already searched", () => {
-    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true, nosisSearched: true })).toBe(false)
+    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true, nosisSearched: true }, true)).toBe(false)
   })
 
   it("leaves one that a known source already brought", () => {
-    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true, inKnownSource: true })).toBe(false)
+    expect(shouldMarkNosisPending({ ...NEVER_SEEN, exists: true, inKnownSource: true }, true)).toBe(false)
   })
 })
 
