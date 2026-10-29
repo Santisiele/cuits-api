@@ -315,7 +315,7 @@ describe("crm action, task and agenda routes", () => {
       payload: { status: "cancelled", cancelReason: "Ya no compra" },
     })
     expect(cancelled.json()).toMatchObject({ status: "cancelled", cancelReason: "Ya no compra" })
-    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "cancelled", "Task", taskId, {
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "cancel", "Task", taskId, {
       companyTaxId: COMPANY,
       assignee: "Flavia",
       dueDate: "2026-11-02",
