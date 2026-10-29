@@ -397,7 +397,17 @@ describe("responsible routes", () => {
     const taken = await admin.inject({ method: "POST", url: "/crm/responsibles", payload: { name: "raul", color: "red" } })
     expect(taken.statusCode).toBe(409)
     expect(taken.json().error).toBe("name_taken")
-    const changed = await admin.inject({ method: "PATCH", url: "/crm/responsibles/Raul", payload: { color: "blue-900" } })
+    const changed = await admin.inject({
+      method: "PATCH",
+      url: "/crm/responsibles/Raul",
+      payload: { color: "blue-900", username: "otro", event: "login" },
+    })
     expect(changed.json().color).toBe("blue-900")
+    expect(logCrmOperation).toHaveBeenLastCalledWith(expect.any(String), "update", "Responsible", "Raul", {
+      previousName: "Raul",
+      color: "blue-900",
+      users: [],
+      disabled: false,
+    })
   })
 })
