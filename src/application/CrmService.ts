@@ -32,6 +32,7 @@ import {
   type CrmCompany,
   type CrmCompanyFields,
   type CrmRejection,
+  type CrmSource,
   type CrmUser,
   type RemovalOutcome,
   type Task,
@@ -76,6 +77,13 @@ interface CompanyBody {
   crmBrand?: unknown
   crmProduct?: unknown
   crmOrigin?: unknown
+  originSource?: unknown
+}
+
+export interface CompanyCloseResult {
+  company: CrmCompany
+  cancelledTaskCount: number
+  inservible: boolean
 }
 
 interface ContactBody {
@@ -134,6 +142,11 @@ const MESSAGES: Record<CrmRejection, string> = {
   task_not_found: "That task does not exist",
   user_not_found: "That user does not exist",
   invalid_entity: "Unknown history entry type",
+  next_task_required: "Every action has to leave the next task",
+  close_reason_required: "A reason is required to close a company",
+  company_closed: "That company is closed",
+  not_closed: "That company is not closed",
+  source_not_found: "That source does not exist",
 }
 
 export class CrmService {
@@ -163,7 +176,7 @@ export class CrmService {
 
   async addCompany(body: CompanyBody, by: string): Promise<CompanyAddResult> {
     const taxId = this.requireCuit(body.taxId)
-    const fields = this.companyFields(body)
+    const fields = await this.companyFields(body)
     const businessName = this.name(body.businessName)
     const state = await this.repository.findCuitState(taxId)
     if (state.inCrm) this.fail("already_in_crm")
@@ -180,11 +193,51 @@ export class CrmService {
 
   async updateCompany(taxId: string, body: CompanyBody, by: string): Promise<CrmCompany> {
     const company = await this.requireCompany(taxId)
-    const fields = this.companyFields(body)
+    const fields = await this.companyFields(body)
     const at = this.now().toISOString()
     const diff = changedFields(company as unknown as Record<string, unknown>, { ...fields })
-    await this.repository.updateCompany(taxId, fields, this.change(at, by, "CrmCompany", taxId, "update", diff.before, diff.after))
+    await this.repository.updateCompany(
+      taxId,
+      fields,
+      company.originSource,
+      this.change(at, by, "CrmCompany", taxId, "update", diff.before, diff.after)
+    )
     return { ...company, ...fields }
+  }
+
+  async closeCompany(taxId: string, reasonValue: unknown, by: string): Promise<CompanyCloseResult> {
+    const company = await this.requireCompany(taxId)
+    if (company.closedAt !== null) this.fail("company_closed")
+    const reason = this.text(reasonValue)
+    if (reason === null) this.fail("close_reason_required")
+    const openTaskIds = (await this.repository.findRemovalFacts(taxId)).openTaskIds
+    const at = this.now().toISOString()
+    const { inservible } = await this.repository.closeCompany(taxId, reason, at, by, [
+      this.change(at, by, "CrmCompany", taxId, "close", { closedAt: null }, { closedAt: at, closedReason: reason }),
+      ...openTaskIds.map((id) =>
+        this.change(at, by, "Task", id, "cancel", { status: "open" }, { status: "cancelled", cancelReason: reason })
+      ),
+    ])
+    return {
+      company: { ...company, closedAt: at, closedReason: reason, closedBy: by, nextDueDate: null, openTaskCount: 0 },
+      cancelledTaskCount: openTaskIds.length,
+      inservible,
+    }
+  }
+
+  async reopenCompany(taxId: string, by: string): Promise<CrmCompany> {
+    const company = await this.requireCompany(taxId)
+    if (company.closedAt === null) this.fail("not_closed")
+    const at = this.now().toISOString()
+    await this.repository.reopenCompany(
+      taxId,
+      this.change(at, by, "CrmCompany", taxId, "reopen", { closedAt: company.closedAt, closedReason: company.closedReason }, { closedAt: null })
+    )
+    return { ...company, closedAt: null, closedReason: null, closedBy: null }
+  }
+
+  listSources(): Promise<CrmSource[]> {
+    return this.repository.listSources()
   }
 
   async removeCompany(taxId: string, dryRun: boolean, by: string): Promise<CompanyRemovalResult> {
@@ -269,14 +322,15 @@ export class CrmService {
 
   async recordAction(body: ActionBody, actor: Actor): Promise<ActionResult> {
     const companyTaxId = this.requireCuit(body.companyTaxId)
-    await this.requireCompany(companyTaxId)
+    await this.requireOpenCompany(companyTaxId)
     const date = this.calendarDate(body.date)
     const description = this.description(body.description)
     const contactIds = await this.requireContacts(companyTaxId, body.contactIds)
     const completesTaskIds = uniqueIds(body.completesTaskIds)
     if (completesTaskIds === null) this.fail("task_not_found")
     const toClose = await Promise.all(completesTaskIds.map((id) => this.requireOpenTaskOf(id, companyTaxId)))
-    const nextTask = body.nextTask ? await this.newTask({ ...body.nextTask, companyTaxId }, actor.username) : null
+    if (!body.nextTask) this.fail("next_task_required")
+    const nextTask = await this.newTask({ ...body.nextTask, companyTaxId }, actor.username)
 
     const at = this.now().toISOString()
     const action: Action = {
@@ -339,7 +393,7 @@ export class CrmService {
 
   async createTask(body: TaskBody, actor: Actor): Promise<Task> {
     const companyTaxId = this.requireCuit(body.companyTaxId)
-    await this.requireCompany(companyTaxId)
+    await this.requireOpenCompany(companyTaxId)
     const task = await this.newTask({ ...body, companyTaxId }, actor.username)
     await this.repository.createTask(task, this.change(task.createdAt, actor.username, "Task", task.id, "create", {}, this.taskView(task)))
     return task
@@ -432,6 +486,7 @@ export class CrmService {
         crmBrand: null,
         crmProduct: null,
         crmOrigin: null,
+        originSource: null,
         asCompany: false,
         markNosisPending,
         at,
@@ -491,6 +546,12 @@ export class CrmService {
     this.requireCuit(taxId)
     const company = await this.repository.findCompany(taxId)
     if (!company) this.fail("company_not_in_crm")
+    return company
+  }
+
+  private async requireOpenCompany(taxId: string): Promise<CrmCompany> {
+    const company = await this.requireCompany(taxId)
+    if (company.closedAt !== null) this.fail("company_closed")
     return company
   }
 
@@ -570,11 +631,14 @@ export class CrmService {
     return description
   }
 
-  private companyFields(body: CompanyBody): CrmCompanyFields {
+  private async companyFields(body: CompanyBody): Promise<CrmCompanyFields> {
+    const originSource = cleanText(body.originSource)
+    if (originSource !== null && !(await this.repository.sourceExists(originSource))) this.fail("source_not_found")
     return {
       crmBrand: this.name(body.crmBrand),
       crmProduct: this.name(body.crmProduct),
-      crmOrigin: this.name(body.crmOrigin),
+      crmOrigin: originSource === null ? this.name(body.crmOrigin) : null,
+      originSource,
     }
   }
 

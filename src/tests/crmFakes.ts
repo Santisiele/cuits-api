@@ -10,6 +10,7 @@ import type {
   CrmCompany,
   CrmCompanyFields,
   CrmCuitState,
+  CrmSource,
   CrmUser,
   RemovalFacts,
   RemovalOutcome,
@@ -19,11 +20,15 @@ interface StoredCuit {
   taxId: string
   businessName: string
   company: boolean
-  inSource: boolean
   archivedAt: string | null
+  closedAt: string | null
+  closedReason: string | null
+  closedBy: string | null
+  levelOfTrust: number | null
+  trustReason: string | null
   nosisPending: boolean
   nosisSearched: boolean
-  otherSources: string[]
+  sources: string[]
   knownSources: string[]
   relatedToBase: boolean
   fields: CrmCompanyFields
@@ -43,20 +48,29 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   readonly searchedAt = new Map<string, string>()
   mailDay: string | null = null
   setupCalls = 0
+  availableSources: CrmSource[] = [
+    { name: "Poseidon", category: "known" },
+    { name: "Bolsa", category: "toKnow" },
+  ]
+  inservibleLevel: number | null = 1
 
   seedCuit(taxId: string, partial: Partial<StoredCuit> = {}): void {
     this.cuits.set(taxId, {
       taxId,
       businessName: "ACME SA",
       company: false,
-      inSource: false,
       archivedAt: null,
+      closedAt: null,
+      closedReason: null,
+      closedBy: null,
+      levelOfTrust: null,
+      trustReason: null,
       nosisPending: false,
       nosisSearched: false,
-      otherSources: [],
+      sources: [],
       knownSources: [],
       relatedToBase: false,
-      fields: { crmBrand: null, crmProduct: null, crmOrigin: null },
+      fields: { crmBrand: null, crmProduct: null, crmOrigin: null, originSource: null },
       addedAt: null,
       addedBy: null,
       ...partial,
@@ -71,7 +85,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     const cuit = this.cuits.get(taxId)
     return {
       exists: cuit !== undefined,
-      inCrm: cuit?.company === true && cuit.inSource,
+      inCrm: cuit?.company === true,
       archived: cuit?.archivedAt != null,
       nosisSearched: cuit?.nosisSearched === true,
       inKnownSource: (cuit?.knownSources.length ?? 0) > 0,
@@ -81,12 +95,12 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   async addToCrm(add: CrmCuitAdd, change: Change): Promise<void> {
     if (!this.cuits.has(add.taxId)) this.seedCuit(add.taxId, { businessName: add.businessName ?? "" })
     const cuit = this.cuits.get(add.taxId)!
-    cuit.inSource = true
     if (add.markNosisPending) cuit.nosisPending = true
     if (add.asCompany) {
       cuit.company = true
       cuit.archivedAt = null
-      cuit.fields = { crmBrand: add.crmBrand, crmProduct: add.crmProduct, crmOrigin: add.crmOrigin }
+      cuit.fields = { crmBrand: add.crmBrand, crmProduct: add.crmProduct, crmOrigin: add.crmOrigin, originSource: add.originSource }
+      if (add.originSource && !cuit.sources.includes(add.originSource)) cuit.sources.push(add.originSource)
       cuit.addedAt = add.at
       cuit.addedBy = add.by
     }
@@ -94,16 +108,46 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async listCompanies(): Promise<CrmCompany[]> {
-    return [...this.cuits.values()].filter((cuit) => cuit.company && cuit.inSource).map((cuit) => this.toCompany(cuit))
+    return [...this.cuits.values()].filter((cuit) => cuit.company).map((cuit) => this.toCompany(cuit))
   }
 
   async findCompany(taxId: string): Promise<CrmCompany | null> {
     return (await this.listCompanies()).find((company) => company.taxId === taxId) ?? null
   }
 
-  async updateCompany(taxId: string, fields: CrmCompanyFields, change: Change): Promise<void> {
-    this.cuits.get(taxId)!.fields = fields
+  async updateCompany(taxId: string, fields: CrmCompanyFields, previousSource: string | null, change: Change): Promise<void> {
+    const cuit = this.cuits.get(taxId)!
+    cuit.fields = fields
+    if (previousSource && previousSource !== fields.originSource) cuit.sources = cuit.sources.filter((name) => name !== previousSource)
+    if (fields.originSource && !cuit.sources.includes(fields.originSource)) cuit.sources.push(fields.originSource)
     this.changes.push(change)
+  }
+
+  async closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }> {
+    const cuit = this.cuits.get(taxId)!
+    for (const task of this.tasks.values()) {
+      if (task.companyTaxId === taxId && task.status === "open" && task.archivedAt === null) {
+        Object.assign(task, { status: "cancelled", cancelReason: reason, closedAt: at })
+      }
+    }
+    Object.assign(cuit, { closedAt: at, closedReason: reason, closedBy: by })
+    const inservible = this.inservibleLevel !== null && cuit.sources.length + cuit.knownSources.length > 0
+    if (inservible) Object.assign(cuit, { levelOfTrust: this.inservibleLevel, trustReason: reason })
+    this.changes.push(...changes)
+    return { inservible }
+  }
+
+  async reopenCompany(taxId: string, change: Change): Promise<void> {
+    Object.assign(this.cuits.get(taxId)!, { closedAt: null, closedReason: null, closedBy: null })
+    this.changes.push(change)
+  }
+
+  async sourceExists(name: string): Promise<boolean> {
+    return this.availableSources.some((source) => source.name === name)
+  }
+
+  async listSources(): Promise<CrmSource[]> {
+    return this.availableSources
   }
 
   async findRemovalFacts(taxId: string): Promise<RemovalFacts> {
@@ -114,7 +158,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
         [...this.contacts.values()].some((contact) => contact.companyTaxIds.includes(taxId) || contact.cuil === taxId) ||
         [...this.actions.values()].some((action) => action.companyTaxId === taxId) ||
         tasks.length > 0,
-      hasOtherSource: cuit.otherSources.length > 0,
+      hasSource: cuit.sources.length + cuit.knownSources.length > 0,
       relatedToBase: cuit.relatedToBase,
       openTaskIds: tasks.filter((task) => task.status === "open" && task.archivedAt === null).map((task) => task.id),
     }
@@ -130,7 +174,6 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       }
     }
     const cuit = this.cuits.get(taxId)!
-    cuit.inSource = false
     cuit.company = false
     cuit.nosisPending = false
     if (outcome === "archived") cuit.archivedAt = at
@@ -141,7 +184,7 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
   }
 
   async companiesInCrm(taxIds: string[]): Promise<string[]> {
-    return taxIds.filter((taxId) => this.cuits.get(taxId)?.company === true && this.cuits.get(taxId)?.inSource === true)
+    return taxIds.filter((taxId) => this.cuits.get(taxId)?.company === true)
   }
 
   async createContact(contact: Contact, change: Change): Promise<void> {
@@ -258,6 +301,9 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
       lastActionDate: null,
       nextDueDate: null,
       openTaskCount: 0,
+      closedAt: cuit.closedAt,
+      closedReason: cuit.closedReason,
+      closedBy: cuit.closedBy,
     }
   }
 }

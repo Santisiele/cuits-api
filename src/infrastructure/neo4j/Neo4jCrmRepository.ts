@@ -6,7 +6,8 @@ import { usernameKey } from "@domain/users.js"
 import type { NosisPendingItem } from "@domain/nosisPending.js"
 import {
   COMPANY_REMOVED_REASON,
-  CRM_SOURCE_NAME,
+  INSERVIBLE_LEVEL_LABEL,
+  LEGACY_CRM_SOURCE_NAME,
   type Action,
   type AgendaItem,
   type Task,
@@ -17,6 +18,7 @@ import {
   type CrmCompany,
   type CrmCompanyFields,
   type CrmCuitState,
+  type CrmSource,
   type CrmUser,
   type RemovalFacts,
   type RemovalOutcome,
@@ -59,12 +61,16 @@ function toCompany(record: { get(key: string): unknown }): CrmCompany {
     crmBrand: toNullableText(record.get("crmBrand")),
     crmProduct: toNullableText(record.get("crmProduct")),
     crmOrigin: toNullableText(record.get("crmOrigin")),
+    originSource: toNullableText(record.get("originSource")),
     nosisPending: record.get("nosisPending") === true,
     addedAt: toNullableText(record.get("addedAt")),
     addedBy: toNullableText(record.get("addedBy")),
     lastActionDate: toNullableText(record.get("lastActionDate")),
     nextDueDate: toNullableText(record.get("nextDueDate")),
     openTaskCount: toNumber(record.get("openTaskCount")),
+    closedAt: toNullableText(record.get("closedAt")),
+    closedReason: toNullableText(record.get("closedReason")),
+    closedBy: toNullableText(record.get("closedBy")),
   }
 }
 
@@ -183,7 +189,6 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   async ensureSetup(): Promise<void> {
     await this.read(async (session) => {
-      await session.run(Queries.CRM_ENSURE_SOURCE, { sourceName: CRM_SOURCE_NAME })
       await session.run(Queries.CRM_CONTACT_CONSTRAINT)
       await session.run(Queries.CRM_CHANGE_CONSTRAINT)
       await session.run(Queries.CRM_CHANGE_ENTITY_INDEX)
@@ -310,7 +315,7 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   findCuitState(taxId: string): Promise<CrmCuitState> {
     return this.read(async (session) => {
-      const record = (await session.run(Queries.CRM_FIND_CUIT_STATE, { taxId, sourceName: CRM_SOURCE_NAME })).records[0]!
+      const record = (await session.run(Queries.CRM_FIND_CUIT_STATE, { taxId })).records[0]!
       return {
         exists: record.get("exists") === true,
         inCrm: record.get("inCrm") === true,
@@ -323,38 +328,80 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
 
   addToCrm(add: CrmCuitAdd, change: Change): Promise<void> {
     return this.write(async (tx) => {
-      await tx.run(Queries.CRM_ADD_TO_SOURCE, { ...add, sourceName: CRM_SOURCE_NAME })
+      await tx.run(Queries.CRM_ADD_CUIT, add)
+      if (add.asCompany && add.originSource) await tx.run(Queries.CRM_ATTACH_SOURCE, { taxId: add.taxId, sourceName: add.originSource })
       await writeChange(tx, change)
     })
   }
 
   listCompanies(): Promise<CrmCompany[]> {
     return this.read(async (session) => {
-      const result = await session.run(Queries.CRM_LIST_COMPANIES, { sourceName: CRM_SOURCE_NAME, taxId: null })
+      const result = await session.run(Queries.CRM_LIST_COMPANIES)
       return result.records.map(toCompany)
     })
   }
 
   findCompany(taxId: string): Promise<CrmCompany | null> {
     return this.read(async (session) => {
-      const record = (await session.run(Queries.CRM_LIST_COMPANIES, { sourceName: CRM_SOURCE_NAME, taxId })).records[0]
+      const record = (await session.run(Queries.CRM_FIND_COMPANY, { taxId })).records[0]
       return record ? toCompany(record) : null
     })
   }
 
-  updateCompany(taxId: string, fields: CrmCompanyFields, change: Change): Promise<void> {
+  updateCompany(taxId: string, fields: CrmCompanyFields, previousSource: string | null, change: Change): Promise<void> {
     return this.write(async (tx) => {
       await tx.run(Queries.CRM_UPDATE_COMPANY, { taxId, ...fields })
+      if (previousSource && previousSource !== fields.originSource) {
+        await tx.run(Queries.CRM_DETACH_SOURCE, { taxId, sourceName: previousSource })
+      }
+      if (fields.originSource && fields.originSource !== previousSource) {
+        await tx.run(Queries.CRM_ATTACH_SOURCE, { taxId, sourceName: fields.originSource })
+      }
       await writeChange(tx, change)
+    })
+  }
+
+  closeCompany(taxId: string, reason: string, at: string, by: string, changes: Change[]): Promise<{ inservible: boolean }> {
+    const session = this.session()
+    return session
+      .executeWrite(async (tx) => {
+        await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: reason, at })
+        const record = (
+          await tx.run(Queries.CRM_CLOSE_COMPANY, { taxId, reason, at, by, inservibleLabel: INSERVIBLE_LEVEL_LABEL })
+        ).records[0]
+        for (const change of changes) await writeChange(tx, change)
+        return { inservible: record?.get("inservible") === true }
+      })
+      .finally(() => session.close())
+  }
+
+  reopenCompany(taxId: string, change: Change): Promise<void> {
+    return this.write(async (tx) => {
+      await tx.run(Queries.CRM_REOPEN_COMPANY, { taxId })
+      await writeChange(tx, change)
+    })
+  }
+
+  sourceExists(name: string): Promise<boolean> {
+    return this.read(async (session) => {
+      const record = (await session.run(Queries.CRM_SOURCE_EXISTS, { sourceName: name, legacySource: LEGACY_CRM_SOURCE_NAME })).records[0]
+      return record?.get("exists") === true
+    })
+  }
+
+  listSources(): Promise<CrmSource[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_SOURCES, { legacySource: LEGACY_CRM_SOURCE_NAME })
+      return result.records.map((record) => ({ name: toText(record.get("name")), category: toText(record.get("category")) }))
     })
   }
 
   findRemovalFacts(taxId: string): Promise<RemovalFacts> {
     return this.read(async (session) => {
-      const record = (await session.run(Queries.CRM_FIND_REMOVAL_FACTS, { taxId, sourceName: CRM_SOURCE_NAME })).records[0]
+      const record = (await session.run(Queries.CRM_FIND_REMOVAL_FACTS, { taxId })).records[0]
       return {
         hasHistory: record?.get("hasHistory") === true,
-        hasOtherSource: record?.get("hasOtherSource") === true,
+        hasSource: record?.get("hasSource") === true,
         relatedToBase: record?.get("relatedToBase") === true,
         openTaskIds: ((record?.get("openTaskIds") as unknown[] | undefined) ?? []).map(toText),
       }
@@ -367,14 +414,14 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
       if (outcome === "archived") {
         await tx.run(Queries.CRM_CANCEL_OPEN_TASKS, { taxId, cancelReason: COMPANY_REMOVED_REASON, at })
       }
-      await tx.run(Queries.CRM_UNLINK_COMPANY, { taxId, sourceName: CRM_SOURCE_NAME, archive: outcome === "archived", at })
+      await tx.run(Queries.CRM_UNLINK_COMPANY, { taxId, archive: outcome === "archived", at })
       if (outcome === "deleted") await tx.run(Queries.CRM_DELETE_COMPANY, { taxId })
     })
   }
 
   companiesInCrm(taxIds: string[]): Promise<string[]> {
     return this.read(async (session) => {
-      const result = await session.run(Queries.CRM_COMPANIES_IN_CRM, { taxIds, sourceName: CRM_SOURCE_NAME })
+      const result = await session.run(Queries.CRM_COMPANIES_IN_CRM, { taxIds })
       return result.records.map((record) => toText(record.get("taxId")))
     })
   }

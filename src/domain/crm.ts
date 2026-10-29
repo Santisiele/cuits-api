@@ -1,6 +1,8 @@
 import { isSameUser } from "@domain/users.js"
 
-export const CRM_SOURCE_NAME = "CRM Excel"
+export const LEGACY_CRM_SOURCE_NAME = "CRM Excel"
+
+export const INSERVIBLE_LEVEL_LABEL = "inservible"
 
 export const MAX_NAME_LENGTH = 200
 export const MAX_TEXT_LENGTH = 2000
@@ -28,6 +30,11 @@ export type CrmRejection =
   | "task_not_found"
   | "user_not_found"
   | "invalid_entity"
+  | "next_task_required"
+  | "close_reason_required"
+  | "company_closed"
+  | "not_closed"
+  | "source_not_found"
 
 export type RemovalOutcome = "unlinked" | "archived" | "deleted"
 
@@ -42,11 +49,14 @@ export type ChangeOperation =
   | "cancel"
   | "crm_add"
   | "crm_remove"
+  | "close"
+  | "reopen"
 
 export interface CrmCompanyFields {
   crmBrand: string | null
   crmProduct: string | null
   crmOrigin: string | null
+  originSource: string | null
 }
 
 export interface CrmCompany extends CrmCompanyFields {
@@ -58,6 +68,9 @@ export interface CrmCompany extends CrmCompanyFields {
   lastActionDate: string | null
   nextDueDate: string | null
   openTaskCount: number
+  closedAt: string | null
+  closedReason: string | null
+  closedBy: string | null
 }
 
 export interface CrmCuitState {
@@ -70,7 +83,7 @@ export interface CrmCuitState {
 
 export interface RemovalFacts {
   hasHistory: boolean
-  hasOtherSource: boolean
+  hasSource: boolean
   relatedToBase: boolean
   openTaskIds: string[]
 }
@@ -108,6 +121,11 @@ export interface Task {
 export interface AgendaItem extends Task {
   businessName: string
   overdue: boolean
+}
+
+export interface CrmSource {
+  name: string
+  category: string
 }
 
 export interface CrmUser {
@@ -196,7 +214,7 @@ export function shouldMarkNosisPending(state: CrmCuitState): boolean {
 
 export function removalOutcome(facts: RemovalFacts): RemovalOutcome {
   if (facts.hasHistory) return "archived"
-  if (!facts.hasOtherSource && !facts.relatedToBase) return "deleted"
+  if (!facts.hasSource && !facts.relatedToBase) return "deleted"
   return "unlinked"
 }
 
@@ -230,9 +248,9 @@ export function isOverdue(dueDate: string, today: string): boolean {
 }
 
 export function taskStatusRejection(task: Task, next: unknown, cancelReason: string | null): CrmRejection | null {
-  if (next !== "done" && next !== "cancelled") return "invalid_status"
+  if (next !== "cancelled") return "invalid_status"
   if (task.status !== "open") return "task_not_open"
-  if (next === "cancelled" && cancelReason === null) return "cancel_reason_required"
+  if (cancelReason === null) return "cancel_reason_required"
   return null
 }
 

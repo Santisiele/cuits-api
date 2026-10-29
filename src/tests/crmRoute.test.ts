@@ -76,14 +76,53 @@ describe("crm company routes", () => {
         crmBrand: "Acme",
         crmProduct: "Seguros",
         crmOrigin: "Referido",
+        originSource: null,
         nosisPending: true,
         addedAt: expect.any(String),
         addedBy: "flavia",
         lastActionDate: null,
         nextDueDate: null,
         openTaskCount: 0,
+        closedAt: null,
+        closedReason: null,
+        closedBy: null,
       },
     ])
+  })
+
+  it("closes and reopens a company, answering every field", async () => {
+    await addCompany()
+    const missing = await app.inject({ method: "POST", url: `/crm/companies/${COMPANY}/close`, payload: {} })
+    expect(missing.statusCode).toBe(400)
+    expect(missing.json().error).toBe("close_reason_required")
+
+    const closed = await app.inject({ method: "POST", url: `/crm/companies/${COMPANY}/close`, payload: { reason: "No va más" } })
+    expect(closed.json()).toMatchObject({
+      cancelledTaskCount: 0,
+      inservible: false,
+      company: { taxId: COMPANY, closedReason: "No va más", closedBy: "flavia", closedAt: expect.any(String) },
+    })
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "close", "CrmCompany", COMPANY)
+
+    const reopened = await app.inject({ method: "POST", url: `/crm/companies/${COMPANY}/reopen` })
+    expect(reopened.json()).toMatchObject({ closedAt: null, closedReason: null })
+    expect((await app.inject({ method: "POST", url: `/crm/companies/${COMPANY}/reopen` })).statusCode).toBe(409)
+  })
+
+  it("lists the sources for the origin and refuses an unknown one with 404", async () => {
+    expect((await app.inject({ method: "GET", url: "/crm/sources" })).json()).toEqual({
+      sources: [
+        { name: "Poseidon", category: "known" },
+        { name: "Bolsa", category: "toKnow" },
+      ],
+    })
+    const response = await app.inject({
+      method: "POST",
+      url: "/crm/companies",
+      payload: { taxId: COMPANY, businessName: "ACME", originSource: "Nada" },
+    })
+    expect(response.statusCode).toBe(404)
+    expect(response.json().error).toBe("source_not_found")
   })
 
   it("answers the codes the front translates", async () => {
@@ -226,14 +265,15 @@ describe("crm action, task and agenda routes", () => {
     })
   })
 
-  it("answers a null next task when there is none", async () => {
+  it("refuses an action that leaves no next task", async () => {
     await addCompany()
     const response = await app.inject({
       method: "POST",
       url: "/crm/actions",
       payload: { companyTaxId: COMPANY, date: "2026-10-29", description: "x" },
     })
-    expect(response.json().nextTask).toBeNull()
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe("next_task_required")
   })
 
   it("serves the agenda with the company name and overdue flag", async () => {
