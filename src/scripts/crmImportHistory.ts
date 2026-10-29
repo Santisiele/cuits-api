@@ -5,7 +5,7 @@ import { logger } from "@logger.js"
 import { config } from "@config.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
-import { CrmService } from "@application/CrmService.js"
+import { CrmWorkService } from "@application/CrmWorkService.js"
 import { isProductionUri, parseCompanyList } from "@domain/crmImport.js"
 import { companiesByContact, parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
 import { responsibleKey } from "@domain/responsibles.js"
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   for (const name of history.invalidNames) logger.warn(`  name that is not a valid responsible (falls back to ${loader}): ${name}`)
 
   const repository = new Neo4jCrmRepository()
-  const service = new CrmService(repository)
+  const service = new CrmWorkService(repository)
 
   try {
     const existing = new Set((await repository.listResponsibles()).map((responsible) => responsibleKey(responsible.name)))
