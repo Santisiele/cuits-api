@@ -182,6 +182,12 @@ function toChange(properties: Record<string, unknown>): Change {
   }
 }
 
+function entityKey(change: Change): [string, string] {
+  if (change.entityType === "User") return ["usernameKey", usernameKey(change.entityId)]
+  if (change.entityType === "Responsible") return ["nameKey", responsibleKey(change.entityId)]
+  return ["id", change.entityId]
+}
+
 export async function writeChange(tx: ManagedTransaction, change: Change): Promise<void> {
   await tx.run(Queries.CRM_WRITE_CHANGE, {
     ...change,
@@ -189,11 +195,12 @@ export async function writeChange(tx: ManagedTransaction, change: Change): Promi
     before: JSON.stringify(change.before),
     after: JSON.stringify(change.after),
   })
+  const [key, entityId] = entityKey(change)
   await tx.run(
     `MATCH (ch:Change {id: $id})
-     MATCH (e:${ENTITY_LABELS[change.entityType]} {${change.entityType === "User" ? "usernameKey" : "id"}: $entityId})
+     MATCH (e:${ENTITY_LABELS[change.entityType]} {${key}: $entityId})
      CREATE (ch)-[:CHANGED]->(e)`,
-    { id: change.id, entityId: change.entityType === "User" ? usernameKey(change.entityId) : change.entityId }
+    { id: change.id, entityId }
   )
 }
 
