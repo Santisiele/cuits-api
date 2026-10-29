@@ -1,3 +1,5 @@
+import { isSameUser } from "@domain/users.js"
+
 export const CRM_SOURCE_NAME = "CRM Excel"
 
 export const MAX_NAME_LENGTH = 200
@@ -16,6 +18,16 @@ export type CrmRejection =
   | "already_archived"
   | "not_archived"
   | "cuil_already_set"
+  | "description_required"
+  | "cancel_reason_required"
+  | "invalid_status"
+  | "task_not_open"
+  | "task_other_company"
+  | "forbidden"
+  | "action_not_found"
+  | "task_not_found"
+  | "user_not_found"
+  | "invalid_entity"
 
 export type RemovalOutcome = "unlinked" | "archived" | "deleted"
 
@@ -60,7 +72,52 @@ export interface RemovalFacts {
   hasHistory: boolean
   hasOtherSource: boolean
   relatedToBase: boolean
+  openTaskIds: string[]
 }
+
+export type TaskStatus = "open" | "done" | "cancelled"
+
+export interface Action {
+  id: string
+  companyTaxId: string
+  date: string
+  description: string
+  doneBy: string
+  contactIds: string[]
+  createdTaskId: string | null
+  completedTaskIds: string[]
+  createdAt: string
+  archivedAt: string | null
+}
+
+export interface Task {
+  id: string
+  companyTaxId: string
+  description: string
+  dueDate: string
+  status: TaskStatus
+  cancelReason: string | null
+  assignee: string
+  createdBy: string
+  contactIds: string[]
+  createdAt: string
+  closedAt: string | null
+  archivedAt: string | null
+}
+
+export interface AgendaItem extends Task {
+  businessName: string
+  overdue: boolean
+}
+
+export interface Actor {
+  username: string
+  canAdminister: boolean
+}
+
+export const COMPANY_REMOVED_REASON = "company_removed"
+
+export const CHANGE_ENTITY_TYPES: readonly ChangeEntityType[] = ["Action", "Task", "Contact", "CrmCompany", "User"]
 
 export interface Contact {
   id: string
@@ -95,6 +152,8 @@ export interface Change {
 const CUIT_PATTERN = /^\d{11}$/
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const BIRTHDAY_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/
+const CALENDAR_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/
+const BUENOS_AIRES_OFFSET_HOURS = 3
 
 export function isValidCrmCuit(value: unknown): value is string {
   return typeof value === "string" && CUIT_PATTERN.test(value)
@@ -148,6 +207,53 @@ export function changedFields(
     changedAfter[key] = after[key] ?? null
   }
   return { before: changedBefore, after: changedAfter }
+}
+
+export function isValidCalendarDate(value: unknown): value is string {
+  if (typeof value !== "string") return false
+  const match = CALENDAR_DATE_PATTERN.exec(value)
+  if (!match) return false
+  return isRealDate(Number(match[1]), Number(match[2]), Number(match[3]))
+}
+
+export function todayInBuenosAires(now: Date): string {
+  return new Date(now.getTime() - BUENOS_AIRES_OFFSET_HOURS * 3_600_000).toISOString().slice(0, 10)
+}
+
+export function isOverdue(dueDate: string, today: string): boolean {
+  return dueDate < today
+}
+
+export function taskStatusRejection(task: Task, next: unknown, cancelReason: string | null): CrmRejection | null {
+  if (next !== "done" && next !== "cancelled") return "invalid_status"
+  if (task.status !== "open") return "task_not_open"
+  if (next === "cancelled" && cancelReason === null) return "cancel_reason_required"
+  return null
+}
+
+export function canChangeAction(actor: Actor, action: Action): boolean {
+  return actor.canAdminister || isSameUser(actor.username, action.doneBy)
+}
+
+export function canChangeTask(actor: Actor, task: Task): boolean {
+  return actor.canAdminister || isSameUser(actor.username, task.createdBy) || isSameUser(actor.username, task.assignee)
+}
+
+export function sortAgenda(items: AgendaItem[]): AgendaItem[] {
+  return [...items].sort(
+    (a, b) => a.dueDate.localeCompare(b.dueDate) || a.businessName.localeCompare(b.businessName) || a.id.localeCompare(b.id)
+  )
+}
+
+export function isChangeEntityType(value: unknown): value is ChangeEntityType {
+  return typeof value === "string" && (CHANGE_ENTITY_TYPES as readonly string[]).includes(value)
+}
+
+export function uniqueIds(values: unknown): string[] | null {
+  if (values === undefined || values === null) return []
+  if (!Array.isArray(values)) return null
+  const unique = [...new Set(values)]
+  return unique.every(isValidCrmId) ? unique : null
 }
 
 export function uniqueTaxIds(values: unknown): string[] | null {
