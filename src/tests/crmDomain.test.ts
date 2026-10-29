@@ -44,7 +44,7 @@ describe("shouldMarkNosisPending", () => {
 })
 
 describe("removalOutcome", () => {
-  const NOTHING = { hasHistory: false, hasOtherSource: false, relatedToBase: false, openTaskIds: [] }
+  const NOTHING = { hasHistory: false, hasSource: false, relatedToBase: false, openTaskIds: [] }
 
   it("archives a company with CRM history, whatever else holds it", () => {
     expect(removalOutcome({ ...NOTHING, hasHistory: true })).toBe("archived")
@@ -54,8 +54,8 @@ describe("removalOutcome", () => {
     expect(removalOutcome(NOTHING)).toBe("deleted")
   })
 
-  it("only unlinks one that another source still holds", () => {
-    expect(removalOutcome({ ...NOTHING, hasOtherSource: true })).toBe("unlinked")
+  it("only unlinks one that a source still holds", () => {
+    expect(removalOutcome({ ...NOTHING, hasSource: true })).toBe("unlinked")
   })
 
   it("only unlinks one related to the base", () => {
@@ -111,8 +111,8 @@ describe("dates in Buenos Aires", () => {
 })
 
 describe("taskStatusRejection", () => {
-  it("lets an open task be done", () => {
-    expect(taskStatusRejection(TASK, "done", null)).toBeNull()
+  it("never lets a task be marked done on its own: only an action that leaves the next one closes it", () => {
+    expect(taskStatusRejection(TASK, "done", null)).toBe("invalid_status")
   })
 
   it("needs a reason to cancel", () => {

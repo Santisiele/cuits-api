@@ -31,6 +31,11 @@ const STATUS_BY_REASON: Record<CrmRejection, number> = {
   action_not_found: 404,
   task_not_found: 404,
   user_not_found: 404,
+  next_task_required: 400,
+  close_reason_required: 400,
+  company_closed: 409,
+  not_closed: 409,
+  source_not_found: 404,
 }
 
 function actorOf(request: FastifyRequest): Actor {
@@ -52,12 +57,16 @@ const companySchema = {
     crmBrand: nullableString,
     crmProduct: nullableString,
     crmOrigin: nullableString,
+    originSource: nullableString,
     nosisPending: { type: "boolean" },
     addedAt: nullableString,
     addedBy: nullableString,
     lastActionDate: nullableString,
     nextDueDate: nullableString,
     openTaskCount: { type: "number" },
+    closedAt: nullableString,
+    closedReason: nullableString,
+    closedBy: nullableString,
   },
 } as const
 
@@ -160,6 +169,7 @@ const companyBodySchema = {
     crmBrand: nullableString,
     crmProduct: nullableString,
     crmOrigin: nullableString,
+    originSource: nullableString,
   },
 } as const
 
@@ -186,7 +196,14 @@ const taxIdParams = { type: "object", properties: { taxId: { type: "string" } } 
 
 const idParams = { type: "object", properties: { id: { type: "string" } } } as const
 
-type CompanyBody = { taxId?: string; businessName?: string | null; crmBrand?: string | null; crmProduct?: string | null; crmOrigin?: string | null }
+type CompanyBody = {
+  taxId?: string
+  businessName?: string | null
+  crmBrand?: string | null
+  crmProduct?: string | null
+  crmOrigin?: string | null
+  originSource?: string | null
+}
 
 type ContactBody = {
   fullName?: string
@@ -339,6 +356,69 @@ export default async function crmRoutes(server: FastifyInstance) {
         return handleError(err, reply)
       }
     }
+  )
+
+  server.post<{ Params: { taxId: string }; Body: { reason?: string } }>(
+    "/crm/companies/:taxId/close",
+    {
+      schema: {
+        summary: "Close a company that no longer goes anywhere",
+        description: "Cancels its open tasks with the reason. If the CUIT is in any source it gets the Inservible trust level with that reason.",
+        params: taxIdParams,
+        body: { type: "object", properties: { reason: { type: "string" } } },
+        response: {
+          200: {
+            type: "object",
+            properties: { company: companySchema, cancelledTaskCount: { type: "number" }, inservible: { type: "boolean" } },
+          },
+          ...errors,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const result = await service.closeCompany(request.params.taxId, request.body?.reason, request.username)
+        logCrmOperation(request.username, "close", "CrmCompany", request.params.taxId)
+        return result
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.post<{ Params: { taxId: string } }>(
+    "/crm/companies/:taxId/reopen",
+    { schema: { summary: "Reopen a closed company", params: taxIdParams, response: { 200: companySchema, ...errors } } },
+    async (request, reply) => {
+      try {
+        const company = await service.reopenCompany(request.params.taxId, request.username)
+        logCrmOperation(request.username, "reopen", "CrmCompany", request.params.taxId)
+        return company
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
+  server.get(
+    "/crm/sources",
+    {
+      schema: {
+        summary: "The sources a company's origin can point to",
+        response: {
+          200: {
+            type: "object",
+            properties: {
+              sources: {
+                type: "array",
+                items: { type: "object", properties: { name: { type: "string" }, category: { type: "string" } } },
+              },
+            },
+          },
+        },
+      },
+    },
+    async () => ({ sources: await service.listSources() })
   )
 
   server.post<{ Body: ContactBody }>(
