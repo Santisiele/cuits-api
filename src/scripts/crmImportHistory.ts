@@ -6,6 +6,7 @@ import { config } from "@config.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
 import { CrmWorkService } from "@application/CrmWorkService.js"
+import { loadCompanyHistory } from "@application/crmHistoryLoader.js"
 import { isProductionUri, parseCompanyList } from "@domain/crmImport.js"
 import { companiesByContact, parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
 import { responsibleKey } from "@domain/responsibles.js"
@@ -99,28 +100,11 @@ async function main(): Promise<void> {
     let failed = 0
     for (const [taxId, companySteps] of history.byCompany) {
       if (!inCrm.has(taxId)) continue
-      let openTaskId: string | null = null
-      for (const step of companySteps) {
-        try {
-          const result = await service.importAction(
-            {
-              companyTaxId: taxId,
-              doneBy: step.doneBy,
-              date: step.date,
-              description: step.description,
-              contactIds: [],
-              completesTaskIds: openTaskId ? [openTaskId] : [],
-              nextTask: step.nextTask,
-            },
-            { username: loader, canAdminister: true }
-          )
-          openTaskId = result.nextTask?.id ?? null
-          done++
-        } catch (err) {
-          failed++
-          logger.error(`  ${step.businessName} ${step.date} ✗ ${err instanceof Error ? err.message : String(err)}`)
-        }
-      }
+      const tally = await loadCompanyHistory(service, taxId, companySteps, loader, (step, message) =>
+        logger.error(`  ${step.businessName} ${step.date} ✗ ${message}`)
+      )
+      done += tally.done
+      failed += tally.failed
       logger.info(`[${done + failed}/${steps.length}] ${companySteps[0]?.businessName ?? taxId}: ${companySteps.length} actions`)
     }
 

@@ -26,6 +26,8 @@ import {
   type RemovalOutcome,
   CompanyClosedError,
   TaskChangedError,
+  type AgendaRow,
+  type Postponement,
   TaskNoLongerOpenError,
 } from "@domain/crm.js"
 
@@ -136,7 +138,22 @@ function toTask(record: { get(key: string): unknown }): Task {
     createdAt: toText(task["createdAt"]),
     closedAt: toNullableText(task["closedAt"]),
     archivedAt: toNullableText(task["archivedAt"]),
+    postponements: toPostponements(record.get("postponements")),
   }
+}
+
+function toPostponements(value: unknown): Postponement[] {
+  if (!Array.isArray(value)) return []
+  return value.map((item) => {
+    const postponement = item as Record<string, unknown>
+    return {
+      from: toText(postponement["from"]),
+      to: toText(postponement["to"]),
+      reason: toNullableText(postponement["reason"]),
+      by: toText(postponement["by"]),
+      at: toText(postponement["at"]),
+    }
+  })
 }
 
 function toLastAction(value: unknown): LastAction | null {
@@ -412,7 +429,15 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
-  listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]> {
+  postponeTask(task: Task, postponement: Postponement, change: Change): Promise<void> {
+    return this.write(async (tx) => {
+      const result = await tx.run(Queries.CRM_POSTPONE_TASK, { id: task.id, ...postponement })
+      if (toNumber(result.records[0]?.get("postponed")) !== 1) throw new TaskChangedError(task.id)
+      await writeChange(tx, change)
+    })
+  }
+
+  listAgenda(assignees: string[] | null): Promise<AgendaRow[]> {
     return this.read(async (session) => {
       const result = await session.run(Queries.CRM_LIST_AGENDA, {
         assigneeKeys: assignees === null ? null : assignees.map(responsibleKey),

@@ -47,6 +47,7 @@ const TASK: Task = {
   createdAt: AT,
   closedAt: null,
   archivedAt: null,
+  postponements: [],
 }
 
 function change(entityType: Change["entityType"], entityId: string): Change {

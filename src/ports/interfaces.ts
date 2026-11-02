@@ -30,6 +30,8 @@ import type {
   CrmCuitState,
   RemovalFacts,
   RemovalOutcome,
+  AgendaRow,
+  Postponement,
 } from "@domain/crm.js"
 import type {
   BirthdaySweepSnapshot,
@@ -387,7 +389,8 @@ export interface ICrmRepository {
   updateTask(task: Task, change: Change, previous: Task): Promise<void>
   listActions(taxId: string): Promise<Action[]>
   listTasks(taxId: string): Promise<Task[]>
-  listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]>
+  listAgenda(assignees: string[] | null): Promise<AgendaRow[]>
+  postponeTask(task: Task, postponement: Postponement, change: Change): Promise<void>
   listResponsibles(): Promise<Responsible[]>
 }
 

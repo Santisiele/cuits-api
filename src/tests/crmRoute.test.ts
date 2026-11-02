@@ -233,6 +233,7 @@ describe("crm action, task and agenda routes", () => {
     createdAt: expect.any(String),
     closedAt: null,
     archivedAt: null,
+    postponements: [],
   }
 
   async function recordAction() {
@@ -292,8 +293,24 @@ describe("crm action, task and agenda routes", () => {
         businessName: "ACME SA",
         overdue: expect.any(Boolean),
         lastAction: { date: "2026-10-29", description: "Lo llamé", doneBy: "Flavia", contacts: [] },
+        otherTasks: [],
+        hiddenTasks: 0,
       },
     ])
+  })
+
+  it("postpones a task and answers it with its postponements", async () => {
+    const taskId = (await recordAction()).json().nextTask.id
+    const response = await app.inject({ method: "POST", url: `/crm/tasks/${taskId}/postpone`, payload: { dueDate: "2026-11-10", reason: "De viaje" } })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      dueDate: "2026-11-10",
+      postponements: [{ from: "2026-11-02", to: "2026-11-10", reason: "De viaje", by: "flavia", at: expect.any(String) }],
+    })
+    expect(logCrmOperation).toHaveBeenLastCalledWith("flavia", "postpone", "Task", taskId, expect.objectContaining({ from: "2026-11-02", reason: "De viaje" }))
+    const earlier = await app.inject({ method: "POST", url: `/crm/tasks/${taskId}/postpone`, payload: { dueDate: "2026-11-01" } })
+    expect(earlier.statusCode).toBe(400)
+    expect(earlier.json().error).toBe("not_later")
   })
 
   it("shows actions and tasks on the company", async () => {

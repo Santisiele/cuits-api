@@ -453,6 +453,28 @@ export default async function crmRoutes(server: FastifyInstance) {
     }
   )
 
+  server.post<{ Params: { id: string }; Body: { dueDate?: string; reason?: string | null } }>(
+    "/crm/tasks/:id/postpone",
+    {
+      schema: {
+        summary: "Postpone a task to a later date, keeping each postponement in its own history",
+        params: idParams,
+        body: { type: "object", properties: { dueDate: { type: "string" }, reason: nullableString } },
+        response: { 200: taskSchema, ...errors },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const task = await work.postponeTask(request.params.id, request.body ?? {}, actorOf(request))
+        const last = task.postponements[task.postponements.length - 1]
+        logCrmOperation(request.username, "postpone", "Task", task.id, { ...taskDetails(task), from: last?.from, reason: last?.reason })
+        return task
+      } catch (err) {
+        return handleError(err, reply)
+      }
+    }
+  )
+
   server.get<{ Querystring: AgendaQuery }>(
     "/crm/agenda",
     {

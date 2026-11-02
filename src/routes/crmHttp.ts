@@ -23,6 +23,7 @@ const STATUS_BY_REASON: Record<CrmRejection, number> = {
   invalid_status: 400,
   task_not_open: 400,
   task_changed: 409,
+  not_later: 400,
   task_other_company: 400,
   invalid_entity: 400,
   forbidden: 403,

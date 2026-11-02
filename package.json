@@ -40,6 +40,12 @@
     "crm:nosis": "tsx src/scripts/manual.ts src/scripts/crmNosis.ts",
     "crm:import": "tsx src/scripts/manual.ts src/scripts/crmImport.ts",
     "crm:import-history": "tsx src/scripts/manual.ts src/scripts/crmImportHistory.ts",
+    "crm:missing-cuits": "tsx src/scripts/crmMissingCuits.ts",
+    "crm:find-cuits": "tsx src/scripts/crmFindCuits.ts",
+    "crm:import-found": "tsx src/scripts/manual.ts src/scripts/crmImportFound.ts",
+    "crm:import-contacts": "tsx src/scripts/manual.ts src/scripts/crmImportContacts.ts",
+    "crm:import-removed": "tsx src/scripts/manual.ts src/scripts/crmImportRemoved.ts",
+    "crm:sync": "tsx src/scripts/manual.ts src/scripts/crmSync.ts",
     "migrate:crmSource": "tsx src/scripts/manual.ts src/scripts/migrateCrmSource.ts",
     "migrate:responsibles": "tsx src/scripts/manual.ts src/scripts/migrateResponsibles.ts"
   },

@@ -84,6 +84,11 @@ export interface TaskBody {
   cancelReason?: unknown
 }
 
+export interface PostponeBody {
+  dueDate?: unknown
+  reason?: unknown
+}
+
 export interface ActionBody {
   companyTaxId?: unknown
   doneBy?: unknown
@@ -117,6 +122,7 @@ const MESSAGES: Record<CrmRejection, string> = {
   invalid_status: "A task can only be marked done or cancelled",
   task_not_open: "That task is no longer open",
   task_changed: "That task changed meanwhile, reload it",
+  not_later: "A task can only be postponed to a later date",
   task_other_company: "That task belongs to another company",
   forbidden: "You are not allowed to do this",
   action_not_found: "That action does not exist",
