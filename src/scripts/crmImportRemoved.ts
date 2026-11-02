@@ -69,10 +69,10 @@ async function main(): Promise<void> {
         await contacts.createContact({ ...person, companyTaxIds: [company.taxId] }, by)
       }
       const loaded = await loadCompanyHistory(work, company.taxId, pending, by, (step, message) => logger.error(`  ${step.date} ✗ ${message}`))
-      const people = await repository.listContacts(company.taxId)
+      const atCompany = await repository.listContacts(company.taxId)
       for (const action of await repository.listActions(company.taxId)) {
         const mention = contactInDescription(action.description)
-        const person = mention && people.find((other) => nameKey(other.fullName) === nameKey(mention.name))
+        const person = mention && atCompany.find((other) => nameKey(other.fullName) === nameKey(mention.name))
         if (!mention || !person || action.contactIds.length > 0) continue
         await work.updateAction(action.id, { contactIds: [person.id], description: mention.rest.trim() || NO_DETAIL }, { username: by, canAdminister: true })
       }
