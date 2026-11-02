@@ -9,12 +9,12 @@ import { CrmWorkService } from "@application/CrmWorkService.js"
 import { CrmError } from "@application/CrmServiceBase.js"
 import { loadCompanyHistory } from "@application/crmHistoryLoader.js"
 import { isProductionUri } from "@domain/crmImport.js"
-import { parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
+import { nameKey, parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
 import { foundCompanies } from "@domain/crmMissingCuits.js"
 import { stepsNotLoaded } from "@domain/crmContactImport.js"
 import { responsibleKey } from "@domain/responsibles.js"
 
-const USAGE = 'Usage: pnpm crm:import-found "<Empresas sin CUIT.xlsx>" "<CRM Propio.xlsx>" --by <username> [--alias "luc=Luchi"]... [--apply] [--production]'
+const USAGE = 'Usage: pnpm crm:import-found "<Empresas sin CUIT.xlsx>" "<CRM Propio.xlsx>" --by <username> [--alias "luc=Luchi"]... [--orphan "Polinoa alguien=30602039958"]... [--apply] [--production]'
 
 function valuesAfter(args: string[], flag: string): string[] {
   return args.flatMap((arg, index) => (arg === flag && args[index + 1] ? [args[index + 1]!] : []))
@@ -22,7 +22,7 @@ function valuesAfter(args: string[], flag: string): string[] {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
-  const flagsWithValue = new Set(["--by", "--alias"])
+  const flagsWithValue = new Set(["--by", "--alias", "--orphan"])
   const [foundFile, crmFile] = args.filter((arg, index) => !arg.startsWith("--") && !flagsWithValue.has(args[index - 1] ?? ""))
   const by = valuesAfter(args, "--by")[0]
   if (!foundFile || !crmFile || !by) throw new Error(USAGE)
@@ -39,6 +39,14 @@ async function main(): Promise<void> {
   if (!foundSheet || !crm.Sheets["Listas"] || !crm.Sheets["Seguimiento"]) throw new Error("Expected the Sin CUIT sheet and the Listas and Seguimiento sheets")
   const listas = XLSX.utils.sheet_to_json<Record<string, unknown>>(crm.Sheets["Listas"], { defval: "" })
   const found = foundCompanies(XLSX.utils.sheet_to_json<Record<string, unknown>>(foundSheet, { defval: "" }), listas)
+  const orphans = valuesAfter(args, "--orphan").map((pair) => {
+    const [contact, cuit] = pair.split("=").map((part) => part.trim()) as [string, string]
+    return { contact, taxId: cuit.replace(/\D/g, "") }
+  })
+  for (const orphan of orphans) {
+    found.taxIdByCompany.set(orphan.contact, orphan.taxId)
+    found.companyByContact.set(nameKey(orphan.contact), orphan.contact)
+  }
   const history = parseHistory(
     XLSX.utils.sheet_to_json<Record<string, unknown>>(crm.Sheets["Seguimiento"], { defval: "" }),
     found.taxIdByCompany,
@@ -89,6 +97,26 @@ async function main(): Promise<void> {
       const loaded = await loadCompanyHistory(work, company.taxId, pending, by, (step, message) =>
         logger.error(`  ${step.businessName} ${step.date} ✗ ${message}`)
       )
+      tally.actions += loaded.done
+      tally.actionsFailed += loaded.failed
+      logger.info(`${label} ✓`)
+    }
+
+    const covered = new Set(found.companies.map((company) => company.taxId))
+    for (const taxId of new Set(orphans.map((orphan) => orphan.taxId).filter((taxId) => !covered.has(taxId)))) {
+      const steps = history.byCompany.get(taxId) ?? []
+      const company = await repository.findCompany(taxId)
+      if (!company) {
+        logger.warn(`${taxId} is not in the CRM, its ${steps.length} rows without company stay out`)
+        continue
+      }
+      const pending = stepsNotLoaded(steps, await repository.listActions(taxId))
+      const label = `${taxId} ${company.businessName}: ${pending.length} rows without company to add`
+      if (!apply || pending.length === 0) {
+        logger.info(label)
+        continue
+      }
+      const loaded = await loadCompanyHistory(work, taxId, pending, by, (step, message) => logger.error(`  ${step.date} ✗ ${message}`))
       tally.actions += loaded.done
       tally.actionsFailed += loaded.failed
       logger.info(`${label} ✓`)
