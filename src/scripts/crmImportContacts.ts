@@ -9,7 +9,7 @@ import { CrmWorkService } from "@application/CrmWorkService.js"
 import { isProductionUri, parseCompanyList } from "@domain/crmImport.js"
 import { NO_DETAIL, nameKey } from "@domain/crmHistoryImport.js"
 import { foundCompanies } from "@domain/crmMissingCuits.js"
-import { contactInDescription, parseListasContacts } from "@domain/crmContactImport.js"
+import { contactInDescription, foundContactRows, parseListasContacts } from "@domain/crmContactImport.js"
 
 const USAGE = 'Usage: pnpm crm:import-contacts "<CRM Propio.xlsx>" [--found "<Empresas sin CUIT.xlsx>"] --by <username> [--apply] [--production]'
 
@@ -35,11 +35,14 @@ async function main(): Promise<void> {
 
   const listas = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.readFile(crmFile).Sheets["Listas"]!, { defval: "" })
   const taxIdByCompany = new Map(parseCompanyList(listas).companies.map((company) => [company.businessName, company.taxId]))
+  const people = [...listas]
   if (foundFile) {
-    const found = foundCompanies(XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.readFile(foundFile).Sheets["Sin CUIT"]!, { defval: "" }), listas)
+    const foundRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(XLSX.readFile(foundFile).Sheets["Sin CUIT"]!, { defval: "" })
+    const found = foundCompanies(foundRows, listas)
     for (const [name, taxId] of found.taxIdByCompany) taxIdByCompany.set(name, taxId)
+    people.push(...foundContactRows(foundRows))
   }
-  const parsed = parseListasContacts(listas, taxIdByCompany)
+  const parsed = parseListasContacts(people, taxIdByCompany)
   logger.info(`${parsed.contacts.length} people in Listas with a company that has a CUIT, ${parsed.withoutCompany.length} rows whose company has none`)
   for (const item of parsed.withoutCompany) logger.warn(`  no CUIT for the company of ${item.fullName}: ${item.company || "(empty)"}`)
   for (const item of parsed.badBirthdays) logger.warn(`  birthday left out for ${item.fullName}: "${item.value}" is not dd/mm/yyyy`)

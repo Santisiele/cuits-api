@@ -11,6 +11,7 @@ import { loadCompanyHistory } from "@application/crmHistoryLoader.js"
 import { isProductionUri } from "@domain/crmImport.js"
 import { parseAliases, parseHistory, responsiblesIn } from "@domain/crmHistoryImport.js"
 import { foundCompanies } from "@domain/crmMissingCuits.js"
+import { stepsNotLoaded } from "@domain/crmContactImport.js"
 import { responsibleKey } from "@domain/responsibles.js"
 
 const USAGE = 'Usage: pnpm crm:import-found "<Empresas sin CUIT.xlsx>" "<CRM Propio.xlsx>" --by <username> [--alias "luc=Luchi"]... [--apply] [--production]'
@@ -63,8 +64,9 @@ async function main(): Promise<void> {
       const steps = history.byCompany.get(company.taxId) ?? []
       const label = `[${index + 1}/${found.companies.length}] ${company.taxId} ${company.businessName} (${steps.length} actions)`
       const state = await repository.findCuitState(company.taxId)
-      const existingActions = state.inCrm ? (await repository.listActions(company.taxId)).length : 0
-      const historyNote = existingActions > 0 ? `, keeps its ${existingActions} actions and gets none of these` : ""
+      const existing = state.inCrm ? await repository.listActions(company.taxId) : []
+      const pending = stepsNotLoaded(steps, existing)
+      const historyNote = existing.length > 0 ? `, has ${existing.length} actions, ${pending.length} of these are new` : ""
 
       if (!apply) {
         logger.info(`${label} ${state.inCrm ? "already in the CRM" : state.exists ? "in the graph, would join the CRM" : "new, would be created"}${historyNote}`)
@@ -82,12 +84,9 @@ async function main(): Promise<void> {
         }
         tally.alreadyIn++
       }
-      if (existingActions > 0) {
-        tally.historySkipped += steps.length
-        logger.warn(`${label} history left out${historyNote}`)
-        continue
-      }
-      const loaded = await loadCompanyHistory(work, company.taxId, steps, by, (step, message) =>
+      tally.historySkipped += steps.length - pending.length
+      if (pending.length === 0) continue
+      const loaded = await loadCompanyHistory(work, company.taxId, pending, by, (step, message) =>
         logger.error(`  ${step.businessName} ${step.date} ✗ ${message}`)
       )
       tally.actions += loaded.done
@@ -105,7 +104,7 @@ async function main(): Promise<void> {
     logger.info(`Companies failed:    ${tally.failed}`)
     logger.info(`Actions recorded:    ${tally.actions}`)
     logger.info(`Actions failed:      ${tally.actionsFailed}`)
-    logger.info(`Actions left out:    ${tally.historySkipped}`)
+    logger.info(`Already loaded:      ${tally.historySkipped}`)
   } finally {
     await Neo4jDriver.close()
   }

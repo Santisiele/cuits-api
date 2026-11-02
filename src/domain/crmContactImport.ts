@@ -70,3 +70,25 @@ export function contactInDescription(description: string): { name: string; rest:
   const match = WITH_PREFIX.exec(description)
   return match ? { name: match[1]!.trim(), rest: match[2]! } : null
 }
+
+function actionKey(date: string, description: string): string {
+  const said = contactInDescription(description)?.rest ?? description
+  return `${date}|${nameKey(said)}`
+}
+
+export function stepsNotLoaded<T extends { date: string; description: string }>(
+  steps: readonly T[],
+  existing: readonly { date: string; description: string }[]
+): T[] {
+  const loaded = new Set(existing.map((action) => actionKey(action.date, action.description)))
+  return steps.filter((step) => !loaded.has(actionKey(step.date, step.description)))
+}
+
+export function foundContactRows(found: readonly Row[]): Row[] {
+  return found.flatMap((row) => {
+    const company = text(row["Empresa"])
+    const contact = text(row["Contacto"])
+    if (!contact) return []
+    return [{ "Nombre y Apellido": contact, Empresa: company === "" || company.startsWith("#") ? contact : company }]
+  })
+}

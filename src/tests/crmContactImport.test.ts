@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { birthdayFrom, contactInDescription, parseListasContacts } from "@domain/crmContactImport"
+import { birthdayFrom, contactInDescription, foundContactRows, parseListasContacts, stepsNotLoaded } from "@domain/crmContactImport"
 
 const COMPANIES = new Map([
   ["Braku SA", "30710811160"],
@@ -49,5 +49,35 @@ describe("import helpers", () => {
   it("finds who an imported action was with", () => {
     expect(contactInDescription("Con Andrés Braun: le mandé la propuesta")).toEqual({ name: "Andrés Braun", rest: "le mandé la propuesta" })
     expect(contactInDescription("le mandé la propuesta")).toBeNull()
+  })
+})
+
+describe("stepsNotLoaded", () => {
+  it("leaves out the actions already loaded, even after their contact was taken out of the text", () => {
+    const steps = [
+      { date: "2026-05-19", description: "Con Ana: la llamé" },
+      { date: "2026-05-26", description: "Con Ana: (sin detalle)" },
+      { date: "2026-06-01", description: "Con Quique: abrió la cuenta" },
+    ]
+    const existing = [
+      { date: "2026-05-19", description: "La llamé" },
+      { date: "2026-05-26", description: "Con Ana: (sin detalle)" },
+    ]
+    expect(stepsNotLoaded(steps, existing).map((step) => step.date)).toEqual(["2026-06-01"])
+  })
+})
+
+describe("foundContactRows", () => {
+  it("brings the contact of each found row, naming rows without company after the contact", () => {
+    expect(
+      foundContactRows([
+        { Empresa: "Selsa Group", Contacto: "Quique Chirom" },
+        { Empresa: "#N/A", Contacto: "Gustavo Carranza" },
+        { Empresa: "Chammas", Contacto: "" },
+      ])
+    ).toEqual([
+      { "Nombre y Apellido": "Quique Chirom", Empresa: "Selsa Group" },
+      { "Nombre y Apellido": "Gustavo Carranza", Empresa: "Gustavo Carranza" },
+    ])
   })
 })
