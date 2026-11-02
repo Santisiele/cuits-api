@@ -5,6 +5,7 @@ type Row = Record<string, unknown>
 
 export const MISSING_CUIT_HEADERS = [
   "Empresa",
+  "Buscar como",
   "Contacto",
   "Motivo",
   "Acciones en Seguimiento",
@@ -78,6 +79,7 @@ export function missingCuitRows(listas: readonly Row[], seguimiento: readonly Ro
     const seen = activity.get(nameKey(name))
     return {
       Empresa: name,
+      "Buscar como": "",
       Contacto: contacts.get(nameKey(name)) || seen?.contact || "",
       Motivo: reason,
       "Acciones en Seguimiento": seen?.count ?? 0,
@@ -104,9 +106,13 @@ export function missingCuitRows(listas: readonly Row[], seguimiento: readonly Ro
   )
 }
 
+export function searchName(row: Partial<Record<string, unknown>>): string {
+  return text(row["Buscar como"]) || text(row["Empresa"])
+}
+
 export function needsSearch(row: Partial<Record<string, unknown>>, retry: boolean): boolean {
   if (text(row["CUIT"]).replace(/\D/g, "").length === 11) return false
-  if (text(row["Empresa"]).startsWith("#")) return false
+  if (searchName(row).startsWith("#")) return false
   const status = text(row["Estado"])
   if (status === "") return true
   return retry && status !== FOUND_STATUS

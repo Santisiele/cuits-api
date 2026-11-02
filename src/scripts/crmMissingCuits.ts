@@ -22,7 +22,7 @@ const rows = missingCuitRows(
 )
 
 const sheet = XLSX.utils.json_to_sheet(rows, { header: [...MISSING_CUIT_HEADERS] })
-sheet["!cols"] = [{ wch: 40 }, { wch: 24 }, { wch: 44 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 34 }]
+sheet["!cols"] = [{ wch: 40 }, { wch: 28 }, { wch: 24 }, { wch: 44 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 34 }]
 sheet["!autofilter"] = { ref: sheet["!ref"]! }
 const out = XLSX.utils.book_new()
 XLSX.utils.book_append_sheet(out, sheet, "Sin CUIT")

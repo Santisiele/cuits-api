@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { FOUND_STATUS, NOT_FOUND_STATUS, foundCompanies, missingCuitRows, needsSearch } from "@domain/crmMissingCuits"
+import { FOUND_STATUS, NOT_FOUND_STATUS, foundCompanies, missingCuitRows, needsSearch, searchName } from "@domain/crmMissingCuits"
 
 const LISTAS = [
   { Empresa: "ACME SA", CUIT: "30-71234567-8", "Nombre y Apellido": "Ana" },
@@ -38,6 +38,7 @@ describe("missingCuitRows", () => {
       "Última acción": "15/10/2026",
       "Próxima acción": "25/10/2026",
       CUIT: "",
+      "Buscar como": "",
     })
   })
 
@@ -52,6 +53,12 @@ describe("needsSearch", () => {
     expect(needsSearch({ Empresa: "Braku SA", CUIT: "", Estado: "" }, false)).toBe(true)
     expect(needsSearch({ Empresa: "Braku SA", CUIT: "30-71234567-8", Estado: "" }, false)).toBe(false)
     expect(needsSearch({ Empresa: "#N/A", CUIT: "", Estado: "" }, false)).toBe(false)
+  })
+
+  it("searches by the name written in Buscar como when there is one", () => {
+    expect(searchName({ Empresa: "Óptica", "Buscar como": "FULL LENS SRL" })).toBe("FULL LENS SRL")
+    expect(searchName({ Empresa: "Óptica", "Buscar como": "" })).toBe("Óptica")
+    expect(needsSearch({ Empresa: "#N/A", "Buscar como": "Schwartz SA", CUIT: "", Estado: "" }, false)).toBe(true)
   })
 
   it("retries the ones not found only when asked", () => {

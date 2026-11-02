@@ -3,7 +3,7 @@ import XLSX from "xlsx"
 import { logger } from "@logger.js"
 import { NosisScraper, type NosisSearchResult } from "@scrapers/nosis.js"
 import { formatCuit, searchableNames } from "@helpers/relationTree.js"
-import { FOUND_STATUS, MISSING_CUIT_HEADERS, NOT_FOUND_STATUS, needsSearch } from "@domain/crmMissingCuits.js"
+import { FOUND_STATUS, MISSING_CUIT_HEADERS, NOT_FOUND_STATUS, needsSearch, searchName } from "@domain/crmMissingCuits.js"
 
 const USAGE = "Usage: pnpm crm:find-cuits <Empresas sin CUIT.xlsx> [--count N] [--retry]"
 
@@ -25,7 +25,7 @@ function wait(minMs: number, maxMs: number): Promise<void> {
 
 function save(rows: Record<string, unknown>[]): void {
   const sheet = XLSX.utils.json_to_sheet(rows, { header: [...MISSING_CUIT_HEADERS] })
-  sheet["!cols"] = [{ wch: 40 }, { wch: 24 }, { wch: 44 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 34 }]
+  sheet["!cols"] = [{ wch: 40 }, { wch: 28 }, { wch: 24 }, { wch: 44 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 40 }, { wch: 34 }]
   sheet["!autofilter"] = { ref: sheet["!ref"]! }
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, sheet, "Sin CUIT")
@@ -57,7 +57,7 @@ const scraper = await NosisScraper.create()
 let found = 0
 
 for (const [index, row] of pending.entries()) {
-  const name = String(row["Empresa"])
+  const name = searchName(row)
   logger.info(`[${index + 1}/${pending.length}] ${name}`)
   try {
     const identity = await resolve(scraper, name)
