@@ -33,7 +33,7 @@ export function syncChanges(steps: readonly HistoryStep[], actions: readonly Act
     }
     if (said(action.description) !== said(step.description)) changes.push({ kind: "text", step, action })
     const task = tasks.find((candidate) => candidate.id === action.createdTaskId)
-    if (!task && step.nextTask && step === steps[steps.length - 1]) changes.push({ kind: "next", step, action })
+    if (!task && step.nextTask && step === steps[steps.length - 1] && !tasks.some((other) => other.status === "open")) changes.push({ kind: "next", step, action })
     if (!task || task.status !== "open" || !step.nextTask) continue
     const next = step.nextTask
     const fields: { dueDate?: string; assignee?: string; description?: string } = {}

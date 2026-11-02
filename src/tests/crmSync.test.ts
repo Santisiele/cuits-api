@@ -69,6 +69,11 @@ describe("syncChanges", () => {
     const changes = syncChanges([step("2026-10-30", "cero bola", { description: "(sin detalle)", dueDate: "2026-11-18", assignee: "Tomi J" })], [action("a2", "2026-10-30", "cero bola", null)], [])
     expect(changes.map((change) => change.kind)).toEqual(["next"])
   })
+
+  it("adds that next task only once", () => {
+    const changes = syncChanges([step("2026-10-30", "cero bola", { description: "(sin detalle)", dueDate: "2026-11-18", assignee: "Tomi J" })], [action("a2", "2026-10-30", "cero bola", null)], [task("t9", "2026-11-18", "Tomi J")])
+    expect(changes).toEqual([])
+  })
 })
 
 describe("taskToComplete", () => {
