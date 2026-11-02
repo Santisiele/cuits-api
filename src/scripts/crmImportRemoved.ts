@@ -10,8 +10,8 @@ import { CrmWorkService } from "@application/CrmWorkService.js"
 import { CrmError } from "@application/CrmServiceBase.js"
 import { loadCompanyHistory } from "@application/crmHistoryLoader.js"
 import { isProductionUri } from "@domain/crmImport.js"
-import { nameKey, parseAliases, parseHistory } from "@domain/crmHistoryImport.js"
-import { parseListasContacts, stepsNotLoaded } from "@domain/crmContactImport.js"
+import { NO_DETAIL, nameKey, parseAliases, parseHistory } from "@domain/crmHistoryImport.js"
+import { contactInDescription, parseListasContacts, stepsNotLoaded } from "@domain/crmContactImport.js"
 import { REMOVED_REASON, parseRemovedSheet } from "@domain/crmRemovedImport.js"
 
 const USAGE = 'Usage: pnpm crm:import-removed "<CRM Propio.xlsx>" --by <username> [--cuit "NITO TEXTIL=30717893855"]... [--apply] [--production]'
@@ -69,6 +69,13 @@ async function main(): Promise<void> {
         await contacts.createContact({ ...person, companyTaxIds: [company.taxId] }, by)
       }
       const loaded = await loadCompanyHistory(work, company.taxId, pending, by, (step, message) => logger.error(`  ${step.date} ✗ ${message}`))
+      const people = await repository.listContacts(company.taxId)
+      for (const action of await repository.listActions(company.taxId)) {
+        const mention = contactInDescription(action.description)
+        const person = mention && people.find((other) => nameKey(other.fullName) === nameKey(mention.name))
+        if (!mention || !person || action.contactIds.length > 0) continue
+        await work.updateAction(action.id, { contactIds: [person.id], description: mention.rest.trim() || NO_DETAIL }, { username: by, canAdminister: true })
+      }
       const current = await repository.findCompany(company.taxId)
       if (current && current.closedAt === null) await companies.closeCompany(company.taxId, REMOVED_REASON, by)
       logger.info(`${company.businessName} ✓ ${loaded.done} actions, closed`)
