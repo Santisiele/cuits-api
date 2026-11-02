@@ -42,6 +42,7 @@
     "crm:import-history": "tsx src/scripts/manual.ts src/scripts/crmImportHistory.ts",
     "crm:missing-cuits": "tsx src/scripts/crmMissingCuits.ts",
     "crm:find-cuits": "tsx src/scripts/crmFindCuits.ts",
+    "crm:import-found": "tsx src/scripts/manual.ts src/scripts/crmImportFound.ts",
     "migrate:crmSource": "tsx src/scripts/manual.ts src/scripts/migrateCrmSource.ts",
     "migrate:responsibles": "tsx src/scripts/manual.ts src/scripts/migrateResponsibles.ts"
   },

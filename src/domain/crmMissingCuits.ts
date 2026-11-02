@@ -1,4 +1,4 @@
-import { parseCompanyList } from "@domain/crmImport.js"
+import { parseCompanyList, type ImportedCompany } from "@domain/crmImport.js"
 import { companiesByContact, excelDate, nameKey } from "@domain/crmHistoryImport.js"
 
 type Row = Record<string, unknown>
@@ -110,4 +110,52 @@ export function needsSearch(row: Partial<Record<string, unknown>>, retry: boolea
   const status = text(row["Estado"])
   if (status === "") return true
   return retry && status !== FOUND_STATUS
+}
+
+export interface FoundCompanies {
+  companies: ImportedCompany[]
+  skipped: { name: string; reason: string }[]
+  taxIdByCompany: Map<string, string>
+  companyByContact: Map<string, string>
+}
+
+function listFields(listas: readonly Row[], name: string): Pick<ImportedCompany, "crmBrand" | "crmProduct" | "crmOrigin"> {
+  const rows = listas.filter((row) => nameKey(text(row["Empresa"])) === nameKey(name))
+  const joined = (column: string): string | null => {
+    const values = [...new Set(rows.map((row) => text(row[column])).filter(Boolean))]
+    return values.length === 0 ? null : values.join(" / ")
+  }
+  return { crmBrand: joined("Marca"), crmProduct: joined("Producto o Servicio"), crmOrigin: joined("Origen") }
+}
+
+export function foundCompanies(found: readonly Row[], listas: readonly Row[]): FoundCompanies {
+  const result: FoundCompanies = {
+    companies: [],
+    skipped: [],
+    taxIdByCompany: new Map(),
+    companyByContact: companiesByContact([...listas]),
+  }
+  const taken = new Map<string, string>()
+  for (const row of found) {
+    const written = text(row["Empresa"])
+    const contact = text(row["Contacto"])
+    const withoutCompany = written === "" || written.startsWith("#")
+    const name = withoutCompany ? contact : written
+    if (!name) continue
+    const taxId = text(row["CUIT"]).replace(/\D/g, "")
+    if (taxId.length !== 11) {
+      result.skipped.push({ name, reason: taxId ? `CUIT mal escrito: ${taxId}` : "sin CUIT" })
+      continue
+    }
+    const first = taken.get(taxId)
+    result.taxIdByCompany.set(name, taxId)
+    if (withoutCompany) result.companyByContact.set(nameKey(contact), name)
+    if (first) {
+      result.skipped.push({ name, reason: `mismo CUIT que ${first}, su historial va a esa empresa` })
+      continue
+    }
+    taken.set(taxId, name)
+    result.companies.push({ taxId, businessName: text(row["Nombre en Nosis"]) || name, ...listFields(listas, written) })
+  }
+  return result
 }
