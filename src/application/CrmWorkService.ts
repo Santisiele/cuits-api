@@ -1,5 +1,7 @@
 import { ownResponsible, responsiblesOf, sameResponsible, type Responsible } from "@domain/responsibles.js"
 import {
+  agendaByCompany,
+  postponeRejection,
   canChangeAction,
   canChangeTask,
   changedFields,
@@ -21,7 +23,7 @@ import {
   type CrmCompany,
   type Task,
 } from "@domain/crm.js"
-import { CrmServiceBase, type ActionBody, type ActionResult, type AgendaQuery, type TaskBody } from "@application/CrmServiceBase.js"
+import { CrmServiceBase, type ActionBody, type ActionResult, type AgendaQuery, type PostponeBody, type TaskBody } from "@application/CrmServiceBase.js"
 
 /** Actions, tasks and the agenda. */
 export class CrmWorkService extends CrmServiceBase {
@@ -182,8 +184,29 @@ export class CrmWorkService extends CrmServiceBase {
           ? responsiblesOf(await this.repository.listResponsibles(), actor.username)
           : [query.assignee]
     const today = todayInBuenosAires(this.now())
-    const items = (await this.repository.listAgenda(assignees)).map((item) => ({ ...item, overdue: isOverdue(item.dueDate, today) }))
+    const items = agendaByCompany(await this.repository.listAgenda(null))
+      .filter((item) => assignees === null || assignees.some((name) => sameResponsible(name, item.assignee)))
+      .map((item) => ({ ...item, overdue: isOverdue(item.dueDate, today) }))
     return sortAgenda(query.overdueOnly === "true" ? items.filter((item) => item.overdue) : items)
+  }
+
+  async postponeTask(id: string, body: PostponeBody, actor: Actor): Promise<Task> {
+    const task = await this.requireChangeableTask(id, actor)
+    await this.requireOpenCompany(task.companyTaxId)
+    const dueDate = this.calendarDate(body.dueDate)
+    const rejection = postponeRejection(task, dueDate)
+    if (rejection) this.fail(rejection)
+    const at = this.now().toISOString()
+    const postponement = { from: task.dueDate, to: dueDate, reason: this.text(body.reason), by: actor.username, at }
+    const postponed: Task = { ...task, dueDate, postponements: [...task.postponements, postponement] }
+    await this.guarded(() =>
+      this.repository.postponeTask(
+        task,
+        postponement,
+        this.change(at, actor.username, "Task", id, "postpone", { dueDate: task.dueDate }, { dueDate, reason: postponement.reason })
+      )
+    )
+    return postponed
   }
 
   private async newTask(body: TaskBody & { companyTaxId: string }, createdBy: string, responsibles: readonly Responsible[]): Promise<Task> {
@@ -200,6 +223,7 @@ export class CrmWorkService extends CrmServiceBase {
       createdAt: this.now().toISOString(),
       closedAt: null,
       archivedAt: null,
+      postponements: [],
     }
   }
 

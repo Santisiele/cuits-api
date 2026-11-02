@@ -15,6 +15,8 @@ import {
   removalOutcome,
   shouldMarkNosisPending,
   sortAgenda,
+  agendaByCompany,
+  postponeRejection,
   taskStatusRejection,
   todayInBuenosAires,
   uniqueIds,
@@ -78,6 +80,7 @@ const TASK: Task = {
   cancelReason: null,
   assignee: "Flavia",
   createdBy: "santi",
+  postponements: [],
   contactIds: [],
   createdAt: "",
   closedAt: null,
@@ -161,7 +164,7 @@ describe("permissions", () => {
 
 describe("sortAgenda", () => {
   it("orders by due date, then company, then id", () => {
-    const item = (id: string, dueDate: string, businessName: string) => ({ ...TASK, id, dueDate, businessName, overdue: false, lastAction: null })
+    const item = (id: string, dueDate: string, businessName: string) => ({ ...TASK, id, dueDate, businessName, overdue: false, lastAction: null, otherTasks: [], hiddenTasks: 0 })
     expect(
       sortAgenda([item("3", "2026-11-01", "A"), item("2", "2026-10-30", "B"), item("1", "2026-10-30", "B"), item("4", "2026-10-30", "A")]).map(
         (entry) => entry.id
@@ -240,5 +243,42 @@ describe("changedFields", () => {
 
   it("records a value cleared to null", () => {
     expect(changedFields({ a: "x" }, { a: null })).toEqual({ before: { a: "x" }, after: { a: null } })
+  })
+})
+
+describe("postponeRejection", () => {
+  it("only moves an open task to a later date", () => {
+    expect(postponeRejection(TASK, "2026-11-05")).toBeNull()
+    expect(postponeRejection(TASK, "2026-10-30")).toBe("not_later")
+    expect(postponeRejection(TASK, "2026-10-01")).toBe("not_later")
+    expect(postponeRejection({ ...TASK, status: "done" }, "2026-11-05")).toBe("task_not_open")
+    expect(postponeRejection({ ...TASK, archivedAt: "2026-10-01T00:00:00.000Z" }, "2026-11-05")).toBe("task_not_open")
+  })
+})
+
+describe("agendaByCompany", () => {
+  const row = (id: string, companyTaxId: string, assignee: string, dueDate: string) => ({
+    ...TASK,
+    id,
+    companyTaxId,
+    assignee,
+    dueDate,
+    businessName: companyTaxId,
+    lastAction: null,
+  })
+
+  it("keeps one task per company and responsible, the farthest one", () => {
+    const view = agendaByCompany([row("a", "C1", "Luchi", "2026-11-02"), row("b", "C1", "luchi", "2026-11-20"), row("c", "C2", "Sol", "2026-11-03")])
+    expect(view.map((item) => [item.id, item.hiddenTasks])).toEqual([
+      ["b", 1],
+      ["c", 0],
+    ])
+  })
+
+  it("shows every responsible's task of the same company, each saying who else has one", () => {
+    const view = agendaByCompany([row("a", "C1", "Luchi", "2026-11-02"), row("b", "C1", "Raul", "2026-11-20"), row("c", "C1", "Raul", "2026-11-05")])
+    expect(view.find((item) => item.id === "a")?.otherTasks).toEqual([{ assignee: "Raul", dueDate: "2026-11-20" }])
+    expect(view.find((item) => item.id === "b")?.otherTasks).toEqual([{ assignee: "Luchi", dueDate: "2026-11-02" }])
+    expect(view.some((item) => item.id === "c")).toBe(false)
   })
 })

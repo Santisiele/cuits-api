@@ -96,6 +96,7 @@ export const CrmWorkQueries = {
   CRM_FIND_TASK: `
     MATCH (t:Task {id: $id})-[:ABOUT]->(c:CUIT)
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName,
+           COLLECT { MATCH (t)-[:POSTPONED]->(p:Postponement) RETURN p {.from, .to, .reason, .by, .at} ORDER BY p.at } AS postponements,
            coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
   `,
@@ -104,6 +105,7 @@ export const CrmWorkQueries = {
     MATCH (c:CUIT {id: $taxId})<-[:ABOUT]-(t:Task)
     WHERE t.archivedAt IS NULL
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName,
+           COLLECT { MATCH (t)-[:POSTPONED]->(p:Postponement) RETURN p {.from, .to, .reason, .by, .at} ORDER BY p.at } AS postponements,
            coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds
     ORDER BY t.dueDate, t.createdAt
@@ -115,6 +117,7 @@ export const CrmWorkQueries = {
     WITH t, c, coalesce(head(COLLECT { MATCH (t)-[:ASSIGNED_TO]->(r:Responsible) RETURN r.name }), t.assignee) AS assignee
     WHERE $assigneeKeys IS NULL OR toLower(assignee) IN $assigneeKeys
     RETURN t, c.id AS companyTaxId, c.businessName AS businessName, assignee,
+           COLLECT { MATCH (t)-[:POSTPONED]->(p:Postponement) RETURN p {.from, .to, .reason, .by, .at} ORDER BY p.at } AS postponements,
            COLLECT { MATCH (t)-[:WITH]->(k:Contact) RETURN k.id ORDER BY k.id } AS contactIds,
            coalesce(
              head(COLLECT {
@@ -194,6 +197,14 @@ export const CrmWorkQueries = {
       MERGE (t)-[:WITH]->(k)
     }
     RETURN count(t) AS updated
+  `,
+
+  CRM_POSTPONE_TASK: `
+    MATCH (t:Task {id: $id})
+    WHERE t.status = "open" AND t.archivedAt IS NULL AND t.dueDate = $from
+    SET t.dueDate = $to
+    CREATE (t)-[:POSTPONED]->(:Postponement {from: $from, to: $to, reason: $reason, by: $by, at: $at})
+    RETURN count(t) AS postponed
   `,
 
   CRM_COMPLETE_TASK: `

@@ -417,13 +417,13 @@ describe("actions and tasks", () => {
 
   it("builds the agenda for me, someone else or everybody, flagging overdue in Buenos Aires time", async () => {
     await openTask(flavia, { dueDate: "2026-10-28" })
-    await openTask(flavia, { dueDate: "2026-11-02" })
+    await openTask(flavia, { dueDate: "2026-11-02", companyTaxId: OTHER })
     await openTask(santi, { dueDate: "2026-10-29", assignee: "pedro" })
 
     const mine = await work.agenda({}, flavia)
     expect(mine.map((item) => [item.dueDate, item.overdue, item.businessName])).toEqual([
       ["2026-10-28", true, "ACME"],
-      ["2026-11-02", false, "ACME"],
+      ["2026-11-02", false, "OTRA"],
     ])
     expect(await work.agenda({ assignee: "pedro" }, flavia)).toHaveLength(1)
     expect(await work.agenda({ assignee: "all" }, flavia)).toHaveLength(3)
@@ -435,8 +435,8 @@ describe("actions and tasks", () => {
       { companyTaxId: COMPANY, date: "2026-10-20", description: "Lo llamé", contactIds: [anaId], nextTask: { description: "Seguir", dueDate: "2026-11-02" } },
       flavia
     )
-    const loose = await openTask(flavia, { dueDate: "2026-11-03" })
-    const agenda = await work.agenda({}, flavia)
+    const loose = await openTask(flavia, { dueDate: "2026-11-03", assignee: "pedro" })
+    const agenda = await work.agenda({ assignee: "all" }, flavia)
     expect(agenda.find((item) => item.id === nextTask!.id)?.lastAction).toEqual({
       date: "2026-10-20",
       description: "Lo llamé",
@@ -444,6 +444,34 @@ describe("actions and tasks", () => {
       contacts: ["Ana"],
     })
     expect(agenda.find((item) => item.id === loose.id)?.lastAction?.description).toBe("Lo llamé")
+  })
+
+  it("shows one task per company and responsible, the farthest, and tells who else has one there", async () => {
+    await openTask(flavia, { dueDate: "2026-11-02" })
+    const farthest = await openTask(flavia, { dueDate: "2026-11-20" })
+    const pedros = await openTask(santi, { dueDate: "2026-11-05", assignee: "pedro" })
+    const all = await work.agenda({ assignee: "all" }, flavia)
+    expect(all.map((item) => item.id)).toEqual([pedros.id, farthest.id])
+    expect(all.find((item) => item.id === farthest.id)).toMatchObject({ hiddenTasks: 1, otherTasks: [{ assignee: "pedro", dueDate: "2026-11-05" }] })
+    const mine = await work.agenda({}, flavia)
+    expect(mine.map((item) => item.id)).toEqual([farthest.id])
+    expect(mine[0]?.otherTasks).toEqual([{ assignee: "pedro", dueDate: "2026-11-05" }])
+  })
+
+  it("postpones a task to a later date and keeps each postponement apart", async () => {
+    const task = await openTask(flavia, { dueDate: "2026-11-02" })
+    const once = await work.postponeTask(task.id, { dueDate: "2026-11-09", reason: "Está de viaje" }, flavia)
+    expect(once).toMatchObject({ dueDate: "2026-11-09", postponements: [{ from: "2026-11-02", to: "2026-11-09", reason: "Está de viaje", by: "flavia" }] })
+    await work.postponeTask(task.id, { dueDate: "2026-11-16" }, flavia)
+    expect(repository.tasks.get(task.id)).toMatchObject({ dueDate: "2026-11-16", status: "open" })
+    expect(repository.tasks.get(task.id)?.postponements.map((item) => [item.from, item.to, item.reason])).toEqual([
+      ["2026-11-02", "2026-11-09", "Está de viaje"],
+      ["2026-11-09", "2026-11-16", null],
+    ])
+    expect(repository.changes.at(-1)).toMatchObject({ entityType: "Task", operation: "postpone", before: { dueDate: "2026-11-09" } })
+    expect(await rejection(work.postponeTask(task.id, { dueDate: "2026-11-10" }, flavia))).toBe("not_later")
+    expect(await rejection(work.postponeTask(task.id, { dueDate: "mañana" }, flavia))).toBe("invalid_date")
+    expect(await rejection(work.postponeTask(task.id, { dueDate: "2026-12-01" }, pedro))).toBe("forbidden")
   })
 
   it("cancels the open tasks of a company that is archived", async () => {

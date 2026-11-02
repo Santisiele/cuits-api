@@ -16,6 +16,8 @@ import type {
   CrmUser,
   RemovalFacts,
   RemovalOutcome,
+  AgendaRow,
+  Postponement,
 } from "@domain/crm"
 import { CompanyClosedError, TaskChangedError, TaskNoLongerOpenError } from "@domain/crm"
 
@@ -369,7 +371,14 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return [...this.tasks.values()].filter((task) => task.companyTaxId === taxId && task.archivedAt === null)
   }
 
-  async listAgenda(assignees: string[] | null): Promise<Omit<AgendaItem, "overdue">[]> {
+  async postponeTask(task: Task, postponement: Postponement, change: Change): Promise<void> {
+    const stored = this.tasks.get(task.id)
+    if (stored?.status !== "open" || stored.archivedAt !== null || stored.dueDate !== postponement.from) throw new TaskChangedError(task.id)
+    Object.assign(stored, { dueDate: postponement.to, postponements: [...stored.postponements, postponement] })
+    this.changes.push(change)
+  }
+
+  async listAgenda(assignees: string[] | null): Promise<AgendaRow[]> {
     const keys = assignees?.map((name) => name.toLowerCase()) ?? null
     return [...this.tasks.values()]
       .filter((task) => task.status === "open" && task.archivedAt === null)

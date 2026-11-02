@@ -69,6 +69,13 @@ export const taskProperties = {
   createdAt: { type: "string" },
   closedAt: nullableString,
   archivedAt: nullableString,
+  postponements: {
+    type: "array",
+    items: {
+      type: "object",
+      properties: { from: { type: "string" }, to: { type: "string" }, reason: nullableString, by: { type: "string" }, at: { type: "string" } },
+    },
+  },
 } as const
 
 export const taskSchema = { type: "object", properties: taskProperties } as const
@@ -79,6 +86,11 @@ export const agendaItemSchema = {
     ...taskProperties,
     businessName: { type: "string" },
     overdue: { type: "boolean" },
+    hiddenTasks: { type: "number" },
+    otherTasks: {
+      type: "array",
+      items: { type: "object", properties: { assignee: { type: "string" }, dueDate: { type: "string" } } },
+    },
     lastAction: {
       type: ["object", "null"],
       properties: {

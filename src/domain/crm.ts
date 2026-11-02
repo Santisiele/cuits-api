@@ -1,5 +1,5 @@
 import { isSameUser } from "@domain/users.js"
-import { sameResponsible } from "@domain/responsibles.js"
+import { responsibleKey, sameResponsible } from "@domain/responsibles.js"
 
 export const LEGACY_CRM_SOURCE_NAME = "CRM Excel"
 
@@ -26,6 +26,7 @@ export type CrmRejection =
   | "invalid_status"
   | "task_not_open"
   | "task_changed"
+  | "not_later"
   | "task_other_company"
   | "forbidden"
   | "action_not_found"
@@ -55,6 +56,7 @@ export type ChangeOperation =
   | "crm_remove"
   | "close"
   | "reopen"
+  | "postpone"
 
 export interface CrmCompanyFields {
   crmBrand: string | null
@@ -109,6 +111,14 @@ export interface Action {
   archivedAt: string | null
 }
 
+export interface Postponement {
+  from: string
+  to: string
+  reason: string | null
+  by: string
+  at: string
+}
+
 export interface Task {
   id: string
   companyTaxId: string
@@ -122,6 +132,7 @@ export interface Task {
   createdAt: string
   closedAt: string | null
   archivedAt: string | null
+  postponements: Postponement[]
 }
 
 export interface LastAction {
@@ -135,6 +146,8 @@ export interface AgendaItem extends Task {
   businessName: string
   lastAction: LastAction | null
   overdue: boolean
+  otherTasks: { assignee: string; dueDate: string }[]
+  hiddenTasks: number
 }
 
 export interface CrmSource {
@@ -278,6 +291,36 @@ export function canChangeAction(actor: Actor, action: Action): boolean {
 
 export function canChangeTask(actor: Actor, task: Task): boolean {
   return actor.canAdminister || isSameUser(actor.username, task.createdBy) || holds(actor, task.assignee)
+}
+
+export type AgendaRow = Omit<AgendaItem, "overdue" | "otherTasks" | "hiddenTasks">
+
+export function postponeRejection(task: Task, dueDate: string): CrmRejection | null {
+  if (task.status !== "open" || task.archivedAt !== null) return "task_not_open"
+  if (dueDate <= task.dueDate) return "not_later"
+  return null
+}
+
+export function agendaByCompany<T extends AgendaRow>(
+  items: readonly T[]
+): (T & Pick<AgendaItem, "otherTasks" | "hiddenTasks">)[] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = `${item.companyTaxId}|${responsibleKey(item.assignee)}`
+    groups.set(key, [...(groups.get(key) ?? []), item])
+  }
+  const kept = [...groups.values()].map((group) => ({
+    item: group.reduce((farthest, item) => (item.dueDate > farthest.dueDate ? item : farthest)),
+    hidden: group.length - 1,
+  }))
+  return kept.map(({ item, hidden }) => ({
+    ...item,
+    hiddenTasks: hidden,
+    otherTasks: kept
+      .filter((other) => other.item.companyTaxId === item.companyTaxId && other.item.id !== item.id)
+      .map((other) => ({ assignee: other.item.assignee, dueDate: other.item.dueDate }))
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+  }))
 }
 
 export function sortAgenda(items: AgendaItem[]): AgendaItem[] {
