@@ -8,7 +8,7 @@ import type {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const SOURCE_NAME = "Empresas concursadas"
+const SOURCE_NAME = "Empresas Concursadas"
 const MAIN_KEY = "main"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
