@@ -2,6 +2,7 @@ sources/*
 node_modules/*
 docs/*
 .env
+.env.staging
 data/users.json
 data/scrapeBirthdays.json
 logs/
@@ -13,3 +14,5 @@ coverage/
 
 
 backups/
+*.gz.aes
+/*.xlsx
