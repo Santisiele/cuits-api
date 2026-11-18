@@ -478,3 +478,24 @@ export function logResearchBudgetChanged(username: string, monthlyLimitUsd: numb
     message: `${username} set the monthly web research limit to ${monthlyLimitUsd} USD`,
   })
 }
+
+export function logAiChatAnswer(run: {
+  username: string
+  chatId: string
+  status: string
+  costUsd: number
+  webSearches: number
+  detail: string | null
+}): void {
+  const log = run.status === "failed" ? activityLogger.error.bind(activityLogger) : activityLogger.info.bind(activityLogger)
+  log({
+    event: "ai_chat_answer",
+    username: run.username,
+    chatId: run.chatId,
+    status: run.status,
+    costUsd: run.costUsd,
+    webSearches: run.webSearches,
+    detail: run.detail,
+    message: `${run.username} got an AI assistant answer in chat ${run.chatId} — ${run.status}, ${run.costUsd} USD`,
+  })
+}

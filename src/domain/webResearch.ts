@@ -65,6 +65,9 @@ export interface ResearchBudget {
   monthlyLimitUsd: number
   spentThisMonthUsd: number
   researchCountThisMonth: number
+  researchSpentThisMonthUsd: number
+  chatSpentThisMonthUsd: number
+  chatAnswerCountThisMonth: number
 }
 
 export interface ResearchSubject {

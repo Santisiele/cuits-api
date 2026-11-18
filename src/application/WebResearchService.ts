@@ -111,11 +111,15 @@ export class WebResearchService {
 
   async budget(): Promise<ResearchBudget> {
     const monthlyLimitUsd = await this.repository.getMonthlyLimit()
-    const spend = await this.repository.spendSince(startOfMonthInBuenosAires(this.now()))
+    const since = startOfMonthInBuenosAires(this.now())
+    const [research, chat] = await Promise.all([this.repository.spendSince(since), this.repository.chatSpendSince(since)])
     return {
       monthlyLimitUsd,
-      spentThisMonthUsd: roundUsd(spend.totalUsd),
-      researchCountThisMonth: spend.count,
+      spentThisMonthUsd: roundUsd(research.totalUsd + chat.totalUsd),
+      researchCountThisMonth: research.count,
+      researchSpentThisMonthUsd: roundUsd(research.totalUsd),
+      chatSpentThisMonthUsd: roundUsd(chat.totalUsd),
+      chatAnswerCountThisMonth: chat.count,
     }
   }
 

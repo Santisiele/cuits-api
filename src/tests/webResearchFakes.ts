@@ -12,6 +12,7 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
   readonly subjects = new Map<string, { businessName: string; inMyBase: boolean }>()
   monthlyLimitUsd: number | null = null
   limitUpdate: { updatedBy: string; updatedAt: string } | null = null
+  chatSpend = { totalUsd: 0, count: 0 }
 
   async findSubject(taxId: string) {
     return this.subjects.get(taxId) ?? null
@@ -63,6 +64,10 @@ export class InMemoryWebResearchRepository implements IWebResearchRepository {
   async spendSince(since: string): Promise<{ totalUsd: number; count: number }> {
     const inMonth = this.saved.filter((research) => research.requestedAt >= since)
     return { totalUsd: inMonth.reduce((sum, research) => sum + research.costUsd, 0), count: inMonth.length }
+  }
+
+  async chatSpendSince(_since: string): Promise<{ totalUsd: number; count: number }> {
+    return this.chatSpend
   }
 
   private replace(id: string, changes: Partial<WebResearch>): void {

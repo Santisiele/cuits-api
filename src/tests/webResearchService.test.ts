@@ -136,7 +136,26 @@ describe("WebResearchService budget and history", () => {
       storedResearch({ id: "b", costUsd: 0.2 }),
       storedResearch({ id: "c", costUsd: 9, requestedAt: "2026-09-30T23:00:00.000Z" })
     )
-    expect(await service.budget()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 0.3, researchCountThisMonth: 2 })
+    expect(await service.budget()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 0.3, researchCountThisMonth: 2, researchSpentThisMonthUsd: 0.3, chatSpentThisMonthUsd: 0, chatAnswerCountThisMonth: 0 })
+  })
+
+  it("adds the AI chat spend to the month and reports each part", async () => {
+    repository.saved.push(storedResearch({ id: "a", costUsd: 0.5 }))
+    repository.chatSpend = { totalUsd: 1.25, count: 3 }
+    expect(await service.budget()).toEqual({
+      monthlyLimitUsd: 20,
+      spentThisMonthUsd: 1.75,
+      researchCountThisMonth: 1,
+      researchSpentThisMonthUsd: 0.5,
+      chatSpentThisMonthUsd: 1.25,
+      chatAnswerCountThisMonth: 3,
+    })
+  })
+
+  it("refuses research once the chat has used up the month", async () => {
+    repository.subjects.set("30712345678", { businessName: "ACME SA", inMyBase: true })
+    repository.chatSpend = { totalUsd: 20, count: 9 }
+    await expect(service.research("30712345678", "santi")).rejects.toMatchObject({ reason: "budget_exhausted" })
   })
 
   it("changes the limit and records who did it", async () => {
@@ -144,6 +163,9 @@ describe("WebResearchService budget and history", () => {
       monthlyLimitUsd: 5,
       spentThisMonthUsd: 0,
       researchCountThisMonth: 0,
+      researchSpentThisMonthUsd: 0,
+      chatSpentThisMonthUsd: 0,
+      chatAnswerCountThisMonth: 0,
     })
     expect(repository.limitUpdate).toEqual({ updatedBy: "santi", updatedAt: NOW.toISOString() })
   })
@@ -181,7 +203,7 @@ describe("WebResearchService budget and history", () => {
       storedResearch({ id: "a", costUsd: 0.1 }),
       storedResearch({ id: "b", costUsd: 0.2, archivedAt: "2026-10-12T12:00:00.000Z", archivedBy: "santi" })
     )
-    expect(await service.budget()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 0.3, researchCountThisMonth: 2 })
+    expect(await service.budget()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 0.3, researchCountThisMonth: 2, researchSpentThisMonthUsd: 0.3, chatSpentThisMonthUsd: 0, chatAnswerCountThisMonth: 0 })
   })
 
   it("rejects a malformed CUIT in the history", async () => {

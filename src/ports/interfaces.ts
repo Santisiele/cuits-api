@@ -43,9 +43,11 @@ import type {
 import type {
   ResearchFindings,
   ResearchSubject,
+  ResearchUsage,
   WebResearch,
   WebResearchWithName,
 } from "@domain/webResearch.js"
+import type { AiChat, AiChatMessage, ChatAnswer, ChatTurn, QueryResult } from "@domain/aiChat.js"
 import type {
   CuitNode,
   CuitNodeUpdate,
@@ -485,4 +487,37 @@ export interface IWebResearchRepository {
   getMonthlyLimit(): Promise<number>
   setMonthlyLimit(monthlyLimitUsd: number, updatedBy: string, updatedAt: string): Promise<void>
   spendSince(since: string): Promise<{ totalUsd: number; count: number }>
+  chatSpendSince(since: string): Promise<{ totalUsd: number; count: number }>
+}
+
+export interface IChatAssistant {
+  answer(turn: ChatTurn): Promise<ChatAnswer>
+}
+
+export interface IGraphReader {
+  read(cypher: string, params: Record<string, unknown>, maxRows: number, timeoutMs: number): Promise<QueryResult>
+}
+
+export interface AssistantMessageResult {
+  status: AiChatMessage["status"]
+  text: string
+  sources: AiChatMessage["sources"]
+  tables: AiChatMessage["tables"]
+  model: string
+  usage: ResearchUsage
+  costUsd: number
+}
+
+export interface IAiChatRepository {
+  listChats(owner: string): Promise<AiChat[]>
+  findChat(id: string): Promise<AiChat | null>
+  createChat(chat: AiChat): Promise<void>
+  archiveChat(id: string, archivedAt: string): Promise<void>
+  listMessages(chatId: string): Promise<AiChatMessage[]>
+  findMessage(id: string): Promise<AiChatMessage | null>
+  addMessage(message: AiChatMessage, updatedAt: string): Promise<void>
+  recordUsage(messageId: string, model: string, usage: ResearchUsage, costUsd: number): Promise<void>
+  finishMessage(messageId: string, result: AssistantMessageResult): Promise<void>
+  failRunning(): Promise<number>
+  ensureSetup(): Promise<void>
 }

@@ -29,6 +29,7 @@ vi.mock("@infrastructure/neo4j/Neo4jWebResearchRepository.js", () => ({
     getMonthlyLimit() { return state.repository.getMonthlyLimit() }
     setMonthlyLimit(...args: Parameters<InMemoryWebResearchRepository["setMonthlyLimit"]>) { return state.repository.setMonthlyLimit(...args) }
     spendSince(since: string) { return state.repository.spendSince(since) }
+    chatSpendSince(since: string) { return state.repository.chatSpendSince(since) }
     findById(id: string) { return state.repository.findById(id) }
     archive(...args: Parameters<InMemoryWebResearchRepository["archive"]>) { return state.repository.archive(...args) }
     restore(id: string) { return state.repository.restore(id) }
@@ -235,7 +236,7 @@ describe("research routes", () => {
     const response = await app.inject({ method: "GET", url: "/research/budget" })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 1.25, researchCountThisMonth: 1 })
+    expect(response.json()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 1.25, researchCountThisMonth: 1, researchSpentThisMonthUsd: 1.25, chatSpentThisMonthUsd: 0, chatAnswerCountThisMonth: 0 })
   })
 
   it("PATCH /research/budget changes the limit and logs it", async () => {
@@ -243,7 +244,7 @@ describe("research routes", () => {
     const response = await app.inject({ method: "PATCH", url: "/research/budget", payload: { monthlyLimitUsd: 7.5 } })
 
     expect(response.statusCode).toBe(200)
-    expect(response.json()).toEqual({ monthlyLimitUsd: 7.5, spentThisMonthUsd: 0, researchCountThisMonth: 0 })
+    expect(response.json()).toEqual({ monthlyLimitUsd: 7.5, spentThisMonthUsd: 0, researchCountThisMonth: 0, researchSpentThisMonthUsd: 0, chatSpentThisMonthUsd: 0, chatAnswerCountThisMonth: 0 })
     expect(logResearchBudgetChanged).toHaveBeenCalledWith("santi", 7.5)
   })
 
@@ -408,6 +409,6 @@ describe("research routes", () => {
     const app = await buildApp("admin")
     const response = await app.inject({ method: "GET", url: "/research/budget" })
 
-    expect(response.json()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 1.25, researchCountThisMonth: 1 })
+    expect(response.json()).toEqual({ monthlyLimitUsd: 20, spentThisMonthUsd: 1.25, researchCountThisMonth: 1, researchSpentThisMonthUsd: 1.25, chatSpentThisMonthUsd: 0, chatAnswerCountThisMonth: 0 })
   })
 })
