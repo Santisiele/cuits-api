@@ -5,6 +5,7 @@ import { CrmWorkQueries } from "./queries/crmWorkQueries.js"
 import { CrmNosisQueries } from "./queries/crmNosisQueries.js"
 import { ResponsibleQueries } from "./queries/responsibleQueries.js"
 import { ManualRunQueries } from "./queries/manualRunQueries.js"
+import { AiChatQueries } from "./queries/aiChatQueries.js"
 
 /**
  * Centralised Cypher query strings.
@@ -995,4 +996,5 @@ export const Queries = {
   ...CrmNosisQueries,
   ...ResponsibleQueries,
   ...ManualRunQueries,
+  ...AiChatQueries,
 } as const

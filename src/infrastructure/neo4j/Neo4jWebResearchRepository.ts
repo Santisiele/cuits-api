@@ -139,8 +139,16 @@ export class Neo4jWebResearchRepository implements IWebResearchRepository {
   }
 
   spendSince(since: string): Promise<{ totalUsd: number; count: number }> {
+    return this.sumSince(Queries.SUM_WEB_RESEARCH_SINCE, since)
+  }
+
+  chatSpendSince(since: string): Promise<{ totalUsd: number; count: number }> {
+    return this.sumSince(Queries.SUM_AI_CHAT_SINCE, since)
+  }
+
+  private sumSince(query: string, since: string): Promise<{ totalUsd: number; count: number }> {
     return this.run(async (session) => {
-      const record = (await session.run(Queries.SUM_WEB_RESEARCH_SINCE, { since })).records[0]
+      const record = (await session.run(query, { since })).records[0]
       return { totalUsd: toNumber(record?.get("totalUsd")), count: toNumber(record?.get("count")) }
     })
   }

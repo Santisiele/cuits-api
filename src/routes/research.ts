@@ -56,6 +56,9 @@ const budgetSchema = {
     monthlyLimitUsd: { type: "number" },
     spentThisMonthUsd: { type: "number" },
     researchCountThisMonth: { type: "number" },
+    researchSpentThisMonthUsd: { type: "number" },
+    chatSpentThisMonthUsd: { type: "number" },
+    chatAnswerCountThisMonth: { type: "number" },
   },
 } as const
 
