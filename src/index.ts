@@ -14,7 +14,9 @@ import researchRoutes from "@routes/research.js"
 import birthdayRoutes from "@routes/birthdays.js"
 import crmRoutes from "@routes/crm.js"
 import activityRoutes from "@routes/activity.js"
+import aiChatRoutes from "@routes/aiChat.js"
 import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
+import { Neo4jAiChatRepository } from "@infrastructure/neo4j/Neo4jAiChatRepository.js"
 import { schemas } from "@schemas.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
@@ -119,6 +121,7 @@ async function protectedRoutes(instance: FastifyInstance) {
   await instance.register(birthdayRoutes)
   await instance.register(crmRoutes)
   await instance.register(activityRoutes)
+  await instance.register(aiChatRoutes)
 }
 
 await server.register(protectedRoutes)
@@ -171,6 +174,13 @@ function startNosisPendingMail(): void {
   })
 }
 
+async function setUpAiChat(): Promise<void> {
+  const repository = new Neo4jAiChatRepository()
+  await repository.ensureSetup()
+  const failed = await repository.failRunning()
+  if (failed > 0) console.log(`AI chat: ${failed} interrupted answers marked as failed`)
+}
+
 function logKeepAlive(event: KeepAliveEvent): void {
   if (event.kind === "pulsed") console.log(`Aura keep-alive at ${event.pingedAt}`)
   else server.log.error(`Aura keep-alive failed: ${event.message}`)
@@ -182,6 +192,7 @@ try {
   console.log(`Docs available at http://localhost:${targetPort}/docs`)
   new KeepAliveService(new Neo4jRepository()).start({ report: logKeepAlive })
   new Neo4jCrmRepository().ensureSetup().catch((err: unknown) => server.log.error(`CRM setup failed: ${String(err)}`))
+  setUpAiChat().catch((err: unknown) => server.log.error(`AI chat setup failed: ${String(err)}`))
   startBackups()
   startNosisPendingMail()
 } catch (err) {
