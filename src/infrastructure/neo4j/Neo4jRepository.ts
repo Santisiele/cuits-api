@@ -2,6 +2,7 @@ import neo4j, { type Session } from "neo4j-driver"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Queries } from "@infrastructure/neo4j/queries.js"
 import { RELATIONSHIP_TYPES } from "@scrapers/nosisRelationshipTypes.js"
+import { lenderNames } from "@domain/financieraLenders.js"
 import type {
   IBackupRepository,
   IBirthdaySweepRepository,
@@ -202,6 +203,7 @@ export class Neo4jRepository
         isToKnow: Boolean(record.get("isToKnow") ?? false),
         levelOfTrust: Number(record.get("levelOfTrust") ?? 0),
         relatedSources: [],
+        financieraNames: lenderNames(record.get("financieraOperations")),
       }))
     } finally {
       await session.close()

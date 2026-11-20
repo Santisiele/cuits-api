@@ -109,6 +109,7 @@ export const Queries = {
            c.isKnown       AS isKnown,
            c.isToKnow      AS isToKnow,
            c.levelOfTrust  AS levelOfTrust,
+           c.financieraOperations AS financieraOperations,
            count(DISTINCT related) AS relationshipCount
     ORDER BY c.businessName`,
 
