@@ -1025,6 +1025,7 @@ export default async function graphRoutes(server: FastifyInstance) {
                     isToKnow: { type: "boolean" },
                     relationshipCount: { type: "number" },
                     levelOfTrust: { type: "number" },
+                    financieraNames: { type: "array", items: { type: "string" } },
                   },
                 },
               },

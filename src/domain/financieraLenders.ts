@@ -62,3 +62,11 @@ export function summariseLenders(customFields: Record<string, unknown>, key: str
         b.months[0]!.totalLoan - a.months[0]!.totalLoan || a.entityName.localeCompare(b.entityName)
     )
 }
+
+export function lenderNames(raw: unknown): string[] {
+  if (typeof raw !== "string" || raw.length === 0) return []
+  return summariseLenders({ operations: raw }, "operations")
+    .map((lender) => lender.entityName)
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b))
+}

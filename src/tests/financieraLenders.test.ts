@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { summariseLenders } from "@domain/financieraLenders"
+import { lenderNames, summariseLenders } from "@domain/financieraLenders"
 
 function lendersOf(customFields: Record<string, unknown>) {
   return summariseLenders(customFields, "financieraOperations")
@@ -136,5 +136,22 @@ describe("summariseLenders", () => {
       { entityName: "BANCO DE COMERCIO S.A.", months: [{ period: "2026-07", situation: "3", totalLoan: 200 }] },
     ])
     expect(lendersOf(customFields).map((lender) => lender.entityName)).toEqual(["FINARES S.A."])
+  })
+})
+
+describe("lenderNames", () => {
+  it("lists each lender once, sorted", () => {
+    const raw = JSON.stringify([op("ZETA S.A.", "10"), op("ALFA S.A.", "5"), op("ZETA S.A.", "7", "01/05/2026")])
+    expect(lenderNames(raw)).toEqual(["ALFA S.A.", "ZETA S.A."])
+  })
+
+  it("returns nothing for missing, empty or broken values", () => {
+    expect(lenderNames(null)).toEqual([])
+    expect(lenderNames("")).toEqual([])
+    expect(lenderNames("not json")).toEqual([])
+  })
+
+  it("drops operations without a lender name", () => {
+    expect(lenderNames(JSON.stringify([op("", "10"), op("ALFA S.A.", "5")]))).toEqual(["ALFA S.A."])
   })
 })

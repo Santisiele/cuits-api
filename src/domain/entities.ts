@@ -81,6 +81,7 @@ export interface CuitNodeSummary {
    * Only populated by `findCompanyNodes` — empty array otherwise.
    */
   relatedSources: string[]
+  financieraNames?: string[]
 }
 
 /**
