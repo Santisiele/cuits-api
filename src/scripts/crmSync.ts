@@ -12,7 +12,7 @@ import { contactInDescription } from "@domain/crmContactImport.js"
 import { syncChanges, taskToComplete } from "@domain/crmSync.js"
 
 const USAGE =
-  'Usage: pnpm crm:sync "<CRM Propio.xlsx>" --found "<Empresas sin CUIT.xlsx>" --by <username> [--alias "luc=Luchi"]... [--orphan "Polinoa alguien=30602039958"]... [--apply] [--production]'
+  'Usage: pnpm crm:sync "<CRM Propio.xlsx>" --found "<Empresas sin CUIT.xlsx>" --by <username> [--alias "luc=Luchi"]... [--orphan "Polinoa alguien=30602039958"]... [--only-new] [--apply] [--production]'
 const POSTPONED_IN_EXCEL = "Cambiada en el Excel"
 
 function valuesAfter(args: string[], flag: string): string[] {
@@ -27,6 +27,7 @@ async function main(): Promise<void> {
   const by = valuesAfter(args, "--by")[0]
   if (!file || !foundFile || !by) throw new Error(USAGE)
   const apply = args.includes("--apply")
+  const onlyNew = args.includes("--only-new")
   const actor = { username: by, canAdminister: true }
 
   const uri = config.neo4j.uri
@@ -55,7 +56,7 @@ async function main(): Promise<void> {
 
   const repository = new Neo4jCrmRepository()
   const work = new CrmWorkService(repository)
-  const tally = { added: 0, postponed: 0, edited: 0, failed: 0, outside: 0 }
+  const tally = { added: 0, postponed: 0, edited: 0, failed: 0, outside: 0, skipped: 0 }
 
   try {
     for (const [taxId, steps] of history.byCompany) {
@@ -70,6 +71,11 @@ async function main(): Promise<void> {
 
       for (const change of changes) {
         const where = `${company.businessName} ${change.step.date}`
+        if (onlyNew && change.kind !== "new") {
+          logger.info(`${where}: skip ${change.kind} (--only-new)`)
+          tally.skipped++
+          continue
+        }
         try {
           if (change.kind === "postpone") {
             logger.info(`${where}: postpone "${change.task.description.slice(0, 40)}" ${change.task.dueDate} → ${change.dueDate}`)
@@ -132,6 +138,7 @@ async function main(): Promise<void> {
     logger.info(`Edited:        ${tally.edited}`)
     logger.info(`Failed:        ${tally.failed}`)
     logger.info(`Companies not in the CRM: ${tally.outside}`)
+    if (onlyNew) logger.info(`Skipped (--only-new): ${tally.skipped}`)
     if (!apply) logger.warn("Dry run: nothing was written. Add --apply to load.")
   } finally {
     await Neo4jDriver.close()
