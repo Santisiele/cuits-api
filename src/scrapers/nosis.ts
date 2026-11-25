@@ -100,6 +100,17 @@ export class NosisScraper {
     return this.search("", denominacion)
   }
 
+  async searchPeopleByName(denominacion: string, tope = 10): Promise<NosisSearchResult[]> {
+    const response = await withRetry(() =>
+      this.client.post("/net/verificacionidentidad/busqueda", new URLSearchParams({ documento: "", denominacion, tope: String(tope) }))
+    )
+    const personas = (response.data?.Personas ?? []) as Record<string, unknown>[]
+    return personas.flatMap((persona) => {
+      const taxId = String(persona["Documento"] ?? persona["Cuit"] ?? "").replace(/\D/g, "")
+      return taxId.length === 11 ? [{ taxId, businessName: String(persona["RazonSocial"] ?? "") }] : []
+    })
+  }
+
   private async search(documento: string, denominacion: string): Promise<NosisSearchResult | null> {
     const response = await withRetry(() =>
       this.client.post(
