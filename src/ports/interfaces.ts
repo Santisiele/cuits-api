@@ -380,6 +380,7 @@ export interface ICrmRepository {
   findContact(id: string): Promise<Contact | null>
   updateContact(contact: Contact, change: Change, person?: CrmPersonAdd | null): Promise<void>
   listContacts(taxId: string): Promise<Contact[]>
+  listContactsByCuil(cuil: string): Promise<Contact[]>
   listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]>
   listActiveUsers(): Promise<CrmUser[]>
   contactsAtCompany(taxId: string, contactIds: string[]): Promise<string[]>

@@ -1071,10 +1071,38 @@ export class Neo4jRepository
     }
   }
 
-  async findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]> {
+  async countCrmContactCuilsWithoutBirthday(): Promise<number> {
     const session = this.session()
     try {
-      const result = await session.run(Queries.FIND_BIRTHDAY_CANDIDATES_FOR_SWEEP, {
+      const result = await session.run(Queries.COUNT_CRM_CONTACT_CUILS_WITHOUT_BIRTHDAY)
+      return Number(result.records[0]?.get("pending") ?? 0)
+    } finally {
+      await session.close()
+    }
+  }
+
+  async findCrmContactCuilsWithBirthday(): Promise<{ taxId: string; birthday: string }[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(Queries.FIND_CRM_CONTACT_CUILS_WITH_BIRTHDAY)
+      return result.records.map((record) => ({ taxId: String(record.get("taxId")), birthday: String(record.get("birthday")) }))
+    } finally {
+      await session.close()
+    }
+  }
+
+  findBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]> {
+    return this.birthdayCandidates(Queries.FIND_BIRTHDAY_CANDIDATES_FOR_SWEEP, skip, limit)
+  }
+
+  findCrmContactBirthdayCandidates(skip: string[], limit: number): Promise<BirthdayCandidate[]> {
+    return this.birthdayCandidates(Queries.FIND_CRM_CONTACT_BIRTHDAY_CANDIDATES, skip, limit)
+  }
+
+  private async birthdayCandidates(query: string, skip: string[], limit: number): Promise<BirthdayCandidate[]> {
+    const session = this.session()
+    try {
+      const result = await session.run(query, {
         skip,
         limit: this.batchParam(limit),
       })

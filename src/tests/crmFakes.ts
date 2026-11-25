@@ -261,6 +261,10 @@ export class InMemoryCrmRepository implements ICrmRepository, INosisPendingRepos
     return [...this.contacts.values()].filter((contact) => contact.archivedAt === null && contact.companyTaxIds.includes(taxId))
   }
 
+  async listContactsByCuil(cuil: string): Promise<Contact[]> {
+    return [...this.contacts.values()].filter((contact) => contact.archivedAt === null && contact.cuil === cuil)
+  }
+
   async listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]> {
     return this.changes.filter((change) => change.entityType === entityType && change.entityId === entityId).reverse()
   }
