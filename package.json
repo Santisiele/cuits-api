@@ -48,6 +48,7 @@
     "crm:import-removed": "tsx src/scripts/manual.ts src/scripts/crmImportRemoved.ts",
     "crm:sync": "tsx src/scripts/manual.ts src/scripts/crmSync.ts",
     "crm:export": "tsx src/scripts/crmExport.ts",
+    "crm:find-contact-cuits": "tsx src/scripts/manual.ts src/scripts/crmFindContactCuits.ts",
     "migrate:crmSource": "tsx src/scripts/manual.ts src/scripts/migrateCrmSource.ts",
     "migrate:responsibles": "tsx src/scripts/manual.ts src/scripts/migrateResponsibles.ts"
   },
