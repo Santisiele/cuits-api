@@ -751,6 +751,37 @@ export const Queries = {
     LIMIT $limit
   `,
 
+  COUNT_CRM_CONTACT_CUILS_WITHOUT_BIRTHDAY: `
+    MATCH (k:Contact)-[:IS]->(c:CUIT)
+    WHERE k.archivedAt IS NULL
+      AND (k.birthday IS NULL OR trim(k.birthday) = '')
+      AND c.id =~ '^(20|23|24|27)[0-9]{9}$'
+      AND (c.birthday IS NULL OR trim(c.birthday) = '')
+    RETURN count(DISTINCT c) AS pending
+  `,
+
+  FIND_CRM_CONTACT_CUILS_WITH_BIRTHDAY: `
+    MATCH (k:Contact)-[:IS]->(c:CUIT)
+    WHERE k.archivedAt IS NULL
+      AND (k.birthday IS NULL OR trim(k.birthday) = '')
+      AND trim(coalesce(c.birthday, '')) <> ''
+    RETURN DISTINCT c.id AS taxId, c.birthday AS birthday
+    ORDER BY taxId
+  `,
+
+  FIND_CRM_CONTACT_BIRTHDAY_CANDIDATES: `
+    MATCH (k:Contact)-[:IS]->(c:CUIT)
+    WHERE k.archivedAt IS NULL
+      AND (k.birthday IS NULL OR trim(k.birthday) = '')
+      AND c.id =~ '^(20|23|24|27)[0-9]{9}$'
+      AND (c.birthday IS NULL OR trim(c.birthday) = '')
+      AND NOT c.id IN $skip
+    WITH DISTINCT c
+    RETURN c.id AS taxId, c.businessName AS businessName, 0 AS priority
+    ORDER BY taxId
+    LIMIT $limit
+  `,
+
   SAVE_BIRTHDAY_SWEEP: `
     MERGE (b:BirthdaySweep {id: "daily"})
     SET b.day = $day,
