@@ -618,6 +618,13 @@ export class Neo4jCrmRepository implements ICrmRepository, INosisPendingReposito
     })
   }
 
+  listContactsByCuil(cuil: string): Promise<Contact[]> {
+    return this.read(async (session) => {
+      const result = await session.run(Queries.CRM_LIST_CONTACTS_BY_CUIL, { cuil })
+      return result.records.map(toContact)
+    })
+  }
+
   listChanges(entityType: ChangeEntityType, entityId: string): Promise<Change[]> {
     return this.read(async (session) => {
       const result = await session.run(Queries.CRM_LIST_CHANGES, { entityType, entityId })

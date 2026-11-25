@@ -46,6 +46,15 @@ export const CrmContactQueries = {
            head(COLLECT { MATCH (k)-[:IS]->(p:CUIT) RETURN p.id }) AS cuil
   `,
 
+  CRM_LIST_CONTACTS_BY_CUIL: `
+    MATCH (k:Contact)-[:IS]->(:CUIT {id: $cuil})
+    WHERE k.archivedAt IS NULL
+    RETURN k,
+           COLLECT { MATCH (k)-[:WORKS_AT]->(c:CUIT) RETURN c.id ORDER BY c.id } AS companyTaxIds,
+           $cuil AS cuil
+    ORDER BY toLower(k.fullName)
+  `,
+
   CRM_LIST_CONTACTS: `
     MATCH (k:Contact)-[:WORKS_AT]->(:CUIT {id: $taxId})
     WHERE k.archivedAt IS NULL

@@ -50,6 +50,12 @@ export class CrmContactService extends CrmServiceBase {
     return updated
   }
 
+  async fillBirthday(cuil: string, birthday: string, by: string): Promise<number> {
+    const missing = (await this.repository.listContactsByCuil(cuil)).filter((contact) => !contact.birthday?.trim())
+    for (const contact of missing) await this.updateContact(contact.id, { birthday }, by)
+    return missing.length
+  }
+
   async archiveContact(id: string, by: string): Promise<Contact> {
     const contact = await this.requireContact(id)
     if (contact.archivedAt !== null) this.fail("already_archived")

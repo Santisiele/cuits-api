@@ -217,6 +217,17 @@ describe("contacts", () => {
     expect(await rejection(contacts.updateContact(contact.id, { cuil: "20999999999" }, "santi"))).toBe("cuil_already_set")
   })
 
+  it("fills the birthday of the contacts with that CUIL that have none", async () => {
+    const empty = await contacts.createContact({ fullName: "Ana", companyTaxIds: [COMPANY], cuil: PERSON }, "santi")
+    const dated = await contacts.createContact({ fullName: "Ana P", companyTaxIds: [OTHER], cuil: PERSON, birthday: "01/01/1970" }, "santi")
+    const other = await contacts.createContact({ fullName: "Beto", companyTaxIds: [COMPANY] }, "santi")
+    expect(await contacts.fillBirthday(PERSON, "06/05/1980", "admin")).toBe(1)
+    expect(repository.contacts.get(empty.id)?.birthday).toBe("06/05/1980")
+    expect(repository.contacts.get(dated.id)?.birthday).toBe("01/01/1970")
+    expect(repository.contacts.get(other.id)?.birthday).toBeNull()
+    expect(repository.changes.at(-1)).toMatchObject({ by: "admin", before: { birthday: null }, after: { birthday: "06/05/1980" } })
+  })
+
   it("archives and restores", async () => {
     const contact = await contacts.createContact({ fullName: "Ana", companyTaxIds: [COMPANY] }, "santi")
     expect((await contacts.archiveContact(contact.id, "santi")).archivedAt).toBe(NOW.toISOString())
