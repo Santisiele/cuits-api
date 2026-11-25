@@ -4,6 +4,9 @@ import path from "path"
 import { logger } from "@logger.js"
 import { Neo4jDriver } from "@infrastructure/neo4j/Neo4jDriver.js"
 import { Neo4jRepository } from "@infrastructure/neo4j/Neo4jRepository.js"
+import { Neo4jCrmRepository } from "@infrastructure/neo4j/Neo4jCrmRepository.js"
+import { CrmContactService } from "@application/CrmContactService.js"
+import type { IBirthdaySweepRepository } from "@ports/interfaces.js"
 import { SacScraper } from "@scrapers/nosisSac.js"
 import { BirthdaySweepService, type SweepEvent } from "@application/BirthdaySweepService.js"
 import { BirthdaySweepMirror } from "@application/BirthdaySweepMirror.js"
@@ -57,6 +60,9 @@ function logEvent(event: SweepEvent): void {
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const dryRun = args.includes("--dry-run")
+  const crmContacts = args.includes("--crm-contacts")
+  const byIndex = args.indexOf("--by")
+  const by = byIndex >= 0 && args[byIndex + 1] ? args[byIndex + 1]! : "admin"
   const requested = Number(args.find((a) => /^\d+$/.test(a)) ?? DAILY_LIMIT)
 
   if (isNaN(requested) || requested < 1) {
@@ -73,7 +79,19 @@ async function main(): Promise<void> {
     return
   }
 
-  const service = new BirthdaySweepService(new Neo4jRepository())
+  const graph = new Neo4jRepository()
+  const contacts = new CrmContactService(new Neo4jCrmRepository())
+  const repository: IBirthdaySweepRepository = crmContacts
+    ? {
+        countPeopleWithoutBirthday: () => graph.countCrmContactCuilsWithoutBirthday(),
+        findBirthdayCandidates: (skip, limit) => graph.findCrmContactBirthdayCandidates(skip, limit),
+        setBirthday: async (taxId, birthday) => {
+          await graph.setBirthday(taxId, birthday)
+          await contacts.fillBirthday(taxId, birthday, by)
+        },
+      }
+    : graph
+  const service = new BirthdaySweepService(repository)
   const mirror = new BirthdaySweepMirror(new Neo4jBirthdaySweepRepository(), logMirrorFailure)
 
   function persist(current: ScrapeState): void {
@@ -82,10 +100,18 @@ async function main(): Promise<void> {
   }
 
   try {
+    if (crmContacts) {
+      const known = await graph.findCrmContactCuilsWithBirthday()
+      for (const { taxId, birthday } of known) {
+        logger.info(`${taxId} already has ${birthday} in the graph, ${dryRun ? "would copy it" : "copying it"} to its contacts`)
+        if (!dryRun) await contacts.fillBirthday(taxId, birthday, by)
+      }
+    }
+
     const pending = await service.countPending()
     const candidates = await service.findCandidates(state, budget)
 
-    logger.info(`${pending} known people still without a birthday, ${skipList(state).length} already tried and skipped`)
+    logger.info(`${pending} ${crmContacts ? "CRM contact CUILs" : "known people"} still without a birthday, ${skipList(state).length} already tried and skipped`)
     logger.info(`Budget for this run: ${budget}`)
 
     if (candidates.length === 0) {
