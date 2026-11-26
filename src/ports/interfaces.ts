@@ -36,6 +36,8 @@ import type {
 import type {
   BirthdaySweepSnapshot,
   PendingPerson,
+  CrmContactCount,
+  CrmContactWithoutBirthday,
   PeopleCount,
   PersonName,
   SourceProgress,
@@ -322,6 +324,8 @@ export interface IBirthdayProgressRepository {
   countBySource(): Promise<SourceProgress[]>
   findNames(taxIds: string[]): Promise<PersonName[]>
   findPending(skip: string[]): Promise<PendingPerson[]>
+  countCrmContacts(): Promise<CrmContactCount>
+  findCrmContactsWithoutBirthday(): Promise<CrmContactWithoutBirthday[]>
 }
 
 export interface IBackupRepository {

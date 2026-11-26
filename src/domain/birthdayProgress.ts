@@ -35,6 +35,28 @@ export interface PendingPerson extends PersonName {
   sources: string[]
 }
 
+export interface CrmContactCount {
+  contacts: number
+  withCuil: number
+  withBirthday: number
+}
+
+export interface CrmContactWithoutBirthday {
+  contactId: string
+  fullName: string
+  cuil: string
+  companyTaxId: string
+  companyName: string
+}
+
+export interface CrmContactPending extends CrmContactWithoutBirthday {
+  missedOn: string | null
+}
+
+export interface CrmContactProgress extends CrmContactCount {
+  pending: CrmContactPending[]
+}
+
 export interface SweepStatus {
   day: string | null
   consultedToday: number
@@ -50,6 +72,7 @@ export interface BirthdayProgress {
   sweep: SweepStatus
   misses: MissedPerson[]
   pending: PendingPerson[]
+  crmContacts: CrmContactProgress
 }
 
 export interface ProgressParts {
@@ -58,6 +81,8 @@ export interface ProgressParts {
   snapshot: BirthdaySweepSnapshot | null
   names: PersonName[]
   pending: PendingPerson[]
+  crmCount: CrmContactCount
+  crmWithoutBirthday: CrmContactWithoutBirthday[]
   today: string
 }
 
@@ -105,6 +130,14 @@ export function missedPeople(misses: Record<string, string>, names: PersonName[]
     .sort((a, b) => b.missedOn.localeCompare(a.missedOn) || a.businessName.localeCompare(b.businessName))
 }
 
+export function crmContactProgress(
+  count: CrmContactCount,
+  withoutBirthday: CrmContactWithoutBirthday[],
+  misses: Record<string, string>
+): CrmContactProgress {
+  return { ...count, pending: withoutBirthday.map((contact) => ({ ...contact, missedOn: misses[contact.cuil] ?? null })) }
+}
+
 export function buildProgress(parts: ProgressParts): BirthdayProgress {
   return {
     knownPeople: parts.people.knownPeople,
@@ -114,5 +147,6 @@ export function buildProgress(parts: ProgressParts): BirthdayProgress {
     sweep: sweepStatus(parts.snapshot, parts.today),
     misses: missedPeople(parts.snapshot?.misses ?? {}, parts.names),
     pending: parts.pending,
+    crmContacts: crmContactProgress(parts.crmCount, parts.crmWithoutBirthday, parts.snapshot?.misses ?? {}),
   }
 }

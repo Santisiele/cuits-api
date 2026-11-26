@@ -126,6 +126,8 @@ describe("buildProgress", () => {
         snapshot: SNAPSHOT,
         names: [{ taxId: "20111111119", businessName: "Ana" }],
         pending,
+        crmCount: { contacts: 4, withCuil: 2, withBirthday: 1 },
+        crmWithoutBirthday: [{ contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "30712345678", companyName: "Acme SA" }],
         today: "2026-10-13",
       })
     ).toEqual({
@@ -139,6 +141,12 @@ describe("buildProgress", () => {
         { taxId: "20111111119", businessName: "Ana", missedOn: "2026-10-12" },
       ],
       pending,
+      crmContacts: {
+        contacts: 4,
+        withCuil: 2,
+        withBirthday: 1,
+        pending: [{ contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "30712345678", companyName: "Acme SA", missedOn: "2026-10-12" }],
+      },
     })
   })
 
@@ -149,9 +157,12 @@ describe("buildProgress", () => {
       snapshot: null,
       names: [],
       pending: [],
+      crmCount: { contacts: 0, withCuil: 0, withBirthday: 0 },
+      crmWithoutBirthday: [{ contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "", companyName: "" }],
       today: "2026-10-13",
     })
     expect(progress.misses).toEqual([])
+    expect(progress.crmContacts.pending[0]!.missedOn).toBeNull()
     expect(progress.sweep.day).toBeNull()
   })
 })

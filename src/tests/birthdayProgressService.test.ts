@@ -9,6 +9,10 @@ function makeRepo(snapshot: BirthdaySweepSnapshot | null) {
     countBySource: vi.fn(async () => []),
     findNames: vi.fn(async (taxIds: string[]) => taxIds.map((taxId) => ({ taxId, businessName: `N ${taxId}` }))),
     findPending: vi.fn(async (_skip: string[]) => []),
+    countCrmContacts: vi.fn(async () => ({ contacts: 3, withCuil: 2, withBirthday: 1 })),
+    findCrmContactsWithoutBirthday: vi.fn(async () => [
+      { contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "30712345678", companyName: "Acme SA" },
+    ]),
   }
 }
 
@@ -29,6 +33,7 @@ describe("BirthdayProgressService", () => {
       missing: 6,
       sweep: { consultedToday: 9 },
       misses: [{ taxId: "20111111119", businessName: "N 20111111119", missedOn: "2026-10-13" }],
+      crmContacts: { contacts: 3, withCuil: 2, withBirthday: 1, pending: [{ contactId: "k1", missedOn: "2026-10-13" }] },
     })
     expect(repo.findPending).toHaveBeenCalledWith(["20111111119"])
   })

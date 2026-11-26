@@ -837,6 +837,26 @@ export const Queries = {
     ORDER BY businessName, taxId
   `,
 
+  COUNT_CRM_CONTACT_BIRTHDAYS: `
+    MATCH (k:Contact)
+    WHERE k.archivedAt IS NULL
+    RETURN count(k) AS contacts,
+           count(CASE WHEN EXISTS { (k)-[:IS]->(:CUIT) } THEN 1 END) AS withCuil,
+           count(CASE WHEN trim(coalesce(k.birthday, '')) <> '' THEN 1 END) AS withBirthday
+  `,
+
+  FIND_CRM_CONTACTS_WITHOUT_BIRTHDAY: `
+    MATCH (k:Contact)-[:IS]->(p:CUIT)
+    WHERE k.archivedAt IS NULL AND trim(coalesce(k.birthday, '')) = ''
+    OPTIONAL MATCH (k)-[:WORKS_AT]->(c:CUIT)
+    WITH k, p, c
+    ORDER BY c.businessName
+    WITH k, p, head(collect(c)) AS c
+    RETURN k.id AS contactId, coalesce(k.fullName, '') AS fullName, p.id AS cuil,
+           coalesce(c.id, '') AS companyTaxId, coalesce(c.businessName, '') AS companyName
+    ORDER BY toLower(fullName), contactId
+  `,
+
   SET_BIRTHDAY: `
     MATCH (c:CUIT {id: $taxId})
     SET c.birthday = $birthday
