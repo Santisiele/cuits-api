@@ -11,6 +11,8 @@ const repo = {
   countBySource: vi.fn(),
   findNames: vi.fn(),
   findPending: vi.fn(),
+  countCrmContacts: vi.fn(),
+  findCrmContactsWithoutBirthday: vi.fn(),
 }
 
 vi.mock("@infrastructure/neo4j/Neo4jBirthdaySweepRepository.js", () => ({
@@ -20,6 +22,8 @@ vi.mock("@infrastructure/neo4j/Neo4jBirthdaySweepRepository.js", () => ({
     countBySource = repo.countBySource
     findNames = repo.findNames
     findPending = repo.findPending
+    countCrmContacts = repo.countCrmContacts
+    findCrmContactsWithoutBirthday = repo.findCrmContactsWithoutBirthday
   },
 }))
 
@@ -70,6 +74,11 @@ describe("GET /birthdays/progress", () => {
       { taxId: "20222222228", businessName: "Beto" },
     ])
     repo.findPending.mockResolvedValue([{ taxId: "20333333336", businessName: "Carla", sources: ["Bolsa", "Crm"] }])
+    repo.countCrmContacts.mockResolvedValue({ contacts: 5, withCuil: 3, withBirthday: 2 })
+    repo.findCrmContactsWithoutBirthday.mockResolvedValue([
+      { contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "30712345678", companyName: "Acme SA" },
+      { contactId: "k2", fullName: "Dario Gomez", cuil: "20444444445", companyTaxId: "30712345678", companyName: "Acme SA" },
+    ])
   })
 
   afterEach(() => {
@@ -90,6 +99,15 @@ describe("GET /birthdays/progress", () => {
         { taxId: "20111111119", businessName: "Ana", missedOn: "2026-10-12" },
       ],
       pending: [{ taxId: "20333333336", businessName: "Carla", sources: ["Bolsa", "Crm"] }],
+      crmContacts: {
+        contacts: 5,
+        withCuil: 3,
+        withBirthday: 2,
+        pending: [
+          { contactId: "k1", fullName: "Ana Perez", cuil: "20111111119", companyTaxId: "30712345678", companyName: "Acme SA", missedOn: "2026-10-12" },
+          { contactId: "k2", fullName: "Dario Gomez", cuil: "20444444445", companyTaxId: "30712345678", companyName: "Acme SA", missedOn: null },
+        ],
+      },
     })
   })
 

@@ -55,6 +55,28 @@ const progressSchema = {
         },
       },
     },
+    crmContacts: {
+      type: "object",
+      properties: {
+        contacts: { type: "number" },
+        withCuil: { type: "number" },
+        withBirthday: { type: "number" },
+        pending: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              contactId: { type: "string" },
+              fullName: { type: "string" },
+              cuil: { type: "string" },
+              companyTaxId: { type: "string" },
+              companyName: { type: "string" },
+              missedOn: nullableString,
+            },
+          },
+        },
+      },
+    },
   },
 } as const
 

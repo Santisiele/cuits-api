@@ -5,6 +5,8 @@ import type { IBirthdayProgressRepository, IBirthdaySweepMirror } from "@ports/i
 import {
   parseMisses,
   type BirthdaySweepSnapshot,
+  type CrmContactCount,
+  type CrmContactWithoutBirthday,
   type PendingPerson,
   type PeopleCount,
   type PersonName,
@@ -100,6 +102,30 @@ export class Neo4jBirthdaySweepRepository implements IBirthdaySweepMirror, IBirt
         taxId: toText(record.get("taxId")),
         businessName: toText(record.get("businessName")),
         sources: toTexts(record.get("sources")),
+      }))
+    })
+  }
+
+  countCrmContacts(): Promise<CrmContactCount> {
+    return this.run(async (session) => {
+      const record = (await session.run(Queries.COUNT_CRM_CONTACT_BIRTHDAYS)).records[0]
+      return {
+        contacts: toNumber(record?.get("contacts")),
+        withCuil: toNumber(record?.get("withCuil")),
+        withBirthday: toNumber(record?.get("withBirthday")),
+      }
+    })
+  }
+
+  findCrmContactsWithoutBirthday(): Promise<CrmContactWithoutBirthday[]> {
+    return this.run(async (session) => {
+      const result = await session.run(Queries.FIND_CRM_CONTACTS_WITHOUT_BIRTHDAY)
+      return result.records.map((record) => ({
+        contactId: toText(record.get("contactId")),
+        fullName: toText(record.get("fullName")),
+        cuil: toText(record.get("cuil")),
+        companyTaxId: toText(record.get("companyTaxId")),
+        companyName: toText(record.get("companyName")),
       }))
     })
   }
